@@ -446,12 +446,14 @@ void runD3D12Sandbox() {
     initInfo.SrvDescriptorAllocFn = [](ImGui_ImplDX12_InitInfo *initInfo, D3D12_CPU_DESCRIPTOR_HANDLE *outCPUHandle,
                                        D3D12_GPU_DESCRIPTOR_HANDLE *outGPUHandle) {
         auto &d3d = *static_cast<d3d12::D3D12Context *>(initInfo->UserData);
-        d3d.srvHeapAlloc.Allocate(*outCPUHandle, *outGPUHandle);
+        UINT dummyIndex;
+        d3d.srvHeapAlloc.Allocate(*outCPUHandle, *outGPUHandle, dummyIndex);
     };
     initInfo.SrvDescriptorFreeFn = [](ImGui_ImplDX12_InitInfo *initInfo, D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle,
                                       D3D12_GPU_DESCRIPTOR_HANDLE gpuHandle) {
         auto &d3d = *static_cast<d3d12::D3D12Context *>(initInfo->UserData);
-        d3d.srvHeapAlloc.Free(cpuHandle, gpuHandle);
+        const UINT index = d3d.srvHeapAlloc.GetIndex(cpuHandle);
+        d3d.srvHeapAlloc.Free(index);
     };
 
     // Setup Platform/Renderer backends

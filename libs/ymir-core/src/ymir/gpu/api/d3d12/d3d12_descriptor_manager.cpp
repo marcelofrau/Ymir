@@ -171,7 +171,7 @@ GPUValueResult<D3D12DescriptorAllocation> D3D12DescriptorManager::AllocateRTV(co
     }
 
     D3D12DescriptorAllocation alloc{D3D12DescriptorType::RTV};
-    if (!m_rtvHeapAlloc.Allocate(alloc.cpuHandle, alloc.gpuHandle)) {
+    if (!m_rtvHeapAlloc.Allocate(alloc.cpuHandle, alloc.gpuHandle, alloc.index)) {
         return GPUOperationError{"No free space available for texture RTV"};
     }
 
@@ -248,7 +248,7 @@ GPUValueResult<D3D12DescriptorAllocation> D3D12DescriptorManager::AllocateDSV(co
     }
 
     D3D12DescriptorAllocation alloc{D3D12DescriptorType::DSV};
-    if (!m_dsvHeapAlloc.Allocate(alloc.cpuHandle, alloc.gpuHandle)) {
+    if (!m_dsvHeapAlloc.Allocate(alloc.cpuHandle, alloc.gpuHandle, alloc.index)) {
         return GPUOperationError{"No free space available for texture DSV"};
     }
 
@@ -348,7 +348,7 @@ GPUValueResult<D3D12DescriptorAllocation> D3D12DescriptorManager::AllocateSRV(co
     }
 
     D3D12DescriptorAllocation alloc{D3D12DescriptorType::Resource};
-    if (!m_resourceHeapAlloc.Allocate(alloc.cpuHandle, alloc.gpuHandle)) {
+    if (!m_resourceHeapAlloc.Allocate(alloc.cpuHandle, alloc.gpuHandle, alloc.index)) {
         return GPUOperationError{"No free space available for texture SRV"};
     }
 
@@ -432,7 +432,7 @@ GPUValueResult<D3D12DescriptorAllocation> D3D12DescriptorManager::AllocateUAV(co
     }
 
     D3D12DescriptorAllocation alloc{D3D12DescriptorType::Resource};
-    if (!m_resourceHeapAlloc.Allocate(alloc.cpuHandle, alloc.gpuHandle)) {
+    if (!m_resourceHeapAlloc.Allocate(alloc.cpuHandle, alloc.gpuHandle, alloc.index)) {
         return GPUOperationError{"No free space available for texture UAV"};
     }
 
@@ -461,7 +461,7 @@ GPUValueResult<D3D12DescriptorAllocation> D3D12DescriptorManager::AllocateCBV(co
     desc.SizeInBytes = bufSpec.size * bufSpec.count;
 
     D3D12DescriptorAllocation alloc{D3D12DescriptorType::Resource};
-    if (!m_resourceHeapAlloc.Allocate(alloc.cpuHandle, alloc.gpuHandle)) {
+    if (!m_resourceHeapAlloc.Allocate(alloc.cpuHandle, alloc.gpuHandle, alloc.index)) {
         return GPUOperationError{"No free space available for buffer CBV"};
     }
 
@@ -495,7 +495,7 @@ GPUValueResult<D3D12DescriptorAllocation> D3D12DescriptorManager::AllocateSRV(co
     desc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
 
     D3D12DescriptorAllocation alloc{D3D12DescriptorType::Resource};
-    if (!m_resourceHeapAlloc.Allocate(alloc.cpuHandle, alloc.gpuHandle)) {
+    if (!m_resourceHeapAlloc.Allocate(alloc.cpuHandle, alloc.gpuHandle, alloc.index)) {
         return GPUOperationError{"No free space available for buffer SRV"};
     }
 
@@ -529,7 +529,7 @@ GPUValueResult<D3D12DescriptorAllocation> D3D12DescriptorManager::AllocateUAV(co
     desc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
 
     D3D12DescriptorAllocation alloc{D3D12DescriptorType::Resource};
-    if (!m_resourceHeapAlloc.Allocate(alloc.cpuHandle, alloc.gpuHandle)) {
+    if (!m_resourceHeapAlloc.Allocate(alloc.cpuHandle, alloc.gpuHandle, alloc.index)) {
         return GPUOperationError{"No free space available for buffer UAV"};
     }
 
@@ -541,10 +541,10 @@ GPUValueResult<D3D12DescriptorAllocation> D3D12DescriptorManager::AllocateUAV(co
 
 void D3D12DescriptorManager::Free(D3D12DescriptorAllocation alloc) {
     switch (alloc.type) {
-    case D3D12DescriptorType::Resource: m_resourceHeapAlloc.Free(alloc.cpuHandle, alloc.gpuHandle); break;
-    case D3D12DescriptorType::Sampler: m_samplerHeapAlloc.Free(alloc.cpuHandle, alloc.gpuHandle); break;
-    case D3D12DescriptorType::RTV: m_rtvHeapAlloc.Free(alloc.cpuHandle, alloc.gpuHandle); break;
-    case D3D12DescriptorType::DSV: m_dsvHeapAlloc.Free(alloc.cpuHandle, alloc.gpuHandle); break;
+    case D3D12DescriptorType::Resource: m_resourceHeapAlloc.Free(alloc.index); break;
+    case D3D12DescriptorType::Sampler: m_samplerHeapAlloc.Free(alloc.index); break;
+    case D3D12DescriptorType::RTV: m_rtvHeapAlloc.Free(alloc.index); break;
+    case D3D12DescriptorType::DSV: m_dsvHeapAlloc.Free(alloc.index); break;
     default: YMIR_DEV_CHECK(); break;
     }
 }

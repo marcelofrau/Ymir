@@ -19,6 +19,12 @@ public:
 
     void SetName(std::string_view name) override;
 
+    /// @brief Retrieves the index of this view's descriptor in the heap.
+    /// @return the view's descriptor position in the heap
+    UINT GetIndex() const {
+        return m_alloc.index;
+    }
+
 private:
     D3D12DescriptorManager &m_descMgr;
     D3D12DescriptorAllocation m_alloc;

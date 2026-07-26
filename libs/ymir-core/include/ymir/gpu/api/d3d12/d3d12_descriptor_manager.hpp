@@ -20,6 +20,7 @@ struct D3D12DescriptorAllocation {
     D3D12DescriptorType type;
     D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle;
     D3D12_GPU_DESCRIPTOR_HANDLE gpuHandle;
+    UINT index;
 };
 
 /// @brief Manages descriptor allocations.

@@ -10,6 +10,7 @@
 #include <d3d12.h>
 
 #include <cassert>
+#include <unordered_set>
 #include <vector>
 
 namespace ymir::gpu::d3d12 {
@@ -30,6 +31,7 @@ public:
 
         m_heap = &heap;
         m_freeList.clear();
+        m_allocSet.clear();
         m_nextDescIndex = 0u;
     }
 
@@ -37,6 +39,7 @@ public:
     void Unbind() {
         m_heap = nullptr;
         m_freeList.clear();
+        m_allocSet.clear();
         m_nextDescIndex = 0u;
     }
 
@@ -49,36 +52,69 @@ public:
     /// @brief Allocates a descriptor.
     /// @param[out] outCPUDescHandle a reference to write the CPU descriptor handle
     /// @param[out] outGPUDescHandle a reference to write the GPU descriptor handle
+    /// @param[out] outIndex the descriptor index
     /// @return `true` if successfully allocated, `false` if there is no free space for the descriptor
-    bool Allocate(D3D12_CPU_DESCRIPTOR_HANDLE &outCPUDescHandle, D3D12_GPU_DESCRIPTOR_HANDLE &outGPUDescHandle) {
-        UINT index;
+    bool Allocate(D3D12_CPU_DESCRIPTOR_HANDLE &outCPUDescHandle, D3D12_GPU_DESCRIPTOR_HANDLE &outGPUDescHandle,
+                  UINT &outIndex) {
         if (m_freeList.empty()) {
             if (m_nextDescIndex >= m_heap->GetDescriptorHeapSize()) {
                 return false;
             }
-            index = m_nextDescIndex++;
+            outIndex = m_nextDescIndex++;
         } else {
-            index = m_freeList.back();
+            outIndex = m_freeList.back();
             m_freeList.pop_back();
         }
-        outCPUDescHandle.ptr = m_heap->GetCPUStart().ptr + (index * m_heap->GetDescriptorSize());
-        outGPUDescHandle.ptr = m_heap->GetGPUStart().ptr + (index * m_heap->GetDescriptorSize());
+        [[maybe_unused]] const bool succeeded = m_allocSet.insert(outIndex).second;
+        assert(succeeded);
+        outCPUDescHandle.ptr = m_heap->GetCPUStart().ptr + (outIndex * m_heap->GetDescriptorSize());
+        outGPUDescHandle.ptr = m_heap->GetGPUStart().ptr + (outIndex * m_heap->GetDescriptorSize());
         return true;
     }
 
     /// @brief Frees a descriptor.
+    /// @param[in] index the descriptor index
+    /// @return `true` if the descriptor at the specified index was deallocated, `false` otherwise
+    bool Free(UINT index) {
+        if (m_allocSet.erase(index) > 0) {
+            m_freeList.push_back(index);
+            return true;
+        }
+        return false;
+    }
+
+    /// @brief Retrieves the index for the given CPU descriptor handle.
     /// @param[in] cpuDescHandle the CPU descriptor handle
+    /// @return the index for the given handle, or 0xFFFFFFFF if not found or not part of this heap.
+    UINT GetIndex(const D3D12_CPU_DESCRIPTOR_HANDLE &cpuDescHandle) {
+        if (cpuDescHandle.ptr < m_heap->GetCPUStart().ptr) {
+            return 0xFFFFFFFF;
+        }
+        const UINT index = (cpuDescHandle.ptr - m_heap->GetCPUStart().ptr) / m_heap->GetDescriptorSize();
+        if (index >= m_heap->GetDescriptorHeapSize()) {
+            return 0xFFFFFFFF;
+        }
+        return index;
+    }
+
+    /// @brief Retrieves the index for the given GPU descriptor handle.
     /// @param[in] gpuDescHandle the GPU descriptor handle
-    void Free(D3D12_CPU_DESCRIPTOR_HANDLE cpuDescHandle, D3D12_GPU_DESCRIPTOR_HANDLE gpuDescHandle) {
-        const UINT cpuIndex = (cpuDescHandle.ptr - m_heap->GetCPUStart().ptr) / m_heap->GetDescriptorSize();
-        const UINT gpuIndex = (gpuDescHandle.ptr - m_heap->GetGPUStart().ptr) / m_heap->GetDescriptorSize();
-        assert(cpuIndex == gpuIndex);
-        m_freeList.push_back(cpuIndex);
+    /// @return the index for the given handle, or 0xFFFFFFFF if not found or not part of this heap.
+    UINT GetIndex(const D3D12_GPU_DESCRIPTOR_HANDLE &gpuDescHandle) {
+        if (gpuDescHandle.ptr < m_heap->GetGPUStart().ptr) {
+            return 0xFFFFFFFF;
+        }
+        const UINT index = (gpuDescHandle.ptr - m_heap->GetGPUStart().ptr) / m_heap->GetDescriptorSize();
+        if (index >= m_heap->GetDescriptorHeapSize()) {
+            return 0xFFFFFFFF;
+        }
+        return index;
     }
 
 private:
     const D3D12DescriptorHeap *m_heap = nullptr;
-    std::vector<UINT> m_freeList = {};
+    std::vector<UINT> m_freeList;
+    std::unordered_set<UINT> m_allocSet;
     UINT m_nextDescIndex = 0u;
 };
 

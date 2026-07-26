@@ -17,20 +17,13 @@ D3D12BufferView::~D3D12BufferView() {
 }
 
 GPUObjectResult<IGPUBufferView> D3D12BufferView::Create(D3D12DescriptorManager &descMgr, const BufferViewSpec &spec) {
-    switch (spec.type) {
-    case BufferViewType::None: return GPUOperationError{"No buffer view type provided"};
-    case BufferViewType::Constant: break;
-    case BufferViewType::Structured: break;
-    case BufferViewType::Storage: break;
-    default: return GPUOperationError{"Illegal buffer view type"};
-    }
-
-    auto result = [&] {
+    auto result = [&]() -> GPUValueResult<D3D12DescriptorAllocation> {
         switch (spec.type) {
+        case BufferViewType::None: return GPUOperationError{"No buffer view type provided"};
         case BufferViewType::Constant: return descMgr.AllocateCBV(spec);
         case BufferViewType::Structured: return descMgr.AllocateSRV(spec);
         case BufferViewType::Storage: return descMgr.AllocateUAV(spec);
-        default: util::unreachable(); // cannot possibly happen
+        default: return GPUOperationError{"Illegal buffer view type"};
         }
     }();
     if (!result) {
