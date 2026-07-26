@@ -54,6 +54,11 @@ public:
     /// @return a pointer to the texture or an error
     virtual GPUObjectResult<IGPUTextureView> CreateTextureView(const TextureViewSpec &spec) = 0;
 
+    /// @brief Creates a sampler.
+    /// @param[in] sampler sampler specifications
+    /// @return a pointer to the sampler or an error
+    // TODO: virtual GPUObjectResult<IGPUSampler> CreateSampler(const SamplerSpec &spec) = 0;
+
     /// @brief Creates a buffer.
     /// @param[in] spec buffer specifications
     /// @return a pointer to the buffer or an error
@@ -64,16 +69,17 @@ public:
     /// @return a pointer to the buffer or an error
     virtual GPUObjectResult<IGPUBufferView> CreateBufferView(const BufferViewSpec &spec) = 0;
 
+    /// @brief Creates a graphics pipeline.
+    /// @param[in] spec graphics pipeline specifications
+    /// @return a pointer to the graphics pipeline or an error
+    // TODO: virtual GPUObjectResult<IGPUGraphicsPipeline> CreateGraphicsPipeline(const GraphicsPipelineSpec &spec) = 0;
+
     /// @brief Creates a compute pipeline.
     /// @param[in] spec compute pipeline specifications
     /// @return a pointer to the compute pipeline or an error
     virtual GPUObjectResult<IGPUComputePipeline> CreateComputePipeline(const ComputePipelineSpec &spec) = 0;
 
-    // TODO: various functions for creating resources:
-    // - graphics pipelines
-    // - fences?
-
-    // Reference: https://github.com/Floating-Trees-Inc/Kaleidoscope/tree/main/code/kaleidoscope/KernelGPU
+    // TODO: fences?
 };
 
 } // namespace ymir::gpu

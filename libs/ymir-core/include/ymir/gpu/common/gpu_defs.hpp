@@ -155,7 +155,7 @@ enum class ShaderLanguage {
 enum class ShaderBytecodeFormat {
     None,
     DXIL,     // D3D12
-    SPIRV,    // D3D12, Vulkan
+    SPIRV,    // Vulkan
     MetalLib, // Metal
     // TODO: add others as needed
 };
@@ -201,7 +201,7 @@ struct ShaderMacro {
 /// @brief Specifications for compiling shaders from source code.
 /// You must specify a valid language and bytecode type combination:
 /// - HLSL -> DXIL or SPIRV
-/// - MSL -> MetaLib
+/// - MSL -> MetalLib
 struct ShaderCompileSpec {
     ShaderStage stage;
     ShaderLanguage language = ShaderLanguage::None;
@@ -217,7 +217,7 @@ struct ShaderCompileSpec {
 // ---------------------------------------------------------------------------------------------------------------------
 
 struct ComputePipelineSpec {
-    CompiledShader shader;
+    CompiledShader *shader = nullptr; // Required, must be a compute shader
 };
 
 } // namespace ymir::gpu

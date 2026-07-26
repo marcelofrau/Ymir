@@ -419,7 +419,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
                  compiledShaderSPIRV.bytecode.size());
 
     const ComputePipelineSpec computePipelineSpec{
-        .shader = compiledShaderDXIL,
+        .shader = &compiledShaderDXIL,
     };
     auto computePipelineResult = gpuDevice.CreateComputePipeline(computePipelineSpec);
     if (!computePipelineResult) {
