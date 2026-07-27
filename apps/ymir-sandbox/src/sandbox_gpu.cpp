@@ -438,10 +438,42 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         fmt::println("D3D12 compute pipeline state: {}", (void *)dx12Pipeline->GetPipelineState().GetPointer());
     }
 
+    const BufferViewSpec uploadBufferViewSpec{
+        .buffer = constBuffer.get(),
+        .type = BufferViewType::Structured,
+    };
+    auto uploadBufferViewResult = gpuDevice.CreateBufferView(uploadBufferViewSpec);
+    if (!uploadBufferViewResult) {
+        fmt::println("Failed to create upload buffer view: {}", uploadBufferViewResult.Error().message);
+        return EXIT_FAILURE;
+    }
+    std::unique_ptr<IGPUBufferView> uploadBufferView{std::move(uploadBufferViewResult.Value())};
+    fmt::println("Upload buffer view created: {}", (void *)uploadBufferView.get());
+
+    const BufferViewSpec downloadBufferViewSpec{
+        .buffer = constBuffer.get(),
+        .type = BufferViewType::Structured,
+    };
+    auto downloadBufferViewResult = gpuDevice.CreateBufferView(downloadBufferViewSpec);
+    if (!downloadBufferViewResult) {
+        fmt::println("Failed to create download buffer view: {}", downloadBufferViewResult.Error().message);
+        return EXIT_FAILURE;
+    }
+    std::unique_ptr<IGPUBufferView> downloadBufferView{std::move(downloadBufferViewResult.Value())};
+    fmt::println("Download buffer view created: {}", (void *)downloadBufferView.get());
+
+    struct ComputeConstants {
+        uint32 bufInIndex;
+        uint32 bufOutIndex;
+    } constants = {
+        uploadBufferView->GetBindlessIndex(),
+        downloadBufferView->GetBindlessIndex(),
+    };
+
     cmdList->Reset();
     cmdList->Begin();
     cmdList->SetComputePipeline(*computePipeline);
-    // TODO: cmdList->SetComputeConstants(...);
+    cmdList->SetComputeConstants(&constants, sizeof(constants));
     // TODO: cmdList->Dispatch(...);
     cmdList->End();
     cmdQueue->CommitCommandList(*cmdList);

@@ -49,8 +49,9 @@ public:
     virtual void SetComputePipeline(const IGPUComputePipeline &pipeline) = 0;
 
     /// @brief Sets compute constants. A compute pipeline must be set prior to this.
-    /// @param[in] constData constant buffer data
-    virtual void SetComputeConstants(std::span<const std::byte> constData) = 0;
+    /// @param[in] data pointer to the constant buffer
+    /// @param[in] size size of the constant buffer
+    virtual void SetComputeConstants(const void *data, size_t size) = 0;
 
     // TODO: add whatever is needed on demand
 };

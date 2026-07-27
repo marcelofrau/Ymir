@@ -19,6 +19,10 @@ public:
 
     void SetName(std::string_view name) override;
 
+    uint32 GetBindlessIndex() const override {
+        return m_alloc.index;
+    }
+
 private:
     D3D12DescriptorManager &m_descMgr;
     D3D12DescriptorAllocation m_alloc;

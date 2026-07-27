@@ -56,8 +56,8 @@ void D3D12CommandList::Barrier(const BarrierGroupSpec &spec) {
     // TODO: implement
 }
 
-void D3D12CommandList::SetComputeConstants(std::span<const std::byte> constData) {
-    m_list->SetComputeRoot32BitConstants(0, constData.size() / sizeof(uint32), constData.data(), 0);
+void D3D12CommandList::SetComputeConstants(const void *data, size_t size) {
+    m_list->SetComputeRoot32BitConstants(0, size / sizeof(uint32), data, 0);
 }
 
 void D3D12CommandList::SetComputePipeline(const IGPUComputePipeline &pipeline) {

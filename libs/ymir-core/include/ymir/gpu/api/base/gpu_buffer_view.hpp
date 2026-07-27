@@ -22,6 +22,10 @@ public:
         return m_spec;
     }
 
+    /// @brief Retrieves the bindless index assigned to this view.
+    /// @return the view's bindless index
+    virtual uint32 GetBindlessIndex() const = 0;
+
 private:
     BufferViewSpec m_spec;
 };

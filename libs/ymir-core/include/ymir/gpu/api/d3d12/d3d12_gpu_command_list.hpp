@@ -27,7 +27,7 @@ public:
     void Barrier(const BarrierGroupSpec &spec) override;
 
     void SetComputePipeline(const IGPUComputePipeline &pipeline) override;
-    void SetComputeConstants(std::span<const std::byte> constData) override;
+    void SetComputeConstants(const void *data, size_t size) override;
 
     d3d12::D3D12CommandAllocator &GetAllocator() {
         return m_allocator;
