@@ -15,6 +15,7 @@
 namespace ymir::gpu {
 
 class IGPUTexture;
+class IGPUBuffer;
 
 enum class CommandQueueType { Graphics, Compute, Copy, VideoEncode, VideoDecode };
 
@@ -257,6 +258,7 @@ enum class ResourceAccessMask : uint32 {
 // TODO: texture barrier
 
 struct BufferBarrierSpec {
+    IGPUBuffer *buffer = nullptr; // Required
     PipelineStageMask srcStage = PipelineStageMask::None;
     PipelineStageMask dstStage = PipelineStageMask::None;
     ResourceAccessMask srcAccess = ResourceAccessMask::None;

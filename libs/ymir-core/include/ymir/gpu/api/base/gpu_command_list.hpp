@@ -2,7 +2,6 @@
 
 #include "gpu_object.hpp"
 
-#include "gpu_buffer.hpp"
 #include "gpu_compute_pipeline.hpp"
 
 namespace ymir::gpu {
@@ -28,7 +27,7 @@ public:
     /// @brief Inserts a buffer barrier.
     /// @param[in] buffer the buffer to put a barrier on
     /// @param[in] barrier barrier specifications
-    virtual void Barrier(IGPUBuffer &buffer, const BufferBarrierSpec &spec) = 0;
+    virtual void Barrier(const BufferBarrierSpec &spec) = 0;
 
     /// @brief Inserts a memory barrier.
     /// @param[in] barrier barrier specifications

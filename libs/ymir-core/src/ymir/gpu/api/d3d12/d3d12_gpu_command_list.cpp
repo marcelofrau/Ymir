@@ -45,8 +45,12 @@ void D3D12CommandList::End() {
     HRESULT hr = m_list->Close();
 }
 
-void D3D12CommandList::Barrier(IGPUBuffer &buffer, const BufferBarrierSpec &spec) {
-    auto *dx12Buffer = buffer.As<D3D12Buffer>();
+void D3D12CommandList::Barrier(const BufferBarrierSpec &spec) {
+    if (spec.buffer == nullptr) {
+        // TODO: report error
+        return;
+    }
+    auto *dx12Buffer = spec.buffer->As<D3D12Buffer>();
     if (dx12Buffer == nullptr) {
         // TODO: report error
         return;
@@ -59,7 +63,7 @@ void D3D12CommandList::Barrier(IGPUBuffer &buffer, const BufferBarrierSpec &spec
     barrier.AccessAfter = util::ToD3D12Value(spec.dstAccess);
     barrier.pResource = dx12Buffer->GetResource().GetPointer();
     barrier.Offset = 0;
-    barrier.Size = buffer.GetTotalSize();
+    barrier.Size = spec.buffer->GetTotalSize();
 
     if (barrier.AccessBefore == barrier.AccessAfter) {
         return;

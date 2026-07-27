@@ -22,7 +22,7 @@ public:
     void Begin() override;
     void End() override;
 
-    void Barrier(IGPUBuffer &buffer, const BufferBarrierSpec &spec) override;
+    void Barrier(const BufferBarrierSpec &spec) override;
     void Barrier(const MemoryBarrierSpec &spec) override;
     void Barrier(const BarrierGroupSpec &spec) override;
 

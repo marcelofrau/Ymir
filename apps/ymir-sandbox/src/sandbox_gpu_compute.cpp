@@ -73,10 +73,10 @@ cbuffer Globals : register(b0) {
 }
 
 #ifndef AMOUNT
-#define AMOUNT 1
+#define AMOUNT 0x01010101
 #endif
 
-[numthreads(64, 1, 1)]
+[numthreads(16, 1, 1)]
 void CSMain(uint3 id : SV_DispatchThreadID) {
     ByteAddressBuffer bufIn = ResourceDescriptorHeap[bufInIndex];
     RWByteAddressBuffer bufOut = ResourceDescriptorHeap[bufOutIndex];
@@ -106,7 +106,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
                                               .entrypoint = "CSMain",
                                               .macros =
                                                   {
-                                                      {"AMOUNT", "123"},
+                                                      {"AMOUNT", "0x02020202"},
                                                       {"SUBTRACT"},
                                                   },
                                               .debug = kShaderDebug,
@@ -135,16 +135,32 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         bufUpload->Unmap();
     }
 
+    cmdList->Barrier(BufferBarrierSpec{
+        .buffer = bufIn.get(),
+        .srcStage = PipelineStageMask::None,
+        .dstStage = PipelineStageMask::Copy,
+        .srcAccess = ResourceAccessMask::None,
+        .dstAccess = ResourceAccessMask::TransferWrite,
+    });
+
     cmdList->CopyBufferToBuffer(*bufUpload, *bufIn);
 
-    cmdList->Barrier(*bufIn, {.srcStage = PipelineStageMask::Copy,
-                              .dstStage = PipelineStageMask::ComputeShader,
-                              .srcAccess = ResourceAccessMask::None,
-                              .dstAccess = ResourceAccessMask::ShaderRead});
-    cmdList->Barrier(*bufOut, {.srcStage = PipelineStageMask::None,
-                               .dstStage = PipelineStageMask::ComputeShader,
-                               .srcAccess = ResourceAccessMask::None,
-                               .dstAccess = ResourceAccessMask::ShaderWrite});
+    cmdList->Barrier(BarrierGroupSpec{.bufferBarriers = {
+                                          {
+                                              .buffer = bufIn.get(),
+                                              .srcStage = PipelineStageMask::Copy,
+                                              .dstStage = PipelineStageMask::ComputeShader,
+                                              .srcAccess = ResourceAccessMask::TransferWrite,
+                                              .dstAccess = ResourceAccessMask::ShaderRead,
+                                          },
+                                          {
+                                              .buffer = bufOut.get(),
+                                              .srcStage = PipelineStageMask::None,
+                                              .dstStage = PipelineStageMask::ComputeShader,
+                                              .srcAccess = ResourceAccessMask::None,
+                                              .dstAccess = ResourceAccessMask::ShaderWrite,
+                                          },
+                                      }});
 
     // -----------------------------------------------------
     // Dispatch compute shader
@@ -164,21 +180,24 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     // -----------------------------------------------------
     // Download buffer
 
-    cmdList->Barrier(*bufOut, {.srcStage = PipelineStageMask::ComputeShader,
-                               .dstStage = PipelineStageMask::Copy,
-                               .srcAccess = ResourceAccessMask::ShaderWrite,
-                               .dstAccess = ResourceAccessMask::TransferRead});
-    cmdList->Barrier(*bufDownload, {.srcStage = PipelineStageMask::None,
-                                    .dstStage = PipelineStageMask::Copy,
-                                    .srcAccess = ResourceAccessMask::None,
-                                    .dstAccess = ResourceAccessMask::TransferWrite});
+    cmdList->Barrier(BarrierGroupSpec{.bufferBarriers = {
+                                          {
+                                              .buffer = bufOut.get(),
+                                              .srcStage = PipelineStageMask::ComputeShader,
+                                              .dstStage = PipelineStageMask::Copy,
+                                              .srcAccess = ResourceAccessMask::ShaderWrite,
+                                              .dstAccess = ResourceAccessMask::TransferRead,
+                                          },
+                                          {
+                                              .buffer = bufDownload.get(),
+                                              .srcStage = PipelineStageMask::None,
+                                              .dstStage = PipelineStageMask::Copy,
+                                              .srcAccess = ResourceAccessMask::None,
+                                              .dstAccess = ResourceAccessMask::TransferWrite,
+                                          },
+                                      }});
 
     cmdList->CopyBufferToBuffer(*bufOut, *bufDownload);
-
-    cmdList->Barrier(*bufDownload, {.srcStage = PipelineStageMask::Copy,
-                                    .dstStage = PipelineStageMask::None,
-                                    .srcAccess = ResourceAccessMask::TransferWrite,
-                                    .dstAccess = ResourceAccessMask::None});
 
     // -----------------------------------------------------
     // Execute command list
@@ -190,9 +209,9 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     // -----------------------------------------------------
     // Print result
 
-    void *bufDownloadData = bufDownload->Map();
+    const void *bufDownloadData = bufDownload->Map();
     if (bufDownloadData != nullptr) {
-        auto *data = static_cast<char *>(bufDownloadData);
+        auto *data = static_cast<const char *>(bufDownloadData);
         const size_t size = bufDownload->GetTotalSize();
         fmt::memory_buffer buf{};
         auto out = std::back_inserter(buf);
