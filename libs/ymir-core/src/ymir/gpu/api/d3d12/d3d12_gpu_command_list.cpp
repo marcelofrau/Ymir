@@ -56,16 +56,20 @@ void D3D12CommandList::Barrier(const BarrierGroupSpec &spec) {
     // TODO: implement
 }
 
-void D3D12CommandList::SetComputeConstants(const void *data, size_t size) {
-    m_list->SetComputeRoot32BitConstants(0, size / sizeof(uint32), data, 0);
-}
-
 void D3D12CommandList::SetComputePipeline(const IGPUComputePipeline &pipeline) {
     if (auto *dx12Pipeline = pipeline.As<D3D12ComputePipeline>()) {
         m_list->SetPipelineState(dx12Pipeline->GetPipelineState().GetPointer());
         m_list->SetComputeRootSignature(m_device.GetRootSignature().GetPointer());
     }
     // TODO: return error
+}
+
+void D3D12CommandList::SetComputeConstants(const void *data, size_t size) {
+    m_list->SetComputeRoot32BitConstants(0, size / sizeof(uint32), data, 0);
+}
+
+void D3D12CommandList::Dispatch(uint32 x, uint32 y, uint32 z) {
+    m_list->Dispatch(x, y, z);
 }
 
 } // namespace ymir::gpu

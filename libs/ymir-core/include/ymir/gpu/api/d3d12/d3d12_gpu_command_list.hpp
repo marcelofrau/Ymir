@@ -28,6 +28,7 @@ public:
 
     void SetComputePipeline(const IGPUComputePipeline &pipeline) override;
     void SetComputeConstants(const void *data, size_t size) override;
+    void Dispatch(uint32 x, uint32 y, uint32 z) override;
 
     d3d12::D3D12CommandAllocator &GetAllocator() {
         return m_allocator;

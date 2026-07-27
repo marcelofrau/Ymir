@@ -474,7 +474,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     cmdList->Begin();
     cmdList->SetComputePipeline(*computePipeline);
     cmdList->SetComputeConstants(&constants, sizeof(constants));
-    // TODO: cmdList->Dispatch(...);
+    cmdList->Dispatch(1, 1, 1);
     cmdList->End();
     cmdQueue->CommitCommandList(*cmdList);
     cmdQueue->Wait();

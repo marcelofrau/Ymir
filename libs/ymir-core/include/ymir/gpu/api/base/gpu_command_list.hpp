@@ -53,6 +53,12 @@ public:
     /// @param[in] size size of the constant buffer
     virtual void SetComputeConstants(const void *data, size_t size) = 0;
 
+    /// @brief Dispatches a computation.
+    /// @param[in] x number of X groups to dispatch
+    /// @param[in] y number of Y groups to dispatch
+    /// @param[in] z number of Z groups to dispatch
+    virtual void Dispatch(uint32 x, uint32 y, uint32 z) = 0;
+
     // TODO: add whatever is needed on demand
 };
 
