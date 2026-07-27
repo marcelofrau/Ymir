@@ -183,12 +183,7 @@ static int runYmirGPUSandboxD3D12() {
         fmt::println("D3D12 2D depth/stencil texture DSV: {}", (void *)dx12TexView);
     }
 
-    const BufferSpec bufferSpec{
-        .usage = BufferUsage::ShaderRead | BufferUsage::ShaderWrite,
-        .count = 1,
-        .size = 256,
-    };
-    auto bufferResult = gpuDevice.CreateBuffer(bufferSpec);
+    auto bufferResult = gpuDevice.CreateBuffer(BufferUsage::ShaderRead | BufferUsage::ShaderWrite, 256, 1);
     if (!bufferResult) {
         fmt::println("Failed to create buffer: {}", bufferResult.Error().message);
         return EXIT_FAILURE;
@@ -199,11 +194,7 @@ static int runYmirGPUSandboxD3D12() {
         fmt::println("D3D12 buffer: {}", (void *)dx12Buffer->GetResource().GetPointer());
     }
 
-    const BufferViewSpec bufferSRVSpec{
-        .buffer = buffer.get(),
-        .type = BufferViewType::Structured,
-    };
-    auto bufferSRVResult = gpuDevice.CreateBufferView(bufferSRVSpec);
+    auto bufferSRVResult = gpuDevice.CreateBufferView(*buffer, BufferViewType::Structured);
     if (!bufferSRVResult) {
         fmt::println("Failed to create structured buffer view: {}", bufferSRVResult.Error().message);
         return EXIT_FAILURE;
@@ -214,11 +205,7 @@ static int runYmirGPUSandboxD3D12() {
         fmt::println("D3D12 buffer SRV: {}", (void *)dx12BufView);
     }
 
-    const BufferViewSpec bufferUAVSpec{
-        .buffer = buffer.get(),
-        .type = BufferViewType::Storage,
-    };
-    auto bufferUAVResult = gpuDevice.CreateBufferView(bufferUAVSpec);
+    auto bufferUAVResult = gpuDevice.CreateBufferView(*buffer, BufferViewType::Storage);
     if (!bufferUAVResult) {
         fmt::println("Failed to create storage buffer view: {}", bufferUAVResult.Error().message);
         return EXIT_FAILURE;
@@ -229,12 +216,7 @@ static int runYmirGPUSandboxD3D12() {
         fmt::println("D3D12 buffer UAV: {}", (void *)dx12BufView);
     }
 
-    const BufferSpec constBufferSpec{
-        .usage = BufferUsage::Constant,
-        .count = 1,
-        .size = 256,
-    };
-    auto constBufferResult = gpuDevice.CreateBuffer(constBufferSpec);
+    auto constBufferResult = gpuDevice.CreateBuffer(BufferUsage::Constant, 256, 1);
     if (!constBufferResult) {
         fmt::println("Failed to create constant buffer: {}", constBufferResult.Error().message);
         return EXIT_FAILURE;
@@ -248,18 +230,14 @@ static int runYmirGPUSandboxD3D12() {
     if (constBufferData != nullptr) {
         fmt::println("Mapped constant buffer data: {}", constBufferData);
         auto *data = static_cast<char *>(constBufferData);
-        const size_t size = constBufferSpec.size * constBufferSpec.count;
+        const size_t size = constBuffer->GetTotalSize();
         for (int i = 0; i < size; i++) {
             data[i] = i;
         }
         constBuffer->Unmap();
     }
 
-    const BufferViewSpec constBufferViewSpec{
-        .buffer = constBuffer.get(),
-        .type = BufferViewType::Constant,
-    };
-    auto constBufferViewResult = gpuDevice.CreateBufferView(constBufferViewSpec);
+    auto constBufferViewResult = gpuDevice.CreateBufferView(*constBuffer, BufferViewType::Constant);
     if (!constBufferViewResult) {
         fmt::println("Failed to create constant buffer view: {}", constBufferViewResult.Error().message);
         return EXIT_FAILURE;
@@ -270,12 +248,7 @@ static int runYmirGPUSandboxD3D12() {
         fmt::println("D3D12 constant buffer CBV: {}", (void *)dx12BufView);
     }
 
-    const BufferSpec uploadBufferSpec{
-        .usage = BufferUsage::Upload,
-        .count = 1,
-        .size = 32,
-    };
-    auto uploadBufferResult = gpuDevice.CreateBuffer(uploadBufferSpec);
+    auto uploadBufferResult = gpuDevice.CreateBuffer(BufferUsage::Upload, 32, 1);
     if (!uploadBufferResult) {
         fmt::println("Failed to create upload buffer: {}", uploadBufferResult.Error().message);
         return EXIT_FAILURE;
@@ -289,19 +262,14 @@ static int runYmirGPUSandboxD3D12() {
     if (uploadBufferData != nullptr) {
         fmt::println("Mapped buffer data: {}", uploadBufferData);
         auto *data = static_cast<char *>(uploadBufferData);
-        const size_t size = uploadBufferSpec.size * uploadBufferSpec.count;
+        const size_t size = uploadBuffer->GetTotalSize();
         for (int i = 0; i < size; i++) {
             data[i] = i;
         }
         uploadBuffer->Unmap();
     }
 
-    const BufferSpec downloadBufferSpec{
-        .usage = BufferUsage::Download,
-        .count = 1,
-        .size = 32,
-    };
-    auto downloadBufferResult = gpuDevice.CreateBuffer(downloadBufferSpec);
+    auto downloadBufferResult = gpuDevice.CreateBuffer(BufferUsage::Download, 32, 1);
     if (!downloadBufferResult) {
         fmt::println("Failed to create download buffer: {}", downloadBufferResult.Error().message);
         return EXIT_FAILURE;
@@ -315,7 +283,7 @@ static int runYmirGPUSandboxD3D12() {
     if (downloadBufferData != nullptr) {
         fmt::println("Mapped buffer data: {}", downloadBufferData);
         auto *data = static_cast<char *>(downloadBufferData);
-        const size_t size = downloadBufferSpec.size * downloadBufferSpec.count;
+        const size_t size = downloadBuffer->GetTotalSize();
         for (int i = 0; i < size; i++) {
             fmt::print("{:02X} ", data[i]);
         }
@@ -395,7 +363,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         fmt::println("Failed to compile shader from HLSL source to DXIL: {}", compileShaderDXILResult.Error().message);
         return EXIT_FAILURE;
     }
-    CompiledShader &compiledShaderDXIL = compileShaderDXILResult.Value();
+    CompiledShader compiledShaderDXIL = compileShaderDXILResult.Value();
     fmt::println("Shader compiled from HLSL source to DXIL successfully, {} bytes", compiledShaderDXIL.bytecode.size());
 
     #if 0
@@ -420,15 +388,12 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
                      compileShaderSPIRVResult.Error().message);
         return EXIT_FAILURE;
     }
-    CompiledShader &compiledShaderSPIRV = compileShaderSPIRVResult.Value();
+    CompiledShader compiledShaderSPIRV = compileShaderSPIRVResult.Value();
     fmt::println("Shader compiled from HLSL source to SPIR-V successfully, {} bytes",
                  compiledShaderSPIRV.bytecode.size());
     #endif
 
-    const ComputePipelineSpec computePipelineSpec{
-        .shader = &compiledShaderDXIL,
-    };
-    auto computePipelineResult = gpuDevice.CreateComputePipeline(computePipelineSpec);
+    auto computePipelineResult = gpuDevice.CreateComputePipeline(compiledShaderDXIL);
     if (!computePipelineResult) {
         fmt::println("Failed to create compute pipeline state: {}", computePipelineResult.Error().message);
         return EXIT_FAILURE;
@@ -438,36 +403,30 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         fmt::println("D3D12 compute pipeline state: {}", (void *)dx12Pipeline->GetPipelineState().GetPointer());
     }
 
-    const BufferViewSpec uploadBufferViewSpec{
-        .buffer = constBuffer.get(),
-        .type = BufferViewType::Structured,
-    };
-    auto uploadBufferViewResult = gpuDevice.CreateBufferView(uploadBufferViewSpec);
-    if (!uploadBufferViewResult) {
-        fmt::println("Failed to create upload buffer view: {}", uploadBufferViewResult.Error().message);
+    auto inputBufferViewResult = gpuDevice.CreateBufferView(*buffer, BufferViewType::Structured);
+    if (!inputBufferViewResult) {
+        fmt::println("Failed to create input buffer view: {}", inputBufferViewResult.Error().message);
         return EXIT_FAILURE;
     }
-    std::unique_ptr<IGPUBufferView> uploadBufferView{std::move(uploadBufferViewResult.Value())};
-    fmt::println("Upload buffer view created: {}", (void *)uploadBufferView.get());
+    std::unique_ptr<IGPUBufferView> inputBufferView{std::move(inputBufferViewResult.Value())};
+    fmt::println("Upload buffer view created: {}", (void *)inputBufferView.get());
 
-    const BufferViewSpec downloadBufferViewSpec{
-        .buffer = constBuffer.get(),
-        .type = BufferViewType::Structured,
-    };
-    auto downloadBufferViewResult = gpuDevice.CreateBufferView(downloadBufferViewSpec);
-    if (!downloadBufferViewResult) {
-        fmt::println("Failed to create download buffer view: {}", downloadBufferViewResult.Error().message);
+    auto outputBufferViewResult = gpuDevice.CreateBufferView(*buffer, BufferViewType::Storage);
+    if (!outputBufferViewResult) {
+        fmt::println("Failed to create output buffer view: {}", outputBufferViewResult.Error().message);
         return EXIT_FAILURE;
     }
-    std::unique_ptr<IGPUBufferView> downloadBufferView{std::move(downloadBufferViewResult.Value())};
-    fmt::println("Download buffer view created: {}", (void *)downloadBufferView.get());
+    std::unique_ptr<IGPUBufferView> outputBufferView{std::move(outputBufferViewResult.Value())};
+    fmt::println("Download buffer view created: {}", (void *)outputBufferView.get());
+
+    // TODO: barrier -> upload -> barrier
 
     struct ComputeConstants {
         uint32 bufInIndex;
         uint32 bufOutIndex;
     } constants = {
-        uploadBufferView->GetBindlessIndex(),
-        downloadBufferView->GetBindlessIndex(),
+        inputBufferView->GetBindlessIndex(),
+        outputBufferView->GetBindlessIndex(),
     };
 
     cmdList->Reset();
@@ -475,9 +434,14 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     cmdList->SetComputePipeline(*computePipeline);
     cmdList->SetComputeConstants(&constants, sizeof(constants));
     cmdList->Dispatch(1, 1, 1);
+
+    // TODO: barrier -> download -> barrier
+
     cmdList->End();
     cmdQueue->CommitCommandList(*cmdList);
     cmdQueue->Wait();
+
+    // TODO: read download buffer
 
     SDL_Window *window = SDL_CreateWindow("Sandbox", 640, 480, 0);
     SDL_PropertiesID windowProps = SDL_GetWindowProperties(window);

@@ -30,15 +30,15 @@ public:
         return MakeUnsupportedOperationError();
     }
 
-    GPUObjectResult<IGPUBuffer> CreateBuffer(const BufferSpec &spec) override {
+    GPUObjectResult<IGPUBuffer> CreateBuffer(BufferUsage usage, uint64 size, uint64 count) override {
         return MakeUnsupportedOperationError();
     }
 
-    GPUObjectResult<IGPUBufferView> CreateBufferView(const BufferViewSpec &spec) override {
+    GPUObjectResult<IGPUBufferView> CreateBufferView(const IGPUBuffer &buffer, BufferViewType type) override {
         return MakeUnsupportedOperationError();
     }
 
-    GPUObjectResult<IGPUComputePipeline> CreateComputePipeline(const ComputePipelineSpec &spec) override {
+    GPUObjectResult<IGPUComputePipeline> CreateComputePipeline(const CompiledShader &shader) override {
         return MakeUnsupportedOperationError();
     }
 

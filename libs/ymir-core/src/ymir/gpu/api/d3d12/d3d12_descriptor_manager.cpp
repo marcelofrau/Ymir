@@ -442,14 +442,8 @@ GPUValueResult<D3D12DescriptorAllocation> D3D12DescriptorManager::AllocateUAV(co
     return alloc;
 }
 
-GPUValueResult<D3D12DescriptorAllocation> D3D12DescriptorManager::AllocateCBV(const BufferViewSpec &viewSpec) {
-    if (viewSpec.buffer == nullptr) {
-        return GPUOperationError{"View does not have a valid buffer pointer"};
-    }
-
-    const BufferSpec &bufSpec = viewSpec.buffer->GetSpec();
-
-    auto *dx12Buffer = viewSpec.buffer->As<D3D12Buffer>();
+GPUValueResult<D3D12DescriptorAllocation> D3D12DescriptorManager::AllocateCBV(const IGPUBuffer &buffer) {
+    auto *dx12Buffer = buffer.As<D3D12Buffer>();
     if (dx12Buffer == nullptr) {
         return GPUOperationError{"Buffer referenced by view is not a D3D12 buffer"};
     }
@@ -457,8 +451,8 @@ GPUValueResult<D3D12DescriptorAllocation> D3D12DescriptorManager::AllocateCBV(co
     assert(resource != nullptr);
 
     D3D12_CONSTANT_BUFFER_VIEW_DESC desc{};
-    desc.BufferLocation = viewSpec.buffer->GetAddress();
-    desc.SizeInBytes = bufSpec.size * bufSpec.count;
+    desc.BufferLocation = dx12Buffer->GetAddress();
+    desc.SizeInBytes = buffer.GetTotalSize();
 
     D3D12DescriptorAllocation alloc{D3D12DescriptorType::Resource};
     if (!m_resourceHeapAlloc.Allocate(alloc.cpuHandle, alloc.gpuHandle, alloc.index)) {
@@ -471,14 +465,8 @@ GPUValueResult<D3D12DescriptorAllocation> D3D12DescriptorManager::AllocateCBV(co
     return alloc;
 }
 
-GPUValueResult<D3D12DescriptorAllocation> D3D12DescriptorManager::AllocateSRV(const BufferViewSpec &viewSpec) {
-    if (viewSpec.buffer == nullptr) {
-        return GPUOperationError{"View does not have a valid buffer pointer"};
-    }
-
-    const BufferSpec &bufSpec = viewSpec.buffer->GetSpec();
-
-    auto *dx12Buffer = viewSpec.buffer->As<D3D12Buffer>();
+GPUValueResult<D3D12DescriptorAllocation> D3D12DescriptorManager::AllocateSRV(const IGPUBuffer &buffer) {
+    auto *dx12Buffer = buffer.As<D3D12Buffer>();
     if (dx12Buffer == nullptr) {
         return GPUOperationError{"Buffer referenced by view is not a D3D12 buffer"};
     }
@@ -490,8 +478,8 @@ GPUValueResult<D3D12DescriptorAllocation> D3D12DescriptorManager::AllocateSRV(co
     desc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
     desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     desc.Buffer.FirstElement = 0u;
-    desc.Buffer.NumElements = bufSpec.count;
-    desc.Buffer.StructureByteStride = bufSpec.size;
+    desc.Buffer.NumElements = buffer.GetElementCount();
+    desc.Buffer.StructureByteStride = buffer.GetElementSize();
     desc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
 
     D3D12DescriptorAllocation alloc{D3D12DescriptorType::Resource};
@@ -505,14 +493,8 @@ GPUValueResult<D3D12DescriptorAllocation> D3D12DescriptorManager::AllocateSRV(co
     return alloc;
 }
 
-GPUValueResult<D3D12DescriptorAllocation> D3D12DescriptorManager::AllocateUAV(const BufferViewSpec &viewSpec) {
-    if (viewSpec.buffer == nullptr) {
-        return GPUOperationError{"View does not have a valid buffer pointer"};
-    }
-
-    const BufferSpec &bufSpec = viewSpec.buffer->GetSpec();
-
-    auto *dx12Buffer = viewSpec.buffer->As<D3D12Buffer>();
+GPUValueResult<D3D12DescriptorAllocation> D3D12DescriptorManager::AllocateUAV(const IGPUBuffer &buffer) {
+    auto *dx12Buffer = buffer.As<D3D12Buffer>();
     if (dx12Buffer == nullptr) {
         return GPUOperationError{"Buffer referenced by view is not a D3D12 buffer"};
     }
@@ -523,8 +505,8 @@ GPUValueResult<D3D12DescriptorAllocation> D3D12DescriptorManager::AllocateUAV(co
     desc.Format = DXGI_FORMAT_UNKNOWN;
     desc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
     desc.Buffer.FirstElement = 0u;
-    desc.Buffer.NumElements = bufSpec.count;
-    desc.Buffer.StructureByteStride = bufSpec.size;
+    desc.Buffer.NumElements = buffer.GetElementCount();
+    desc.Buffer.StructureByteStride = buffer.GetElementSize();
     desc.Buffer.CounterOffsetInBytes = 0u;
     desc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
 

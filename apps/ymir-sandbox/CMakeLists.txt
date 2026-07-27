@@ -8,6 +8,7 @@ add_executable(ymir-sandbox
     src/sandbox_deadlock.cpp
     src/sandbox_disc_info_extractor.cpp
     src/sandbox_gpu.cpp
+    src/sandbox_gpu_compute.cpp
     src/sandbox_host_cd.cpp
     src/sandbox_input.cpp
     src/sandbox_sh2_perf.cpp

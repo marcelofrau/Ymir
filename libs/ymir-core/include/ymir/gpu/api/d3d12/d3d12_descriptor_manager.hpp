@@ -43,9 +43,9 @@ public:
     GPUValueResult<D3D12DescriptorAllocation> AllocateSRV(const TextureViewSpec &viewSpec);
     GPUValueResult<D3D12DescriptorAllocation> AllocateUAV(const TextureViewSpec &viewSpec);
 
-    GPUValueResult<D3D12DescriptorAllocation> AllocateCBV(const BufferViewSpec &viewSpec);
-    GPUValueResult<D3D12DescriptorAllocation> AllocateSRV(const BufferViewSpec &viewSpec);
-    GPUValueResult<D3D12DescriptorAllocation> AllocateUAV(const BufferViewSpec &viewSpec);
+    GPUValueResult<D3D12DescriptorAllocation> AllocateCBV(const IGPUBuffer &buffer);
+    GPUValueResult<D3D12DescriptorAllocation> AllocateSRV(const IGPUBuffer &buffer);
+    GPUValueResult<D3D12DescriptorAllocation> AllocateUAV(const IGPUBuffer &buffer);
 
     // TODO: sampler
 

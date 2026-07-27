@@ -9,17 +9,24 @@ namespace ymir::gpu {
 /// @brief Represents a GPU buffer view.
 class IGPUBufferView : public GPUObject<IGPUBufferView> {
 protected:
-    IGPUBufferView(Backend backend, const BufferViewSpec &spec)
+    IGPUBufferView(Backend backend, const IGPUBuffer &buffer, BufferViewType type)
         : GPUObject(backend)
-        , m_spec(spec) {}
+        , m_buffer(buffer)
+        , m_type(type) {}
 
 public:
     virtual ~IGPUBufferView() = default;
 
-    /// @brief Retrieves the specifications used to create this buffer view
-    /// @return this buffer view's specifications
-    const BufferViewSpec &GetSpec() const {
-        return m_spec;
+    /// @brief Retrieves the buffer that this view is attached to.
+    /// @return the owning buffer
+    const IGPUBuffer &GetBuffer() const {
+        return m_buffer;
+    }
+
+    /// @brief Retrieves the type of the view.
+    /// @return the view type
+    BufferViewType GetViewType() const {
+        return m_type;
     }
 
     /// @brief Retrieves the bindless index assigned to this view.
@@ -27,7 +34,8 @@ public:
     virtual uint32 GetBindlessIndex() const = 0;
 
 private:
-    BufferViewSpec m_spec;
+    const IGPUBuffer &m_buffer;
+    BufferViewType m_type;
 };
 
 } // namespace ymir::gpu

@@ -13,15 +13,16 @@ class D3D12Buffer : public IGPUBuffer {
 public:
     static constexpr Backend kBackend = Backend::Direct3D12;
 
-    D3D12Buffer(d3d12::D3D12Device &device, const BufferSpec &spec, d3d12::D3D12Resource resource);
+    D3D12Buffer(d3d12::D3D12Device &device, BufferUsage usage, uint64 size, uint64 count,
+                d3d12::D3D12Resource resource);
 
-    static GPUObjectResult<IGPUBuffer> Create(d3d12::D3D12Device &device, const BufferSpec &spec);
+    static GPUObjectResult<IGPUBuffer> Create(d3d12::D3D12Device &device, BufferUsage usage, uint64 size, uint64 count);
 
     void SetName(std::string_view name) override;
 
     void *Map(uint64 start = 0u, uint64 end = 0u) override;
     void Unmap(uint64 start = 0u, uint64 end = 0u) override;
-    uint64 GetAddress() override;
+    uint64 GetAddress() const override;
 
     d3d12::D3D12Resource &GetResource() {
         return m_resource;

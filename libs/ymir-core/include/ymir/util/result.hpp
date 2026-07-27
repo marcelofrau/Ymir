@@ -47,42 +47,22 @@ struct Result {
         return HasValue();
     }
 
-    /// @brief Returns a reference to the value if present, otherwise throws an exception.
+    /// @brief Moves the value out of the result if present, otherwise throws an exception.
     /// @return a reference to the value object held by this result
     /// @exception std::logic_error if this object doesn't hold a value (`HasValue() == false`)
-    [[nodiscard]] T &Value() {
+    [[nodiscard]] T &&Value() {
         if (HasValue()) {
-            return std::get<T>(m_result);
+            return std::move(std::get<T>(m_result));
         }
         throw std::logic_error("Result doesn't hold a value");
     }
 
-    /// @brief Returns a reference to the value if present, otherwise throws an exception.
-    /// @return a reference to the value object held by this result
-    /// @exception std::logic_error if this object doesn't hold a value (`HasValue() == false`)
-    [[nodiscard]] const T &Value() const {
-        if (HasValue()) {
-            return std::get<T>(m_result);
-        }
-        throw std::logic_error("Result doesn't hold a value");
-    }
-
-    /// @brief Returns a reference to the error if present, otherwise throws an exception.
+    /// @brief Moves the error out of the result if present, otherwise throws an exception.
     /// @return a reference to the error object held by this result
     /// @exception std::logic_error if this object doesn't hold an error (`HasError() == false`)
-    [[nodiscard]] E &Error() {
+    [[nodiscard]] E &&Error() {
         if (HasError()) {
-            return std::get<E>(m_result);
-        }
-        throw std::logic_error("Result doesn't hold an error");
-    }
-
-    /// @brief Returns a reference to the error if present, otherwise throws an exception.
-    /// @return a reference to the error object held by this result
-    /// @exception std::logic_error if this object doesn't hold an error (`HasError() == false`)
-    [[nodiscard]] const E &Error() const {
-        if (HasError()) {
-            return std::get<E>(m_result);
+            return std::move(std::get<E>(m_result));
         }
         throw std::logic_error("Result doesn't hold an error");
     }

@@ -6,20 +6,17 @@
 
 namespace ymir::gpu {
 
-D3D12ComputePipeline::D3D12ComputePipeline(d3d12::D3D12PipelineState &&pipelineState, const ComputePipelineSpec &spec)
-    : IGPUComputePipeline(kBackend, spec)
+D3D12ComputePipeline::D3D12ComputePipeline(d3d12::D3D12PipelineState &&pipelineState, const CompiledShader &shader)
+    : IGPUComputePipeline(kBackend, shader)
     , m_pipelineState(std::move(pipelineState)) {}
 
 GPUObjectResult<IGPUComputePipeline> D3D12ComputePipeline::Create(d3d12::D3D12Device &device,
                                                                   const d3d12::D3D12RootSignature &rootSig,
-                                                                  const ComputePipelineSpec &spec) {
-    if (spec.shader == nullptr) {
-        return GPUOperationError{"Shader not specified"};
-    }
-    if (spec.shader->stage != ShaderStage::Compute) {
+                                                                  const CompiledShader &shader) {
+    if (shader.stage != ShaderStage::Compute) {
         return GPUOperationError{"Invalid shader stage"};
     }
-    if (spec.shader->format != ShaderBytecodeFormat::DXIL) {
+    if (shader.format != ShaderBytecodeFormat::DXIL) {
         return GPUOperationError{"Unsupported shader format"};
     }
 
@@ -28,12 +25,12 @@ GPUObjectResult<IGPUComputePipeline> D3D12ComputePipeline::Create(d3d12::D3D12De
     // TODO: builder.NodeMask(nodeMask);
     // TODO: builder.Flags(...)?
     // TODO: builder.CachedPSO()?
-    HRESULT hr = builder.Build(device, rootSig, spec.shader->bytecode.data(), spec.shader->bytecode.size());
+    HRESULT hr = builder.Build(device, rootSig, shader.bytecode.data(), shader.bytecode.size());
     if (FAILED(hr)) {
         return GPUOperationError{fmt::format("Failed to build compute pipeline: error code {:X}", hr)};
     }
 
-    return {std::make_unique<D3D12ComputePipeline>(std::move(pipelineState), spec)};
+    return {std::make_unique<D3D12ComputePipeline>(std::move(pipelineState), shader)};
 }
 
 void D3D12ComputePipeline::SetName(std::string_view name) {

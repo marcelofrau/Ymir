@@ -129,17 +129,10 @@ enum class BufferUsage : uint32 {
     IndirectCommands = 1u << 7u,
 };
 
-struct BufferSpec {
-    BufferUsage usage = BufferUsage::None;
-    uint64 count;     // Element count
-    uint64 size = 1u; // Element size (aka stride)
-};
-
-enum class BufferViewType { None, Constant, Structured, Storage };
-
-struct BufferViewSpec {
-    IGPUBuffer *buffer = nullptr;               // Must not be nullptr
-    BufferViewType type = BufferViewType::None; // Must not be None
+enum class BufferViewType {
+    Constant,   // CBV or equivalent
+    Structured, // SRV or equivalent
+    Storage,    // UAV or equivalent
 };
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -211,12 +204,6 @@ struct ShaderCompileSpec {
     std::vector<ShaderMacro> macros;
     bool debug = false;
     bool optimize = true;
-};
-
-// ---------------------------------------------------------------------------------------------------------------------
-
-struct ComputePipelineSpec {
-    CompiledShader *shader = nullptr; // Required, must be a compute shader
 };
 
 // ---------------------------------------------------------------------------------------------------------------------

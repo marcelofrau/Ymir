@@ -15,7 +15,8 @@ int main(int argc, char **argv) {
     // runHostCDSandbox();
     // runD3D12Sandbox();
     // return runVulkanSandbox();
-    return runYmirGPUSandbox();
+    // return runYmirGPUSandbox();
+    return runYmirGPUComputeSandbox();
 
     return EXIT_SUCCESS;
 }

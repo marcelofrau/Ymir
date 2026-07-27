@@ -25,7 +25,7 @@ GPUDeviceManager::~GPUDeviceManager() = default;
 GPUPointerResult<IGPUDevice> GPUDeviceManager::Create(const D3D12GPUDeviceSpec &spec) {
     auto result = D3D12GPUDevice::Create(spec);
     if (result) {
-        m_device.swap(result.Value());
+        m_device = result.Value();
         return m_device.get();
     }
     return std::move(result.Error());

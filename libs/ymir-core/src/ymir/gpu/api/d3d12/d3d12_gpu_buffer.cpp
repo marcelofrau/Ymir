@@ -4,13 +4,15 @@
 
 namespace ymir::gpu {
 
-D3D12Buffer::D3D12Buffer(d3d12::D3D12Device &device, const BufferSpec &spec, d3d12::D3D12Resource resource)
-    : IGPUBuffer(kBackend, spec)
+D3D12Buffer::D3D12Buffer(d3d12::D3D12Device &device, BufferUsage usage, uint64 size, uint64 count,
+                         d3d12::D3D12Resource resource)
+    : IGPUBuffer(kBackend, usage, size, count)
     , m_device(device)
     , m_resource(std::move(resource)) {}
 
-GPUObjectResult<IGPUBuffer> D3D12Buffer::Create(d3d12::D3D12Device &device, const BufferSpec &spec) {
-    const BitmaskEnum bmUsage{spec.usage};
+GPUObjectResult<IGPUBuffer> D3D12Buffer::Create(d3d12::D3D12Device &device, BufferUsage usage, uint64 size,
+                                                uint64 count) {
+    const BitmaskEnum bmUsage{usage};
     D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE;
     if (bmUsage.AnyOf(BufferUsage::ShaderWrite)) {
         flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
@@ -27,14 +29,14 @@ GPUObjectResult<IGPUBuffer> D3D12Buffer::Create(d3d12::D3D12Device &device, cons
                                                 : D3D12_HEAP_TYPE_DEFAULT;
 
     d3d12::D3D12Resource resource{};
-    auto builder = resource.BufferBuilder(spec.size);
+    auto builder = resource.BufferBuilder(count * size);
     builder.Flags(flags);
     builder.HeapType(heapType);
     HRESULT hr = builder.BuildCommitted(device);
     if (FAILED(hr)) {
         return GPUOperationError{fmt::format("Failed to create D3D12 buffer: error code {:X}", hr)};
     }
-    return {std::make_unique<D3D12Buffer>(device, spec, std::move(resource))};
+    return {std::make_unique<D3D12Buffer>(device, usage, count, size, std::move(resource))};
 }
 
 void D3D12Buffer::SetName(std::string_view name) {
@@ -50,7 +52,7 @@ void *D3D12Buffer::Map(uint64 start, uint64 end) {
 }
 
 void D3D12Buffer::Unmap(uint64 start, uint64 end) {
-    if (BitmaskEnum{GetSpec().usage}.AnyOf(BufferUsage::Download)) {
+    if (BitmaskEnum{GetUsage()}.AnyOf(BufferUsage::Download)) {
         m_resource->Unmap(0, nullptr);
     } else {
         const D3D12_RANGE range = MakeRange(start, end);
@@ -58,14 +60,13 @@ void D3D12Buffer::Unmap(uint64 start, uint64 end) {
     }
 }
 
-uint64 D3D12Buffer::GetAddress() {
+uint64 D3D12Buffer::GetAddress() const {
     return m_resource->GetGPUVirtualAddress();
 }
 
 D3D12_RANGE D3D12Buffer::MakeRange(uint64 start, uint64 end) {
-    const BufferSpec &spec = GetSpec();
     if (start == 0 && end == 0) {
-        return {.Begin = 0, .End = spec.size * spec.count};
+        return {.Begin = 0, .End = GetTotalSize()};
     }
     return {.Begin = start, .End = end};
 }

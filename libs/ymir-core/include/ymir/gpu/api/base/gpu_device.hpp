@@ -60,14 +60,17 @@ public:
     // TODO: virtual GPUObjectResult<IGPUSampler> CreateSampler(const SamplerSpec &spec) = 0;
 
     /// @brief Creates a buffer.
-    /// @param[in] spec buffer specifications
+    /// @param[in] usage the buffer's usage mask
+    /// @param[in] size the size of a single element in the buffer
+    /// @param[in] count the number of elements in the buffer
     /// @return a pointer to the buffer or an error
-    virtual GPUObjectResult<IGPUBuffer> CreateBuffer(const BufferSpec &spec) = 0;
+    virtual GPUObjectResult<IGPUBuffer> CreateBuffer(BufferUsage usage, uint64 size, uint64 count) = 0;
 
     /// @brief Creates a buffer view.
-    /// @param[in] spec buffer view specifications
+    /// @param[in] buffer the buffer to create a view from
+    /// @param[in] type the view type
     /// @return a pointer to the buffer or an error
-    virtual GPUObjectResult<IGPUBufferView> CreateBufferView(const BufferViewSpec &spec) = 0;
+    virtual GPUObjectResult<IGPUBufferView> CreateBufferView(const IGPUBuffer &buffer, BufferViewType type) = 0;
 
     /// @brief Creates a graphics pipeline.
     /// @param[in] spec graphics pipeline specifications
@@ -75,9 +78,9 @@ public:
     // TODO: virtual GPUObjectResult<IGPUGraphicsPipeline> CreateGraphicsPipeline(const GraphicsPipelineSpec &spec) = 0;
 
     /// @brief Creates a compute pipeline.
-    /// @param[in] spec compute pipeline specifications
+    /// @param[in] shader a reference to the compute shader
     /// @return a pointer to the compute pipeline or an error
-    virtual GPUObjectResult<IGPUComputePipeline> CreateComputePipeline(const ComputePipelineSpec &spec) = 0;
+    virtual GPUObjectResult<IGPUComputePipeline> CreateComputePipeline(const CompiledShader &shader) = 0;
 
     // TODO: fences?
 };

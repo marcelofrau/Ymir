@@ -14,10 +14,10 @@ class D3D12ComputePipeline final : public IGPUComputePipeline {
 public:
     static constexpr Backend kBackend = Backend::Direct3D12;
 
-    D3D12ComputePipeline(d3d12::D3D12PipelineState &&pipelineState, const ComputePipelineSpec &spec);
+    D3D12ComputePipeline(d3d12::D3D12PipelineState &&pipelineState, const CompiledShader &shader);
 
     static GPUObjectResult<IGPUComputePipeline>
-    Create(d3d12::D3D12Device &device, const d3d12::D3D12RootSignature &rootSig, const ComputePipelineSpec &spec);
+    Create(d3d12::D3D12Device &device, const d3d12::D3D12RootSignature &rootSig, const CompiledShader &shader);
 
     void SetName(std::string_view name) override;
 

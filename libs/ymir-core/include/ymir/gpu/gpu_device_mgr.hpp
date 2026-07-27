@@ -53,8 +53,21 @@ public:
 #endif
 
     /// @brief Destroys the GPU instance and releases all resources.
-    /// Any existing references to objects created by this device become invalid once this function completes.
+    /// This method should only be invoked after all existing references to objects created by the current GPU device
+    /// instance are destroyed.
     void Destroy();
+
+    /// @brief Returns a pointer to the underlying `IGPUDevice` instance.
+    /// @return a pointer to the current `IGPUDevice` instance held by this manager.
+    IGPUDevice *Get() {
+        return m_device.get();
+    }
+
+    /// @brief Returns a pointer to the underlying `IGPUDevice` instance.
+    /// @return a pointer to the current `IGPUDevice` instance held by this manager.
+    const IGPUDevice *Get() const {
+        return m_device.get();
+    }
 
     /// @brief Returns a reference to the underlying `IGPUDevice` instance for convenient access to its operations.
     /// @return a reference to the current `IGPUDevice` instance held by this manager.

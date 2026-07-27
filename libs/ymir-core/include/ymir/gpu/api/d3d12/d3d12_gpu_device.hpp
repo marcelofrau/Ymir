@@ -36,10 +36,10 @@ public:
     GPUObjectResult<IGPUTexture> CreateTexture(const TextureSpec &spec) override;
     GPUObjectResult<IGPUTextureView> CreateTextureView(const TextureViewSpec &spec) override;
 
-    GPUObjectResult<IGPUBuffer> CreateBuffer(const BufferSpec &spec) override;
-    GPUObjectResult<IGPUBufferView> CreateBufferView(const BufferViewSpec &spec) override;
+    GPUObjectResult<IGPUBuffer> CreateBuffer(BufferUsage usage, uint64 size, uint64 count) override;
+    GPUObjectResult<IGPUBufferView> CreateBufferView(const IGPUBuffer &buffer, BufferViewType type) override;
 
-    GPUObjectResult<IGPUComputePipeline> CreateComputePipeline(const ComputePipelineSpec &spec) override;
+    GPUObjectResult<IGPUComputePipeline> CreateComputePipeline(const CompiledShader &shader) override;
 
     // -----------------------------------------------------------------------------------------------------------------
     // Native object accessors

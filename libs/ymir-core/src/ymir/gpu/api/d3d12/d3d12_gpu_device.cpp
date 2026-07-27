@@ -99,16 +99,16 @@ GPUObjectResult<IGPUTextureView> D3D12GPUDevice::CreateTextureView(const Texture
     return D3D12TextureView::Create(*m_descMgr, spec);
 }
 
-GPUObjectResult<IGPUBuffer> D3D12GPUDevice::CreateBuffer(const BufferSpec &spec) {
-    return D3D12Buffer::Create(*m_device, spec);
+GPUObjectResult<IGPUBuffer> D3D12GPUDevice::CreateBuffer(BufferUsage usage, uint64 size, uint64 count) {
+    return D3D12Buffer::Create(*m_device, usage, size, count);
 }
 
-GPUObjectResult<IGPUBufferView> D3D12GPUDevice::CreateBufferView(const BufferViewSpec &spec) {
-    return D3D12BufferView::Create(*m_descMgr, spec);
+GPUObjectResult<IGPUBufferView> D3D12GPUDevice::CreateBufferView(const IGPUBuffer &buffer, BufferViewType type) {
+    return D3D12BufferView::Create(*m_descMgr, buffer, type);
 }
 
-GPUObjectResult<IGPUComputePipeline> D3D12GPUDevice::CreateComputePipeline(const ComputePipelineSpec &spec) {
-    return D3D12ComputePipeline::Create(*m_device, *m_rootSig, spec);
+GPUObjectResult<IGPUComputePipeline> D3D12GPUDevice::CreateComputePipeline(const CompiledShader &shader) {
+    return D3D12ComputePipeline::Create(*m_device, *m_rootSig, shader);
 }
 
 } // namespace ymir::gpu

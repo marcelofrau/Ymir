@@ -9,9 +9,11 @@ namespace ymir::gpu {
 /// @brief Represents a GPU buffer.
 class IGPUBuffer : public GPUObject<IGPUBuffer> {
 protected:
-    IGPUBuffer(Backend backend, const BufferSpec &spec)
+    IGPUBuffer(Backend backend, BufferUsage usage, uint64 size, uint64 count)
         : GPUObject(backend)
-        , m_spec(spec) {}
+        , m_usage(usage)
+        , m_size(size)
+        , m_count(count) {}
 
 public:
     virtual ~IGPUBuffer() = default;
@@ -31,16 +33,36 @@ public:
 
     /// @brief Returns the address of the buffer.
     /// @return the address of the buffer
-    virtual uint64 GetAddress() = 0;
+    virtual uint64 GetAddress() const = 0;
 
-    /// @brief Retrieves the specifications used to create this buffer.
-    /// @return this buffer's specifications
-    const BufferSpec &GetSpec() const {
-        return m_spec;
+    /// @brief Retrieves the buffer's usage flags
+    /// @return the usage flags
+    BufferUsage GetUsage() const {
+        return m_usage;
+    }
+
+    /// @brief Retrieves the size (in bytes) of an individual element in the buffer.
+    /// @return the element size
+    uint64 GetElementSize() const {
+        return m_size;
+    }
+
+    /// @brief Retrieves the number of elements in the buffer.
+    /// @return the element count
+    uint64 GetElementCount() const {
+        return m_count;
+    }
+
+    /// @brief Retrieves the total size (in bytes) of the buffer
+    /// @return the buffer size
+    uint64 GetTotalSize() const {
+        return m_count * m_size;
     }
 
 private:
-    const BufferSpec &m_spec;
+    BufferUsage m_usage;
+    uint64 m_size;  // Element size (aka stride)
+    uint64 m_count; // Element count
 };
 
 } // namespace ymir::gpu
