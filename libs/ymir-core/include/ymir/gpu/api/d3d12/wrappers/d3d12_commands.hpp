@@ -70,7 +70,7 @@ public:
 };
 
 /// @brief Manages an `ID3D12GraphicsCommandList`.
-class D3D12GraphicsCommandList final : public D3D12ObjectWrapper<ID3D12GraphicsCommandList> {
+class D3D12GraphicsCommandList final : public D3D12ObjectWrapper<ID3D12GraphicsCommandList10> {
 public:
     /// @brief Creates a command list of the specified type using the given allocator.
     /// @param[in] device the device that will own the command list

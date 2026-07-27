@@ -22,9 +22,11 @@ public:
     void Begin() override;
     void End() override;
 
-    void Barrier(const BufferBarrierSpec &spec) override;
+    void Barrier(IGPUBuffer &buffer, const BufferBarrierSpec &spec) override;
     void Barrier(const MemoryBarrierSpec &spec) override;
     void Barrier(const BarrierGroupSpec &spec) override;
+
+    void CopyBufferToBuffer(IGPUBuffer &src, IGPUBuffer &dst) override;
 
     void SetComputePipeline(const IGPUComputePipeline &pipeline) override;
     void SetComputeConstants(const void *data, size_t size) override;

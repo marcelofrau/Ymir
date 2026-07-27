@@ -80,11 +80,11 @@ cbuffer Globals : register(b0) {
 void CSMain(uint3 id : SV_DispatchThreadID) {
     ByteAddressBuffer bufIn = ResourceDescriptorHeap[bufInIndex];
     RWByteAddressBuffer bufOut = ResourceDescriptorHeap[bufOutIndex];
-    const uint value = bufIn.Load(id.x * 4);
+    const uint value = bufIn.Load(id.x);
 #if SUBTRACT
-    bufOut.Store(id.x * 4, value - AMOUNT);
+    bufOut.Store(id.x, value - AMOUNT);
 #else
-    bufOut.Store(id.x * 4, value + AMOUNT);
+    bufOut.Store(id.x, value + AMOUNT);
 #endif
 }
 )";
@@ -117,9 +117,13 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     std::unique_ptr<IGPUComputePipeline> computePipeline = gpuDevice.CreateComputePipeline(shader).Value();
 
     // -----------------------------------------------------
-    // Upload buffer
+    // Begin command list
 
-    // TODO: barrier on bufUpload + bufIn
+    cmdList->Reset();
+    cmdList->Begin();
+
+    // -----------------------------------------------------
+    // Upload buffer
 
     void *bufUploadData = bufUpload->Map();
     if (bufUploadData != nullptr) {
@@ -131,7 +135,16 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         bufUpload->Unmap();
     }
 
-    // TODO: barrier on bufUpload + bufIn
+    cmdList->CopyBufferToBuffer(*bufUpload, *bufIn);
+
+    cmdList->Barrier(*bufIn, {.srcStage = PipelineStageMask::Copy,
+                              .dstStage = PipelineStageMask::ComputeShader,
+                              .srcAccess = ResourceAccessMask::None,
+                              .dstAccess = ResourceAccessMask::ShaderRead});
+    cmdList->Barrier(*bufOut, {.srcStage = PipelineStageMask::None,
+                               .dstStage = PipelineStageMask::ComputeShader,
+                               .srcAccess = ResourceAccessMask::None,
+                               .dstAccess = ResourceAccessMask::ShaderWrite});
 
     // -----------------------------------------------------
     // Dispatch compute shader
@@ -144,8 +157,6 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         bufOutUAV->GetBindlessIndex(),
     };
 
-    cmdList->Reset();
-    cmdList->Begin();
     cmdList->SetComputePipeline(*computePipeline);
     cmdList->SetComputeConstants(&constants, sizeof(constants));
     cmdList->Dispatch(1, 1, 1);
@@ -153,17 +164,26 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     // -----------------------------------------------------
     // Download buffer
 
-    // TODO: barrier on bufDownload + bufOut
+    cmdList->Barrier(*bufOut, {.srcStage = PipelineStageMask::ComputeShader,
+                               .dstStage = PipelineStageMask::Copy,
+                               .srcAccess = ResourceAccessMask::ShaderWrite,
+                               .dstAccess = ResourceAccessMask::TransferRead});
+    cmdList->Barrier(*bufDownload, {.srcStage = PipelineStageMask::None,
+                                    .dstStage = PipelineStageMask::Copy,
+                                    .srcAccess = ResourceAccessMask::None,
+                                    .dstAccess = ResourceAccessMask::TransferWrite});
 
-    // TODO: download
+    cmdList->CopyBufferToBuffer(*bufOut, *bufDownload);
 
-    // TODO: barrier on bufDownload + bufOut
-
-    cmdList->End();
+    cmdList->Barrier(*bufDownload, {.srcStage = PipelineStageMask::Copy,
+                                    .dstStage = PipelineStageMask::None,
+                                    .srcAccess = ResourceAccessMask::TransferWrite,
+                                    .dstAccess = ResourceAccessMask::None});
 
     // -----------------------------------------------------
     // Execute command list
 
+    cmdList->End();
     cmdQueue->CommitCommandList(*cmdList);
     cmdQueue->Wait();
 

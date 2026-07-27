@@ -1,5 +1,6 @@
 #include <ymir/gpu/api/d3d12/d3d12_gpu_command_list.hpp>
 
+#include <ymir/gpu/api/d3d12/d3d12_gpu_buffer.hpp>
 #include <ymir/gpu/api/d3d12/d3d12_gpu_command_queue.hpp>
 #include <ymir/gpu/api/d3d12/d3d12_gpu_compute_pipeline.hpp>
 #include <ymir/gpu/api/d3d12/d3d12_gpu_device.hpp>
@@ -44,8 +45,32 @@ void D3D12CommandList::End() {
     HRESULT hr = m_list->Close();
 }
 
-void D3D12CommandList::Barrier(const BufferBarrierSpec &spec) {
-    // TODO: implement
+void D3D12CommandList::Barrier(IGPUBuffer &buffer, const BufferBarrierSpec &spec) {
+    auto *dx12Buffer = buffer.As<D3D12Buffer>();
+    if (dx12Buffer == nullptr) {
+        // TODO: report error
+        return;
+    }
+
+    D3D12_BUFFER_BARRIER barrier{};
+    barrier.SyncBefore = util::ToD3D12Value(spec.srcStage);
+    barrier.SyncAfter = util::ToD3D12Value(spec.dstStage);
+    barrier.AccessBefore = util::ToD3D12Value(spec.srcAccess);
+    barrier.AccessAfter = util::ToD3D12Value(spec.dstAccess);
+    barrier.pResource = dx12Buffer->GetResource().GetPointer();
+    barrier.Offset = 0;
+    barrier.Size = buffer.GetTotalSize();
+
+    if (barrier.AccessBefore == barrier.AccessAfter) {
+        return;
+    }
+
+    D3D12_BARRIER_GROUP group{
+        .Type = D3D12_BARRIER_TYPE_BUFFER,
+        .NumBarriers = 1,
+        .pBufferBarriers = &barrier,
+    };
+    m_list->Barrier(1, &group);
 }
 
 void D3D12CommandList::Barrier(const MemoryBarrierSpec &spec) {
@@ -54,6 +79,18 @@ void D3D12CommandList::Barrier(const MemoryBarrierSpec &spec) {
 
 void D3D12CommandList::Barrier(const BarrierGroupSpec &spec) {
     // TODO: implement
+}
+
+void D3D12CommandList::CopyBufferToBuffer(IGPUBuffer &src, IGPUBuffer &dst) {
+    auto *dx12Src = src.As<D3D12Buffer>();
+    auto *dx12Dst = dst.As<D3D12Buffer>();
+    if (dx12Src == nullptr || dx12Dst == nullptr) {
+        // TODO: output error
+        return;
+    }
+
+    m_list->CopyBufferRegion(dx12Dst->GetResource().GetPointer(), 0, dx12Src->GetResource().GetPointer(), 0,
+                             src.GetTotalSize());
 }
 
 void D3D12CommandList::SetComputePipeline(const IGPUComputePipeline &pipeline) {

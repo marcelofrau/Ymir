@@ -3,6 +3,8 @@
 #include <ymir/gpu/api/d3d12/helpers/d3d12_descriptor_heap_allocator.hpp>
 #include <ymir/gpu/api/d3d12/wrappers/d3d12_descriptor_heap.hpp>
 
+#include <ymir/gpu/api/base/gpu_buffer.hpp>
+
 #include <ymir/gpu/common/gpu_defs.hpp>
 #include <ymir/gpu/common/gpu_result.hpp>
 

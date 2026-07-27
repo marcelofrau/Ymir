@@ -2,6 +2,8 @@
 
 #include "gpu_object.hpp"
 
+#include "gpu_buffer.hpp"
+
 #include <ymir/gpu/common/gpu_defs.hpp>
 
 namespace ymir::gpu {

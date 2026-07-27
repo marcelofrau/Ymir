@@ -2,9 +2,8 @@
 
 #include "gpu_object.hpp"
 
+#include "gpu_buffer.hpp"
 #include "gpu_compute_pipeline.hpp"
-
-#include <span>
 
 namespace ymir::gpu {
 
@@ -27,8 +26,9 @@ public:
     virtual void End() = 0;
 
     /// @brief Inserts a buffer barrier.
+    /// @param[in] buffer the buffer to put a barrier on
     /// @param[in] barrier barrier specifications
-    virtual void Barrier(const BufferBarrierSpec &spec) = 0;
+    virtual void Barrier(IGPUBuffer &buffer, const BufferBarrierSpec &spec) = 0;
 
     /// @brief Inserts a memory barrier.
     /// @param[in] barrier barrier specifications
@@ -37,6 +37,12 @@ public:
     /// @brief Inserts a barrier group.
     /// @param[in] barrier barrier group specifications
     virtual void Barrier(const BarrierGroupSpec &spec) = 0;
+
+    /// @brief Copies the entire source buffer into the destination buffer.
+    /// The source buffer must be in the
+    /// @param[in] src the source buffer
+    /// @param[in] dst the destination buffer
+    virtual void CopyBufferToBuffer(IGPUBuffer &src, IGPUBuffer &dst) = 0;
 
     /// @brief Uses the specified graphics pipeline.
     /// @param[in] pipeline the graphics pipeline to apply
