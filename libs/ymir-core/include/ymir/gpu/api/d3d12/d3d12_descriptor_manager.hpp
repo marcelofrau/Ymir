@@ -51,6 +51,22 @@ public:
 
     void Free(D3D12DescriptorAllocation alloc);
 
+    const d3d12::D3D12DescriptorHeap &GetResourceHeap() const {
+        return m_resourceHeap;
+    }
+
+    const d3d12::D3D12DescriptorHeap &GetSamplerHeap() const {
+        return m_samplerHeap;
+    }
+
+    const d3d12::D3D12DescriptorHeap &GetRTVHeap() const {
+        return m_rtvHeap;
+    }
+
+    const d3d12::D3D12DescriptorHeap &GetDSVHeap() const {
+        return m_dsvHeap;
+    }
+
 private:
     d3d12::D3D12Device &m_device;
 

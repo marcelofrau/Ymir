@@ -13,6 +13,11 @@ Ymir's graphics API supports the following APIs:
 
 <!-- TODO: describe API usage, starting with physical device enumeration and IGPUDevice instantiation -->
 
+## Shaders
+
+<!-- TODO: describe shader usage -->
+<!-- TODO: bindless resources -->
+
 ## Accessing raw graphics API objects
 
 @warning Mixing managed and raw graphics APIs requires extra care to ensure proper synchronization between the two

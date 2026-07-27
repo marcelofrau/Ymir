@@ -2,6 +2,10 @@
 
 #include "gpu_object.hpp"
 
+#include "gpu_compute_pipeline.hpp"
+
+#include <span>
+
 namespace ymir::gpu {
 
 /// @brief Represents a GPU command list.
@@ -21,6 +25,32 @@ public:
 
     /// @brief Ends the command list.
     virtual void End() = 0;
+
+    /// @brief Inserts a buffer barrier.
+    /// @param[in] barrier barrier specifications
+    virtual void Barrier(const BufferBarrierSpec &spec) = 0;
+
+    /// @brief Inserts a memory barrier.
+    /// @param[in] barrier barrier specifications
+    virtual void Barrier(const MemoryBarrierSpec &spec) = 0;
+
+    /// @brief Inserts a barrier group.
+    /// @param[in] barrier barrier group specifications
+    virtual void Barrier(const BarrierGroupSpec &spec) = 0;
+
+    /// @brief Uses the specified graphics pipeline.
+    /// @param[in] pipeline the graphics pipeline to apply
+    /// @param[in,opt] constData constant buffer data
+    // TODO: virtual void SetGraphicsPipeline(const IGPUGraphicsPipeline &pipeline,
+    //                                  std::span<const std::byte> constData = {}) = 0;
+
+    /// @brief Uses the specified compute pipeline.
+    /// @param[in] pipeline the compute pipeline to apply
+    virtual void SetComputePipeline(const IGPUComputePipeline &pipeline) = 0;
+
+    /// @brief Sets compute constants. A compute pipeline must be set prior to this.
+    /// @param[in] constData constant buffer data
+    virtual void SetComputeConstants(std::span<const std::byte> constData) = 0;
 
     // TODO: add whatever is needed on demand
 };

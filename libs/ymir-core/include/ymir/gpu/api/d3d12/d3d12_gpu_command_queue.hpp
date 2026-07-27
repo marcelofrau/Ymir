@@ -9,16 +9,18 @@
 
 namespace ymir::gpu {
 
+class D3D12GPUDevice;
+
 class D3D12CommandQueue final : public IGPUCommandQueue {
 public:
     static constexpr Backend kBackend = Backend::Direct3D12;
 
-    D3D12CommandQueue(d3d12::D3D12Device &device, d3d12::D3D12CommandQueue &&queue, d3d12::D3D12Fence &&fence,
+    D3D12CommandQueue(D3D12GPUDevice &device, d3d12::D3D12CommandQueue &&queue, d3d12::D3D12Fence &&fence,
                       CommandQueueType type);
 
     void SetName(std::string_view name) override;
 
-    static GPUObjectResult<IGPUCommandQueue> Create(d3d12::D3D12Device &device, CommandQueueType type,
+    static GPUObjectResult<IGPUCommandQueue> Create(D3D12GPUDevice &device, CommandQueueType type,
                                                     const util::PropertyBag *props);
 
     GPUObjectResult<IGPUCommandList> CreateCommandList(const util::PropertyBag *props = nullptr) override;
@@ -33,8 +35,16 @@ public:
         return m_queue;
     }
 
+    D3D12GPUDevice &GetDevice() {
+        return m_device;
+    }
+
+    const D3D12GPUDevice &GetDevice() const {
+        return m_device;
+    }
+
 private:
-    d3d12::D3D12Device &m_device;
+    D3D12GPUDevice &m_device;
     d3d12::D3D12CommandQueue m_queue;
     d3d12::D3D12Fence m_fence;
     D3D12_COMMAND_LIST_TYPE m_d3d12Type;

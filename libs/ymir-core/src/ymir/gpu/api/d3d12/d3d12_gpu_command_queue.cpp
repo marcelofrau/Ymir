@@ -1,13 +1,14 @@
 #include <ymir/gpu/api/d3d12/d3d12_gpu_command_queue.hpp>
 
 #include <ymir/gpu/api/d3d12/d3d12_gpu_command_list.hpp>
+#include <ymir/gpu/api/d3d12/d3d12_gpu_device.hpp>
 #include <ymir/gpu/api/d3d12/d3d12_utils.hpp>
 
 #include <fmt/format.h>
 
 namespace ymir::gpu {
 
-D3D12CommandQueue::D3D12CommandQueue(d3d12::D3D12Device &device, d3d12::D3D12CommandQueue &&queue,
+D3D12CommandQueue::D3D12CommandQueue(D3D12GPUDevice &device, d3d12::D3D12CommandQueue &&queue,
                                      d3d12::D3D12Fence &&fence, CommandQueueType type)
     : IGPUCommandQueue(kBackend, type)
     , m_device(device)
@@ -20,7 +21,7 @@ void D3D12CommandQueue::SetName(std::string_view name) {
     m_fence->SetName(util::StringToWString(fmt::format("Fence for {}", name)).c_str());
 }
 
-GPUObjectResult<IGPUCommandQueue> D3D12CommandQueue::Create(d3d12::D3D12Device &device, CommandQueueType type,
+GPUObjectResult<IGPUCommandQueue> D3D12CommandQueue::Create(D3D12GPUDevice &device, CommandQueueType type,
                                                             const util::PropertyBag *props) {
     d3d12::D3D12CommandQueue commandQueue{};
 
@@ -28,7 +29,7 @@ GPUObjectResult<IGPUCommandQueue> D3D12CommandQueue::Create(d3d12::D3D12Device &
     const auto nodeMask = util::PropertyBag::NullSafeGetOrDefault<props::D3D12NodeMaskKey>(props);
     const auto flags = util::PropertyBag::NullSafeGetOrDefault<props::D3D12CommandQueueFlagsKey>(props);
 
-    HRESULT hr = commandQueue.Create(device, dx12type, nodeMask, flags);
+    HRESULT hr = commandQueue.Create(device.GetD3D12Device(), dx12type, nodeMask, flags);
     if (FAILED(hr)) {
         // TODO: get human-readable error message from HRESULT
         // TODO: get debug messages if available
@@ -36,7 +37,7 @@ GPUObjectResult<IGPUCommandQueue> D3D12CommandQueue::Create(d3d12::D3D12Device &
     }
 
     d3d12::D3D12Fence fence{};
-    hr = fence.Create(device, 0, D3D12_FENCE_FLAG_NONE);
+    hr = fence.Create(device.GetD3D12Device(), 0, D3D12_FENCE_FLAG_NONE);
     if (FAILED(hr)) {
         // TODO: get human-readable error message from HRESULT
         // TODO: get debug messages if available
@@ -47,7 +48,7 @@ GPUObjectResult<IGPUCommandQueue> D3D12CommandQueue::Create(d3d12::D3D12Device &
 
 GPUObjectResult<IGPUCommandList> D3D12CommandQueue::CreateCommandList(const util::PropertyBag *props) {
     d3d12::D3D12CommandAllocator allocator{};
-    HRESULT hr = allocator.Create(m_device, m_d3d12Type);
+    HRESULT hr = allocator.Create(m_device.GetD3D12Device(), m_d3d12Type);
     if (FAILED(hr)) {
         return GPUOperationError{fmt::format("Failed to create command allocator: error code {:X}", hr)};
     }
@@ -56,7 +57,7 @@ GPUObjectResult<IGPUCommandList> D3D12CommandQueue::CreateCommandList(const util
     const auto nodeMask = util::PropertyBag::NullSafeGetOrDefault<props::D3D12NodeMaskKey>(props);
 
     d3d12::D3D12GraphicsCommandList commandList{};
-    hr = commandList.Create(m_device, allocator, m_d3d12Type, nullptr, nodeMask);
+    hr = commandList.Create(m_device.GetD3D12Device(), allocator, m_d3d12Type, nullptr, nodeMask);
     if (FAILED(hr)) {
         return GPUOperationError{fmt::format("Failed to create command list: error code {:X}", hr)};
     }

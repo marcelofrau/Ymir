@@ -60,6 +60,10 @@ public:
         return *m_rootSig;
     }
 
+    const D3D12DescriptorManager &GetDescriptorManager() const {
+        return *m_descMgr;
+    }
+
 private:
     std::unique_ptr<d3d12::D3D12Device> m_device;
     std::unique_ptr<d3d12::D3D12RootSignature> m_rootSig;

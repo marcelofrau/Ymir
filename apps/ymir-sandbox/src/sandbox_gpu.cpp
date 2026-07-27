@@ -438,6 +438,15 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         fmt::println("D3D12 compute pipeline state: {}", (void *)dx12Pipeline->GetPipelineState().GetPointer());
     }
 
+    cmdList->Reset();
+    cmdList->Begin();
+    cmdList->SetComputePipeline(*computePipeline);
+    // TODO: cmdList->SetComputeConstants(...);
+    // TODO: cmdList->Dispatch(...);
+    cmdList->End();
+    cmdQueue->CommitCommandList(*cmdList);
+    cmdQueue->Wait();
+
     SDL_Window *window = SDL_CreateWindow("Sandbox", 640, 480, 0);
     SDL_PropertiesID windowProps = SDL_GetWindowProperties(window);
     const auto hwnd = (HWND)SDL_GetPointerProperty(windowProps, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);

@@ -14,6 +14,9 @@
 
 namespace ymir::gpu {
 
+class IGPUTexture;
+class IGPUBuffer;
+
 enum class CommandQueueType { Graphics, Compute, Copy, VideoEncode, VideoDecode };
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -96,8 +99,6 @@ struct TextureSpec {
     uint32 mipLevels = 1;
 };
 
-class IGPUTexture;
-
 enum class Texture2DViewMode { Normal, Multisampled, Cube };
 
 struct TextureViewSpec {
@@ -135,8 +136,6 @@ struct BufferSpec {
 };
 
 enum class BufferViewType { None, Constant, Structured, Storage };
-
-class IGPUBuffer;
 
 struct BufferViewSpec {
     IGPUBuffer *buffer = nullptr;               // Must not be nullptr
@@ -220,7 +219,81 @@ struct ComputePipelineSpec {
     CompiledShader *shader = nullptr; // Required, must be a compute shader
 };
 
+// ---------------------------------------------------------------------------------------------------------------------
+
+enum class PipelineStageMask : uint32 {
+    None = 0u,
+
+    TopOfPipe = 1u << 0u,
+    DrawIndirect = 1u << 1u,
+    VertexInput = 1u << 2u,
+    IndexInput = 1u << 3u,
+    VertexShader = 1u << 4u,
+    HullShader = 1u << 5u,
+    DomainShader = 1u << 6u,
+    GeometryShader = 1u << 7u,
+    PixelShader = 1u << 8u,
+    ComputeShader = 1u << 9u,
+    RenderTargetOutput = 1u << 10u,
+    Resolve = 1u << 11u,
+    Copy = 1u << 12u,
+    BottomOfPipe = 1u << 13u,
+
+    // TODO: raytracing stuff
+
+    AllGraphics = 1u << 30u,
+    AllCommands = 1u << 31u,
+};
+
+enum class ResourceAccessMask : uint32 {
+    None = 0u,
+
+    IndirectCommandRead = 1u << 0u,
+    VertexBufferRead = 1u << 1u,
+    IndexBufferRead = 1u << 2u,
+    ConstantBufferRead = 1u << 3u,
+    ShaderRead = 1u << 4u,
+    ShaderWrite = 1u << 5u,
+    RenderTargetRead = 1u << 6u,
+    RenderTargetWrite = 1u << 7u,
+    DepthStencilRead = 1u << 8u,
+    DepthStencilWrite = 1u << 9u,
+    TransferRead = 1u << 10u,
+    TransferWrite = 1u << 11u,
+    HostRead = 1u << 12u,
+    HostWrite = 1u << 13u,
+    MemoryRead = 1u << 14u,
+    MemoryWrite = 1u << 15u,
+
+    // TODO: raytracing stuff
+};
+
+// TODO: texture barrier
+
+struct BufferBarrierSpec {
+    PipelineStageMask srcStage = PipelineStageMask::None;
+    PipelineStageMask dstStage = PipelineStageMask::None;
+    ResourceAccessMask srcAccess = ResourceAccessMask::None;
+    ResourceAccessMask dstAccess = ResourceAccessMask::None;
+    IGPUBuffer *buffer = nullptr;
+};
+
+struct MemoryBarrierSpec {
+    PipelineStageMask srcStage = PipelineStageMask::None;
+    PipelineStageMask dstStage = PipelineStageMask::None;
+    ResourceAccessMask srcAccess = ResourceAccessMask::None;
+    ResourceAccessMask dstAccess = ResourceAccessMask::None;
+};
+
+struct BarrierGroupSpec {
+    // TODO: texture barriers
+    std::vector<BufferBarrierSpec> bufferBarriers;
+    std::vector<MemoryBarrierSpec> memoryBarriers;
+};
+
 } // namespace ymir::gpu
 
 ENABLE_BITMASK_OPERATORS(ymir::gpu::TextureUsage);
 ENABLE_BITMASK_OPERATORS(ymir::gpu::BufferUsage);
+ENABLE_BITMASK_OPERATORS(ymir::gpu::PipelineStageMask);
+ENABLE_BITMASK_OPERATORS(ymir::gpu::ResourceAccessMask);

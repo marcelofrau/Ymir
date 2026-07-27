@@ -82,7 +82,7 @@ void D3D12GPUDevice::SetName(std::string_view name) {
 
 GPUObjectResult<IGPUCommandQueue> D3D12GPUDevice::CreateCommandQueue(CommandQueueType type,
                                                                      const util::PropertyBag *props) {
-    return D3D12CommandQueue::Create(*m_device, type, props);
+    return D3D12CommandQueue::Create(*this, type, props);
 }
 
 GPUObjectResult<IGPUSurface> D3D12GPUDevice::CreateSurface(const WindowParams &windowParams,
