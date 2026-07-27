@@ -12,6 +12,8 @@ namespace ymir::gpu {
 struct D3D12GPUDeviceSpec {
     bool debug = false;
 
+    uint32 num32BitConstants = 64;
+
     struct HeapsSpec {
         uint32 maxResources = 512 * 1024;
         uint32 maxSamplers = 2048;

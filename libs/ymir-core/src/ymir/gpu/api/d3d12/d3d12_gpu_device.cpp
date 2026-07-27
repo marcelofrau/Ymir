@@ -61,14 +61,10 @@ GPUObjectResult<IGPUDevice> D3D12GPUDevice::Create(const D3D12GPUDeviceSpec &spe
         return GPUOperationError{"Could not allocate D3D12RootSignature"};
     }
     auto builder = rootSig->Builder();
-    builder.AddDescriptorTable().AddSRVs(1, 0);
-    builder.AddDescriptorTable().AddUAVs(1, 0);
-    builder.Flags(D3D12_ROOT_SIGNATURE_FLAG_DENY_VERTEX_SHADER_ROOT_ACCESS |
-                  D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
-                  D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
-                  D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
-                  D3D12_ROOT_SIGNATURE_FLAG_DENY_AMPLIFICATION_SHADER_ROOT_ACCESS |
-                  D3D12_ROOT_SIGNATURE_FLAG_DENY_MESH_SHADER_ROOT_ACCESS);
+    builder.Add32BitConstants(0, spec.num32BitConstants);
+    builder.Flags(D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
+                  D3D12_ROOT_SIGNATURE_FLAG_SAMPLER_HEAP_DIRECTLY_INDEXED |
+                  D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED);
     hr = builder.Build(*device);
     if (FAILED(hr)) {
         // TODO: get human-readable error message from HRESULT

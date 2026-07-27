@@ -19,9 +19,9 @@ public:
 
     void SetName(std::string_view name) override;
 
-    /// @brief Retrieves the index of this view's descriptor in the heap.
-    /// @return the view's descriptor position in the heap
-    UINT GetIndex() const {
+    /// @brief Retrieves the index of this view's descriptor in the heap (the bindless resource index).
+    /// @return the bindless resource index
+    UINT GetBindlessIndex() const {
         return m_alloc.index;
     }
 

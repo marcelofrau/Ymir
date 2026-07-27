@@ -33,6 +33,7 @@ static int runYmirGPUSandboxD3D12() {
     GPUDeviceManager gpuDeviceMgr{};
     auto result = gpuDeviceMgr.Create(D3D12GPUDeviceSpec{
         .debug = true,
+        .num32BitConstants = 2,
         .heaps =
             {
                 .maxResources = 1024,
@@ -344,15 +345,19 @@ static int runYmirGPUSandboxD3D12() {
     // TODO: try loading and validating SPIR-V shader
 
     static constexpr const char *kShaderCode = R"(
-ByteAddressBuffer bufIn : register(t0);
-RWByteAddressBuffer bufOut : register(u0);
+cbuffer Globals : register(b0) {
+    uint bufInIndex;
+    uint bufOutIndex;
+}
 
 #ifndef AMOUNT
 #define AMOUNT 1
 #endif
 
-[numthreads(1, 1, 1)]
+[numthreads(64, 1, 1)]
 void CSMain(uint3 id : SV_DispatchThreadID) {
+    ByteAddressBuffer bufIn = ResourceDescriptorHeap[bufInIndex];
+    RWByteAddressBuffer bufOut = ResourceDescriptorHeap[bufOutIndex];
     const uint value = bufIn.Load(id.x * 4);
 #if SUBTRACT
     bufOut.Store(id.x * 4, value - AMOUNT);
@@ -393,6 +398,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     CompiledShader &compiledShaderDXIL = compileShaderDXILResult.Value();
     fmt::println("Shader compiled from HLSL source to DXIL successfully, {} bytes", compiledShaderDXIL.bytecode.size());
 
+    #if 0
     const ShaderCompileSpec shaderSourceHLSLtoSPIRVSpec{
         .stage = ShaderStage::Compute,
         .language = ShaderLanguage::HLSL,
@@ -417,6 +423,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     CompiledShader &compiledShaderSPIRV = compileShaderSPIRVResult.Value();
     fmt::println("Shader compiled from HLSL source to SPIR-V successfully, {} bytes",
                  compiledShaderSPIRV.bytecode.size());
+    #endif
 
     const ComputePipelineSpec computePipelineSpec{
         .shader = &compiledShaderDXIL,
