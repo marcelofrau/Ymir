@@ -32,7 +32,6 @@ void D3D12CommandList::Reset() {
 }
 
 void D3D12CommandList::Begin() {
-    // TODO: heaps
     ID3D12DescriptorHeap *const heaps[] = {
         m_device.GetDescriptorManager().GetResourceHeap().GetPointer(),
         m_device.GetDescriptorManager().GetSamplerHeap().GetPointer(),
@@ -148,7 +147,7 @@ void D3D12CommandList::CopyBufferToBuffer(IGPUBuffer &src, IGPUBuffer &dst) {
     auto *dx12Src = src.As<D3D12Buffer>();
     auto *dx12Dst = dst.As<D3D12Buffer>();
     if (dx12Src == nullptr || dx12Dst == nullptr) {
-        // TODO: output error
+        // TODO: report error
         return;
     }
 
@@ -161,7 +160,7 @@ void D3D12CommandList::SetComputePipeline(const IGPUComputePipeline &pipeline) {
         m_list->SetPipelineState(dx12Pipeline->GetPipelineState().GetPointer());
         m_list->SetComputeRootSignature(m_device.GetRootSignature().GetPointer());
     }
-    // TODO: return error
+    // TODO: report error
 }
 
 void D3D12CommandList::SetComputeConstants(const void *data, size_t size) {

@@ -1,7 +1,5 @@
 #include <ymir/gpu/api/d3d12/d3d12_gpu_buffer_view.hpp>
 
-#include <ymir/util/unreachable.hpp>
-
 #include <fmt/format.h>
 
 namespace ymir::gpu {
