@@ -55,10 +55,10 @@ int runYmirGPUComputeSandbox() {
     std::unique_ptr<IGPUCommandQueue> cmdQueue = gpuDevice.CreateCommandQueue(CommandQueueType::Compute).Value();
     std::unique_ptr<IGPUCommandList> cmdList = cmdQueue->CreateCommandList().Value();
 
-    std::unique_ptr<IGPUBuffer> bufIn = gpuDevice.CreateBuffer(BufferUsage::ShaderRead, 64, 1).Value();
-    std::unique_ptr<IGPUBuffer> bufOut = gpuDevice.CreateBuffer(BufferUsage::ShaderWrite, 64, 1).Value();
-    std::unique_ptr<IGPUBuffer> bufUpload = gpuDevice.CreateBuffer(BufferUsage::Upload, 64, 1).Value();
-    std::unique_ptr<IGPUBuffer> bufDownload = gpuDevice.CreateBuffer(BufferUsage::Download, 64, 1).Value();
+    std::unique_ptr<IGPUBuffer> bufIn = gpuDevice.CreateBuffer(BufferUsage::ShaderRead, sizeof(uint32), 16).Value();
+    std::unique_ptr<IGPUBuffer> bufOut = gpuDevice.CreateBuffer(BufferUsage::ShaderWrite, sizeof(uint32), 16).Value();
+    std::unique_ptr<IGPUBuffer> bufUpload = gpuDevice.CreateBuffer(BufferUsage::Upload, sizeof(uint32), 16).Value();
+    std::unique_ptr<IGPUBuffer> bufDownload = gpuDevice.CreateBuffer(BufferUsage::Download, sizeof(uint32), 16).Value();
 
     std::unique_ptr<IGPUBufferView> bufInSRV = gpuDevice.CreateBufferView(*bufIn, BufferViewType::Structured).Value();
     std::unique_ptr<IGPUBufferView> bufOutUAV = gpuDevice.CreateBufferView(*bufOut, BufferViewType::Storage).Value();
@@ -76,16 +76,34 @@ cbuffer Globals : register(b0) {
 #define AMOUNT 0x01010101
 #endif
 
+uint4 UnpackBytes(uint value) {
+    return uint4(
+        (value >> 0) & 0xFF,
+        (value >> 8) & 0xFF,
+        (value >> 16) & 0xFF,
+        (value >> 24) & 0xFF
+    );
+}
+
+uint PackBytes(uint4 value) {
+    return ((value.x & 0xFF) << 0) |
+           ((value.y & 0xFF) << 8) |
+           ((value.z & 0xFF) << 16) |
+           ((value.w & 0xFF) << 24);
+}
+
 [numthreads(16, 1, 1)]
 void CSMain(uint3 id : SV_DispatchThreadID) {
     ByteAddressBuffer bufIn = ResourceDescriptorHeap[bufInIndex];
     RWByteAddressBuffer bufOut = ResourceDescriptorHeap[bufOutIndex];
-    const uint value = bufIn.Load(id.x);
+    const uint value = bufIn.Load(id.x * 4);
+    uint4 value8 = UnpackBytes(value);
 #if SUBTRACT
-    bufOut.Store(id.x * 4, value - AMOUNT);
+    value8 = value8 - AMOUNT;
 #else
-    bufOut.Store(id.x * 4, value + AMOUNT);
+    value8 = value8 + AMOUNT;
 #endif
+    bufOut.Store(id.x * 4, PackBytes(value8));
 }
 )";
 
@@ -106,8 +124,8 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
                                               .entrypoint = "CSMain",
                                               .macros =
                                                   {
-                                                      {"AMOUNT", "0x00000080"},
-                                                      //{"SUBTRACT"},
+                                                      {"AMOUNT", "1"},
+                                                      {"SUBTRACT"},
                                                   },
                                               .debug = kShaderDebug,
                                               .optimize = kShaderOptimize,

@@ -61,7 +61,7 @@ public:
 
     /// @brief Creates a buffer.
     /// @param[in] usage the buffer's usage mask
-    /// @param[in] size the size of a single element in the buffer
+    /// @param[in] size the size of a single element in the buffer, must conform to alignment rules depending on usage
     /// @param[in] count the number of elements in the buffer
     /// @return a pointer to the buffer or an error
     virtual GPUObjectResult<IGPUBuffer> CreateBuffer(BufferUsage usage, uint64 size, uint64 count) = 0;
