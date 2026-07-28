@@ -12,3 +12,4 @@ void runD3D12Sandbox();
 int runVulkanSandbox();
 int runYmirGPUSandbox();
 int runYmirGPUComputeSandbox();
+int runYmirGPUGraphicsSandbox();

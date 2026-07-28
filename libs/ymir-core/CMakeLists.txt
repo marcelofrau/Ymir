@@ -389,6 +389,7 @@ if (WIN32)
         include/ymir/gpu/api/d3d12/d3d12_gpu_command_queue.hpp
         include/ymir/gpu/api/d3d12/d3d12_gpu_compute_pipeline.hpp
         include/ymir/gpu/api/d3d12/d3d12_gpu_device.hpp
+        include/ymir/gpu/api/d3d12/d3d12_gpu_graphics_pipeline.hpp
         include/ymir/gpu/api/d3d12/d3d12_gpu_surface.hpp
         include/ymir/gpu/api/d3d12/d3d12_gpu_texture.hpp
         include/ymir/gpu/api/d3d12/d3d12_gpu_texture_view.hpp
@@ -416,6 +417,7 @@ if (WIN32)
         src/ymir/gpu/api/d3d12/d3d12_gpu_command_queue.cpp
         src/ymir/gpu/api/d3d12/d3d12_gpu_compute_pipeline.cpp
         src/ymir/gpu/api/d3d12/d3d12_gpu_device.cpp
+        src/ymir/gpu/api/d3d12/d3d12_gpu_graphics_pipeline.cpp
         src/ymir/gpu/api/d3d12/d3d12_gpu_surface.cpp
         src/ymir/gpu/api/d3d12/d3d12_gpu_texture.cpp
         src/ymir/gpu/api/d3d12/d3d12_gpu_texture_view.cpp

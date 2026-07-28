@@ -5,6 +5,7 @@
 #include <ymir/gpu/api/d3d12/d3d12_gpu_buffer_view.hpp>
 #include <ymir/gpu/api/d3d12/d3d12_gpu_command_queue.hpp>
 #include <ymir/gpu/api/d3d12/d3d12_gpu_compute_pipeline.hpp>
+#include <ymir/gpu/api/d3d12/d3d12_gpu_graphics_pipeline.hpp>
 #include <ymir/gpu/api/d3d12/d3d12_gpu_surface.hpp>
 #include <ymir/gpu/api/d3d12/d3d12_gpu_texture.hpp>
 #include <ymir/gpu/api/d3d12/d3d12_gpu_texture_view.hpp>
@@ -109,8 +110,7 @@ GPUObjectResult<IGPUBufferView> D3D12GPUDevice::CreateBufferView(const IGPUBuffe
 }
 
 GPUObjectResult<IGPUGraphicsPipeline> D3D12GPUDevice::CreateGraphicsPipeline(const GraphicsPipelineSpec &spec) {
-    // return D3D12GraphicsPipeline::Create(*m_device, *m_rootSig, spec);
-    return GPUOperationError{"Unimplemented"};
+    return D3D12GraphicsPipeline::Create(*m_device, *m_rootSig, spec);
 }
 
 GPUObjectResult<IGPUComputePipeline> D3D12GPUDevice::CreateComputePipeline(const ComputeShader &shader) {
