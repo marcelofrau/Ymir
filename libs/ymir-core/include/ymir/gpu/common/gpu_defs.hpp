@@ -176,13 +176,22 @@ enum class ShaderStage {
     // RTCallable,
 };
 
+template <ShaderStage stage>
 struct CompiledShader {
-    ShaderStage stage;
+    static constexpr ShaderStage kStage = stage;
+
     ShaderLanguage language = ShaderLanguage::None;
     ShaderBytecodeFormat format = ShaderBytecodeFormat::None;
     std::vector<char> bytecode;
     std::string entrypoint;
 };
+
+using VertexShader = CompiledShader<ShaderStage::Vertex>;
+using HullShader = CompiledShader<ShaderStage::Hull>;
+using DomainShader = CompiledShader<ShaderStage::Domain>;
+using GeometryShader = CompiledShader<ShaderStage::Geometry>;
+using PixelShader = CompiledShader<ShaderStage::Pixel>;
+using ComputeShader = CompiledShader<ShaderStage::Compute>;
 
 /// @brief Shader macro specification.
 struct ShaderMacro {
@@ -194,8 +203,10 @@ struct ShaderMacro {
 /// You must specify a valid language and bytecode type combination:
 /// - HLSL -> DXIL or SPIRV
 /// - MSL -> MetalLib
+template <ShaderStage stage>
 struct ShaderCompileSpec {
-    ShaderStage stage;
+    static constexpr ShaderStage kStage = stage;
+
     ShaderLanguage language = ShaderLanguage::None;
     ShaderBytecodeFormat format = ShaderBytecodeFormat::None;
     std::string name;
@@ -206,6 +217,13 @@ struct ShaderCompileSpec {
     bool optimize = true;
 };
 
+using VertexShaderCompileSpec = ShaderCompileSpec<ShaderStage::Vertex>;
+using HullShaderCompileSpec = ShaderCompileSpec<ShaderStage::Hull>;
+using DomainShaderCompileSpec = ShaderCompileSpec<ShaderStage::Domain>;
+using GeometryShaderCompileSpec = ShaderCompileSpec<ShaderStage::Geometry>;
+using PixelShaderCompileSpec = ShaderCompileSpec<ShaderStage::Pixel>;
+using ComputeShaderCompileSpec = ShaderCompileSpec<ShaderStage::Compute>;
+
 // ---------------------------------------------------------------------------------------------------------------------
 
 enum class FillMode { Solid, Wireframe };
@@ -214,11 +232,11 @@ enum class PrimitiveTopology { Triangles, Lines, Points };
 
 struct GraphicsPipelineSpec {
     struct Shaders {
-        const CompiledShader *vertex = nullptr;   // Required
-        const CompiledShader *hull = nullptr;     // Optional
-        const CompiledShader *domain = nullptr;   // Optional
-        const CompiledShader *geometry = nullptr; // Optional
-        const CompiledShader *pixel = nullptr;    // Required
+        const VertexShader *vertex = nullptr;     // Required
+        const HullShader *hull = nullptr;         // Optional
+        const DomainShader *domain = nullptr;     // Optional
+        const GeometryShader *geometry = nullptr; // Optional
+        const PixelShader *pixel = nullptr;       // Required
     } shaders;
 
     FillMode fillMode = FillMode::Solid;

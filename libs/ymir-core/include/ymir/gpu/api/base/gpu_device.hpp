@@ -81,7 +81,7 @@ public:
     /// @brief Creates a compute pipeline.
     /// @param[in] shader a reference to the compute shader
     /// @return a pointer to the compute pipeline or an error
-    virtual GPUObjectResult<IGPUComputePipeline> CreateComputePipeline(const CompiledShader &shader) = 0;
+    virtual GPUObjectResult<IGPUComputePipeline> CreateComputePipeline(const ComputeShader &shader) = 0;
 
     // TODO: fences?
 };

@@ -24,7 +24,8 @@ static const wchar_t *GetShaderProfile(ShaderStage stage) {
     }
 }
 
-GPUValueResult<CompiledShader> CompileShader(const ShaderCompileSpec &spec) {
+template <ShaderStage stage>
+GPUValueResult<CompiledShader<stage>> DoCompileShader(const ShaderCompileSpec<stage> &spec) {
     // Validate preconditions
     if (spec.language != ShaderLanguage::HLSL) {
         return GPUOperationError{"Unsupported shader language provided to DXC compiler"};
@@ -32,7 +33,7 @@ GPUValueResult<CompiledShader> CompileShader(const ShaderCompileSpec &spec) {
     if (spec.format != ShaderBytecodeFormat::DXIL && spec.format != ShaderBytecodeFormat::SPIRV) {
         return GPUOperationError{"Unsupported shader bytecode format provided to DXC compiler"};
     }
-    const wchar_t *shaderProfile = GetShaderProfile(spec.stage);
+    const wchar_t *shaderProfile = GetShaderProfile(stage);
     if (shaderProfile == nullptr) {
         return GPUOperationError{"Invalid shader stage provided to DXC compiler"};
     }
@@ -158,8 +159,7 @@ GPUValueResult<CompiledShader> CompileShader(const ShaderCompileSpec &spec) {
     bytecode.resize(shaderBlob->GetBufferSize());
     std::copy_n(static_cast<char *>(shaderBlob->GetBufferPointer()), shaderBlob->GetBufferSize(), bytecode.begin());
 
-    return CompiledShader{
-        .stage = spec.stage,
+    return CompiledShader<stage>{
         .language = spec.language,
         .format = spec.format,
         .bytecode = std::move(bytecode),
@@ -167,7 +167,8 @@ GPUValueResult<CompiledShader> CompileShader(const ShaderCompileSpec &spec) {
     };
 }
 
-static std::optional<GPUOperationError> ValidateShaderDXC(CompiledShader &spec) {
+template <ShaderStage stage>
+static std::optional<GPUOperationError> ValidateShaderDXC(CompiledShader<stage> &spec) {
     HRESULT hr;
 
     // Create utils and validator objects
@@ -229,7 +230,8 @@ static std::optional<GPUOperationError> ValidateShaderDXC(CompiledShader &spec) 
     return std::nullopt;
 }
 
-static std::optional<GPUOperationError> ValidateShaderSPIRV(CompiledShader &spec) {
+template <ShaderStage stage>
+static std::optional<GPUOperationError> ValidateShaderSPIRV(CompiledShader<stage> &spec) {
     fmt::memory_buffer buf{};
     auto out = std::back_inserter(buf);
 
@@ -246,15 +248,68 @@ static std::optional<GPUOperationError> ValidateShaderSPIRV(CompiledShader &spec
     return GPUOperationError{fmt::format("SPIR-V shader validation error:\n{}", fmt::to_string(buf))};
 }
 
-std::optional<GPUOperationError> ValidateShader(CompiledShader &spec) {
+template <ShaderStage stage>
+std::optional<GPUOperationError> DoValidateShader(CompiledShader<stage> &spec) {
     if (spec.format == ShaderBytecodeFormat::DXIL) {
-        return ValidateShaderDXC(spec);
+        return ValidateShaderDXC<stage>(spec);
     }
     if (spec.format == ShaderBytecodeFormat::SPIRV) {
-        return ValidateShaderSPIRV(spec);
+        return ValidateShaderSPIRV<stage>(spec);
     }
 
     return GPUOperationError{"Unsupported shader bytecode format provided to DXC compiler"};
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+
+GPUValueResult<VertexShader> CompileShader(const VertexShaderCompileSpec &spec) {
+    return DoCompileShader(spec);
+}
+
+GPUValueResult<HullShader> CompileShader(const HullShaderCompileSpec &spec) {
+    return DoCompileShader(spec);
+}
+
+GPUValueResult<DomainShader> CompileShader(const DomainShaderCompileSpec &spec) {
+    return DoCompileShader(spec);
+}
+
+GPUValueResult<GeometryShader> CompileShader(const GeometryShaderCompileSpec &spec) {
+    return DoCompileShader(spec);
+}
+
+GPUValueResult<PixelShader> CompileShader(const PixelShaderCompileSpec &spec) {
+    return DoCompileShader(spec);
+}
+
+GPUValueResult<ComputeShader> CompileShader(const ComputeShaderCompileSpec &spec) {
+    return DoCompileShader(spec);
+}
+
+// -----------------------------------------------------------------------------
+
+std::optional<GPUOperationError> ValidateShader(VertexShader &shader) {
+    return DoValidateShader(shader);
+}
+
+std::optional<GPUOperationError> ValidateShader(HullShader &shader) {
+    return DoValidateShader(shader);
+}
+
+std::optional<GPUOperationError> ValidateShader(DomainShader &shader) {
+    return DoValidateShader(shader);
+}
+
+std::optional<GPUOperationError> ValidateShader(GeometryShader &shader) {
+    return DoValidateShader(shader);
+}
+
+std::optional<GPUOperationError> ValidateShader(PixelShader &shader) {
+    return DoValidateShader(shader);
+}
+
+std::optional<GPUOperationError> ValidateShader(ComputeShader &shader) {
+    return DoValidateShader(shader);
 }
 
 } // namespace ymir::gpu

@@ -40,7 +40,7 @@ public:
     GPUObjectResult<IGPUBufferView> CreateBufferView(const IGPUBuffer &buffer, BufferViewType type) override;
 
     GPUObjectResult<IGPUGraphicsPipeline> CreateGraphicsPipeline(const GraphicsPipelineSpec &spec) override;
-    GPUObjectResult<IGPUComputePipeline> CreateComputePipeline(const CompiledShader &shader) override;
+    GPUObjectResult<IGPUComputePipeline> CreateComputePipeline(const ComputeShader &shader) override;
 
     // -----------------------------------------------------------------------------------------------------------------
     // Native object accessors

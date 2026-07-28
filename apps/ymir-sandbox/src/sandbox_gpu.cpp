@@ -283,8 +283,7 @@ static int runYmirGPUSandboxD3D12() {
         downloadBuffer->Unmap();
     }
 
-    CompiledShader shader{
-        .stage = ShaderStage::Compute,
+    ComputeShader shader{
         .format = ShaderBytecodeFormat::DXIL,
         .entrypoint = "CSMain",
     };
@@ -335,8 +334,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     static constexpr bool kShaderOptimize = false;
     #endif
 
-    const ShaderCompileSpec shaderSourceHLSLtoDXILSpec{
-        .stage = ShaderStage::Compute,
+    const ComputeShaderCompileSpec shaderSourceHLSLtoDXILSpec{
         .language = ShaderLanguage::HLSL,
         .format = ShaderBytecodeFormat::DXIL,
         .name = "Test",

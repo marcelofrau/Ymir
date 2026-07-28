@@ -113,7 +113,7 @@ GPUObjectResult<IGPUGraphicsPipeline> D3D12GPUDevice::CreateGraphicsPipeline(con
     return GPUOperationError{"Unimplemented"};
 }
 
-GPUObjectResult<IGPUComputePipeline> D3D12GPUDevice::CreateComputePipeline(const CompiledShader &shader) {
+GPUObjectResult<IGPUComputePipeline> D3D12GPUDevice::CreateComputePipeline(const ComputeShader &shader) {
     return D3D12ComputePipeline::Create(*m_device, *m_rootSig, shader);
 }
 

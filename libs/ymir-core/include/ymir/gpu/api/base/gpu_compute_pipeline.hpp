@@ -9,19 +9,19 @@ namespace ymir::gpu {
 /// @brief Represents a GPU compute pipeline.
 class IGPUComputePipeline : public GPUObject<IGPUComputePipeline> {
 protected:
-    IGPUComputePipeline(Backend backend, const CompiledShader &shader)
+    IGPUComputePipeline(Backend backend, const ComputeShader &shader)
         : GPUObject(backend)
         , m_shader(shader) {}
 
 public:
     virtual ~IGPUComputePipeline() = default;
 
-    const CompiledShader &GetShader() const {
+    const ComputeShader &GetShader() const {
         return m_shader;
     }
 
 private:
-    const CompiledShader &m_shader;
+    const ComputeShader &m_shader;
 };
 
 } // namespace ymir::gpu

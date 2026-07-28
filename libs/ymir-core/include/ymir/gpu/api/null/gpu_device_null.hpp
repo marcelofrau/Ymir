@@ -42,7 +42,7 @@ public:
         return MakeUnsupportedOperationError();
     }
 
-    GPUObjectResult<IGPUComputePipeline> CreateComputePipeline(const CompiledShader &shader) override {
+    GPUObjectResult<IGPUComputePipeline> CreateComputePipeline(const ComputeShader &shader) override {
         return MakeUnsupportedOperationError();
     }
 

@@ -107,22 +107,21 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     static constexpr bool kShaderOptimize = false;
 #endif
 
-    CompiledShader shader = CompileShader({
-                                              .stage = ShaderStage::Compute,
-                                              .language = ShaderLanguage::HLSL,
-                                              .format = ShaderBytecodeFormat::DXIL,
-                                              .name = "Test",
-                                              .sourceCode = kShaderCode,
-                                              .entrypoint = "CSMain",
-                                              .macros =
-                                                  {
-                                                      {"AMOUNT", "1"},
-                                                      {"SUBTRACT"},
-                                                  },
-                                              .debug = kShaderDebug,
-                                              .optimize = kShaderOptimize,
-                                          })
-                                .Value();
+    ComputeShader shader = CompileShader(ComputeShaderCompileSpec{
+                                             .language = ShaderLanguage::HLSL,
+                                             .format = ShaderBytecodeFormat::DXIL,
+                                             .name = "Test",
+                                             .sourceCode = kShaderCode,
+                                             .entrypoint = "CSMain",
+                                             .macros =
+                                                 {
+                                                     {"AMOUNT", "1"},
+                                                     {"SUBTRACT"},
+                                                 },
+                                             .debug = kShaderDebug,
+                                             .optimize = kShaderOptimize,
+                                         })
+                               .Value();
 
     std::unique_ptr<IGPUComputePipeline> computePipeline = gpuDevice.CreateComputePipeline(shader).Value();
 

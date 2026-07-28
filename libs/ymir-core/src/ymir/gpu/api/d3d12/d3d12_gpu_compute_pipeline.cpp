@@ -6,16 +6,13 @@
 
 namespace ymir::gpu {
 
-D3D12ComputePipeline::D3D12ComputePipeline(d3d12::D3D12PipelineState &&pipelineState, const CompiledShader &shader)
+D3D12ComputePipeline::D3D12ComputePipeline(d3d12::D3D12PipelineState &&pipelineState, const ComputeShader &shader)
     : IGPUComputePipeline(kBackend, shader)
     , m_pipelineState(std::move(pipelineState)) {}
 
 GPUObjectResult<IGPUComputePipeline> D3D12ComputePipeline::Create(d3d12::D3D12Device &device,
                                                                   const d3d12::D3D12RootSignature &rootSig,
-                                                                  const CompiledShader &shader) {
-    if (shader.stage != ShaderStage::Compute) {
-        return GPUOperationError{"Invalid shader stage"};
-    }
+                                                                  const ComputeShader &shader) {
     if (shader.format != ShaderBytecodeFormat::DXIL) {
         return GPUOperationError{"Unsupported shader format"};
     }

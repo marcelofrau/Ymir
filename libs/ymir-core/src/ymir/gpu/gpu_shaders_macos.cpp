@@ -2,7 +2,8 @@
 
 namespace ymir::gpu {
 
-GPUValueResult<CompiledShader> CompileShader(const ShaderCompileSpec &spec) {
+template <ShaderStage stage>
+GPUValueResult<CompiledShader<stage>> DoCompileShader(const ShaderCompileSpec<stage> &spec) {
     if (spec.language != ShaderLanguage::MSL) {
         return GPUOperationError{"Unsupported shader language provided to Metal compiler"};
     }
@@ -15,7 +16,8 @@ GPUValueResult<CompiledShader> CompileShader(const ShaderCompileSpec &spec) {
     return GPUOperationError{"Metal shader compilation is unimplemented"};
 }
 
-std::optional<GPUOperationError> ValidateShader(CompiledShader &spec) {
+template <ShaderStage stage>
+std::optional<GPUOperationError> DoValidateShader(CompiledShader<stage> &spec) {
     if (spec.format != ShaderBytecodeFormat::MetalLib) {
         return GPUOperationError{"Unsupported shader bytecode format provided to Metal compiler"};
     }
@@ -23,6 +25,58 @@ std::optional<GPUOperationError> ValidateShader(CompiledShader &spec) {
     // TODO: validate bytecode
 
     return std::nullopt;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+
+GPUValueResult<VertexShader> CompileShader(const VertexShaderCompileSpec &spec) {
+    return DoCompileShader(spec);
+}
+
+GPUValueResult<HullShader> CompileShader(const HullShaderCompileSpec &spec) {
+    return DoCompileShader(spec);
+}
+
+GPUValueResult<DomainShader> CompileShader(const DomainShaderCompileSpec &spec) {
+    return DoCompileShader(spec);
+}
+
+GPUValueResult<GeometryShader> CompileShader(const GeometryShaderCompileSpec &spec) {
+    return DoCompileShader(spec);
+}
+
+GPUValueResult<PixelShader> CompileShader(const PixelShaderCompileSpec &spec) {
+    return DoCompileShader(spec);
+}
+
+GPUValueResult<ComputeShader> CompileShader(const ComputeShaderCompileSpec &spec) {
+    return DoCompileShader(spec);
+}
+
+// -----------------------------------------------------------------------------
+
+std::optional<GPUOperationError> ValidateShader(VertexShader &shader) {
+    return DoValidateShader(shader);
+}
+
+std::optional<GPUOperationError> ValidateShader(HullShader &shader) {
+    return DoValidateShader(shader);
+}
+
+std::optional<GPUOperationError> ValidateShader(DomainShader &shader) {
+    return DoValidateShader(shader);
+}
+
+std::optional<GPUOperationError> ValidateShader(GeometryShader &shader) {
+    return DoValidateShader(shader);
+}
+
+std::optional<GPUOperationError> ValidateShader(PixelShader &shader) {
+    return DoValidateShader(shader);
+}
+
+std::optional<GPUOperationError> ValidateShader(ComputeShader &shader) {
+    return DoValidateShader(shader);
 }
 
 } // namespace ymir::gpu
