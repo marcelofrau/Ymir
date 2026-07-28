@@ -45,26 +45,39 @@ void D3D12CommandList::End() {
     HRESULT hr = m_list->Close();
 }
 
-void D3D12CommandList::Barrier(const BufferBarrierSpec &spec) {
+static bool SetupBarrier(const BufferBarrierSpec &spec, D3D12_BUFFER_BARRIER &outBarrier) {
     if (spec.buffer == nullptr) {
         // TODO: report error
-        return;
+        return false;
     }
     auto *dx12Buffer = spec.buffer->As<D3D12Buffer>();
     if (dx12Buffer == nullptr) {
         // TODO: report error
+        return false;
+    }
+    outBarrier.SyncBefore = util::ToD3D12Value(spec.srcStage);
+    outBarrier.SyncAfter = util::ToD3D12Value(spec.dstStage);
+    outBarrier.AccessBefore = util::ToD3D12Value(spec.srcAccess);
+    outBarrier.AccessAfter = util::ToD3D12Value(spec.dstAccess);
+    outBarrier.pResource = dx12Buffer->GetResource().GetPointer();
+    outBarrier.Offset = 0;
+    outBarrier.Size = spec.buffer->GetTotalSize();
+    return true;
+}
+
+static void SetupBarrier(const MemoryBarrierSpec &spec, D3D12_GLOBAL_BARRIER &outBarrier) {
+    outBarrier.SyncBefore = util::ToD3D12Value(spec.srcStage);
+    outBarrier.SyncAfter = util::ToD3D12Value(spec.dstStage);
+    outBarrier.AccessBefore = util::ToD3D12Value(spec.srcAccess);
+    outBarrier.AccessAfter = util::ToD3D12Value(spec.dstAccess);
+}
+
+void D3D12CommandList::Barrier(const BufferBarrierSpec &spec) {
+    D3D12_BUFFER_BARRIER barrier{};
+    if (!SetupBarrier(spec, barrier)) {
+        // TODO: report error
         return;
     }
-
-    D3D12_BUFFER_BARRIER barrier{};
-    barrier.SyncBefore = util::ToD3D12Value(spec.srcStage);
-    barrier.SyncAfter = util::ToD3D12Value(spec.dstStage);
-    barrier.AccessBefore = util::ToD3D12Value(spec.srcAccess);
-    barrier.AccessAfter = util::ToD3D12Value(spec.dstAccess);
-    barrier.pResource = dx12Buffer->GetResource().GetPointer();
-    barrier.Offset = 0;
-    barrier.Size = spec.buffer->GetTotalSize();
-
     if (barrier.AccessBefore == barrier.AccessAfter) {
         return;
     }
@@ -78,11 +91,57 @@ void D3D12CommandList::Barrier(const BufferBarrierSpec &spec) {
 }
 
 void D3D12CommandList::Barrier(const MemoryBarrierSpec &spec) {
-    // TODO: implement
+    D3D12_GLOBAL_BARRIER barrier{};
+    SetupBarrier(spec, barrier);
+    if (barrier.AccessBefore == barrier.AccessAfter) {
+        return;
+    }
+
+    D3D12_BARRIER_GROUP group{
+        .Type = D3D12_BARRIER_TYPE_GLOBAL,
+        .NumBarriers = 1,
+        .pGlobalBarriers = &barrier,
+    };
+    m_list->Barrier(1, &group);
 }
 
 void D3D12CommandList::Barrier(const BarrierGroupSpec &spec) {
-    // TODO: implement
+    std::vector<D3D12_GLOBAL_BARRIER> globalBarriers{};
+    std::vector<D3D12_TEXTURE_BARRIER> textureBarriers{};
+    std::vector<D3D12_BUFFER_BARRIER> bufferBarriers{};
+    std::vector<D3D12_BARRIER_GROUP> groups{};
+
+    for (const MemoryBarrierSpec &barrier : spec.memoryBarriers) {
+        SetupBarrier(barrier, globalBarriers.emplace_back());
+    }
+    // TODO: implement texture barriers
+    for (const BufferBarrierSpec &barrier : spec.bufferBarriers) {
+        SetupBarrier(barrier, bufferBarriers.emplace_back());
+    }
+
+    if (!globalBarriers.empty()) {
+        D3D12_BARRIER_GROUP &group = groups.emplace_back();
+        group.Type = D3D12_BARRIER_TYPE_GLOBAL;
+        group.NumBarriers = globalBarriers.size();
+        group.pGlobalBarriers = globalBarriers.data();
+    }
+    if (!textureBarriers.empty()) {
+        D3D12_BARRIER_GROUP &group = groups.emplace_back();
+        group.Type = D3D12_BARRIER_TYPE_TEXTURE;
+        group.NumBarriers = textureBarriers.size();
+        group.pTextureBarriers = textureBarriers.data();
+    }
+
+    if (!bufferBarriers.empty()) {
+        D3D12_BARRIER_GROUP &group = groups.emplace_back();
+        group.Type = D3D12_BARRIER_TYPE_BUFFER;
+        group.NumBarriers = bufferBarriers.size();
+        group.pBufferBarriers = bufferBarriers.data();
+    }
+
+    if (!groups.empty()) {
+        m_list->Barrier(groups.size(), groups.data());
+    }
 }
 
 void D3D12CommandList::CopyBufferToBuffer(IGPUBuffer &src, IGPUBuffer &dst) {

@@ -28,15 +28,20 @@ GPUObjectResult<IGPUBuffer> D3D12Buffer::Create(d3d12::D3D12Device &device, Buff
                                      : readback ? D3D12_HEAP_TYPE_READBACK
                                                 : D3D12_HEAP_TYPE_DEFAULT;
 
+    const D3D12_RESOURCE_STATES initialState = upload     ? D3D12_RESOURCE_STATE_GENERIC_READ
+                                               : readback ? D3D12_RESOURCE_STATE_COPY_DEST
+                                                          : D3D12_RESOURCE_STATE_COMMON;
+
     d3d12::D3D12Resource resource{};
     auto builder = resource.BufferBuilder(count * size);
     builder.Flags(flags);
     builder.HeapType(heapType);
+    builder.InitialState(initialState);
     HRESULT hr = builder.BuildCommitted(device);
     if (FAILED(hr)) {
         return GPUOperationError{fmt::format("Failed to create D3D12 buffer: error code {:X}", hr)};
     }
-    return {std::make_unique<D3D12Buffer>(device, usage, count, size, std::move(resource))};
+    return {std::make_unique<D3D12Buffer>(device, usage, size, count, std::move(resource))};
 }
 
 void D3D12Buffer::SetName(std::string_view name) {

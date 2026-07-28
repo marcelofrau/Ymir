@@ -255,6 +255,13 @@ enum class ResourceAccessMask : uint32 {
     // TODO: raytracing stuff
 };
 
+struct MemoryBarrierSpec {
+    PipelineStageMask srcStage = PipelineStageMask::None;
+    PipelineStageMask dstStage = PipelineStageMask::None;
+    ResourceAccessMask srcAccess = ResourceAccessMask::None;
+    ResourceAccessMask dstAccess = ResourceAccessMask::None;
+};
+
 // TODO: texture barrier
 
 struct BufferBarrierSpec {
@@ -265,17 +272,10 @@ struct BufferBarrierSpec {
     ResourceAccessMask dstAccess = ResourceAccessMask::None;
 };
 
-struct MemoryBarrierSpec {
-    PipelineStageMask srcStage = PipelineStageMask::None;
-    PipelineStageMask dstStage = PipelineStageMask::None;
-    ResourceAccessMask srcAccess = ResourceAccessMask::None;
-    ResourceAccessMask dstAccess = ResourceAccessMask::None;
-};
-
 struct BarrierGroupSpec {
+    std::vector<MemoryBarrierSpec> memoryBarriers;
     // TODO: texture barriers
     std::vector<BufferBarrierSpec> bufferBarriers;
-    std::vector<MemoryBarrierSpec> memoryBarriers;
 };
 
 } // namespace ymir::gpu

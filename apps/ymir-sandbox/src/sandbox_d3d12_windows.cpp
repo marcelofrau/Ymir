@@ -742,9 +742,10 @@ static void runCompute() {
 #ifdef BINDLESS
         builder.Flags(D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED);
         builder.Add32BitConstants(0, 2);
-#endif
+#else
         builder.AddDescriptorTable().AddSRVs(1, 0);
         builder.AddDescriptorTable().AddUAVs(1, 0);
+#endif
         if (HRESULT hr = builder.Build(device); FAILED(hr)) {
             SDL_Log("Failed to create root signature: 0x%08lX", hr);
             auto msg = stuff.rootSig.GetSerializationError();
@@ -929,6 +930,7 @@ static void runCompute() {
         stuff.commandList->CopyResource(stuff.bufDownload.GetPointer(), stuff.bufOut.GetPointer());
 
 #else
+
         D3D12_RESOURCE_BARRIER barrier = {
             .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
             .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,

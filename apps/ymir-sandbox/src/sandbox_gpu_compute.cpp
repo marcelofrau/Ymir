@@ -52,7 +52,7 @@ int runYmirGPUComputeSandbox() {
     // -----------------------------------------------------
     // Create resources
 
-    std::unique_ptr<IGPUCommandQueue> cmdQueue = gpuDevice.CreateCommandQueue(CommandQueueType::Graphics).Value();
+    std::unique_ptr<IGPUCommandQueue> cmdQueue = gpuDevice.CreateCommandQueue(CommandQueueType::Compute).Value();
     std::unique_ptr<IGPUCommandList> cmdList = cmdQueue->CreateCommandList().Value();
 
     std::unique_ptr<IGPUBuffer> bufIn = gpuDevice.CreateBuffer(BufferUsage::ShaderRead, 64, 1).Value();
@@ -82,9 +82,9 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     RWByteAddressBuffer bufOut = ResourceDescriptorHeap[bufOutIndex];
     const uint value = bufIn.Load(id.x);
 #if SUBTRACT
-    bufOut.Store(id.x, value - AMOUNT);
+    bufOut.Store(id.x * 4, value - AMOUNT);
 #else
-    bufOut.Store(id.x, value + AMOUNT);
+    bufOut.Store(id.x * 4, value + AMOUNT);
 #endif
 }
 )";
@@ -106,8 +106,8 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
                                               .entrypoint = "CSMain",
                                               .macros =
                                                   {
-                                                      {"AMOUNT", "0x02020202"},
-                                                      {"SUBTRACT"},
+                                                      {"AMOUNT", "0x00000080"},
+                                                      //{"SUBTRACT"},
                                                   },
                                               .debug = kShaderDebug,
                                               .optimize = kShaderOptimize,
