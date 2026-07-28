@@ -39,6 +39,7 @@ public:
     GPUObjectResult<IGPUBuffer> CreateBuffer(BufferUsage usage, uint64 size, uint64 count) override;
     GPUObjectResult<IGPUBufferView> CreateBufferView(const IGPUBuffer &buffer, BufferViewType type) override;
 
+    GPUObjectResult<IGPUGraphicsPipeline> CreateGraphicsPipeline(const GraphicsPipelineSpec &spec) override;
     GPUObjectResult<IGPUComputePipeline> CreateComputePipeline(const CompiledShader &shader) override;
 
     // -----------------------------------------------------------------------------------------------------------------

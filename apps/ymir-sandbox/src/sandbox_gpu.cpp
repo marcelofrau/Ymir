@@ -33,20 +33,12 @@ static int runYmirGPUSandboxD3D12() {
     GPUDeviceManager gpuDeviceMgr{};
     auto result = gpuDeviceMgr.Create(D3D12GPUDeviceSpec{
         .debug = true,
-        .num32BitConstants = 2,
-        .heaps =
-            {
-                .maxResources = 1024,
-                .maxSamplers = 64,
-                .maxRTVs = 16,
-                .maxDSVs = 16,
-
-                .resourceHeapName = "Ymir resource heap",
-                .samplerHeapName = "Ymir sampler heap",
-                .rtvHeapName = "Ymir RTV heap",
-                .dsvHeapName = "Ymir DSV heap",
-            },
         .featureLevel = D3D_FEATURE_LEVEL_12_0,
+        .resourceHeap = {.maxDescriptors = 1024, .name = "Ymir resource heap"},
+        .samplerHeap = {.maxDescriptors = 64, .name = "Ymir sampler heap"},
+        .rtvHeap = {.maxDescriptors = 16, .name = "Ymir RTV heap"},
+        .dsvHeap = {.maxDescriptors = 16, .name = "Ymir DSV heap"},
+        .num32BitConstants = 2,
     });
     if (!result) {
         fmt::println("Failed to create D3D12 device: {}", result.Error().message);

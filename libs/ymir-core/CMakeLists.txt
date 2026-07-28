@@ -35,6 +35,7 @@ add_library(ymir-core
     include/ymir/gpu/api/base/gpu_command_queue.hpp
     include/ymir/gpu/api/base/gpu_compute_pipeline.hpp
     include/ymir/gpu/api/base/gpu_device.hpp
+    include/ymir/gpu/api/base/gpu_graphics_pipeline.hpp
     include/ymir/gpu/api/base/gpu_object.hpp
     include/ymir/gpu/api/base/gpu_surface.hpp
     include/ymir/gpu/api/base/gpu_texture.hpp

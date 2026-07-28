@@ -208,6 +208,27 @@ struct ShaderCompileSpec {
 
 // ---------------------------------------------------------------------------------------------------------------------
 
+enum class FillMode { Solid, Wireframe };
+enum class CullMode { None, Back, Front };
+enum class PrimitiveTopology { Triangles, Lines, Points };
+
+struct GraphicsPipelineSpec {
+    struct Shaders {
+        const CompiledShader *vertex = nullptr;   // Required
+        const CompiledShader *hull = nullptr;     // Optional
+        const CompiledShader *domain = nullptr;   // Optional
+        const CompiledShader *geometry = nullptr; // Optional
+        const CompiledShader *pixel = nullptr;    // Required
+    } shaders;
+
+    FillMode fillMode = FillMode::Solid;
+    CullMode cullMode = CullMode::None;
+    PrimitiveTopology topology = PrimitiveTopology::Triangles;
+    bool windingCCW = true;
+};
+
+// ---------------------------------------------------------------------------------------------------------------------
+
 enum class PipelineStageMask : uint32 {
     None = 0u,
 

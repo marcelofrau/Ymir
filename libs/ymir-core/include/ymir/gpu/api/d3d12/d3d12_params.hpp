@@ -11,23 +11,23 @@ namespace ymir::gpu {
 /// @brief Direct3D GPU device creation specifications.
 struct D3D12GPUDeviceSpec {
     bool debug = false;
-
-    uint32 num32BitConstants = 64;
-
-    struct HeapsSpec {
-        uint32 maxResources = 512 * 1024;
-        uint32 maxSamplers = 2048;
-        uint32 maxRTVs = 2048;
-        uint32 maxDSVs = 2048;
-
-        std::string resourceHeapName{};
-        std::string samplerHeapName{};
-        std::string rtvHeapName{};
-        std::string dsvHeapName{};
-    } heaps;
-
     IUnknown *adapter = nullptr;
     D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL_11_0;
+
+    // -------------------------------------------------------------------------
+    // Root signature parameters
+
+    struct HeapSpec {
+        uint32 maxDescriptors;
+        std::string name;
+    };
+
+    HeapSpec resourceHeap{512 * 1024};
+    HeapSpec samplerHeap{2048};
+    HeapSpec rtvHeap{2048};
+    HeapSpec dsvHeap{2048};
+
+    uint32 num32BitConstants = 64;
 };
 
 namespace props {

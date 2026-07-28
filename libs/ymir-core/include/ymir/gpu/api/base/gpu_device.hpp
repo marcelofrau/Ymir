@@ -6,6 +6,7 @@
 #include "gpu_buffer_view.hpp"
 #include "gpu_command_queue.hpp"
 #include "gpu_compute_pipeline.hpp"
+#include "gpu_graphics_pipeline.hpp"
 #include "gpu_surface.hpp"
 #include "gpu_texture.hpp"
 #include "gpu_texture_view.hpp"
@@ -75,7 +76,7 @@ public:
     /// @brief Creates a graphics pipeline.
     /// @param[in] spec graphics pipeline specifications
     /// @return a pointer to the graphics pipeline or an error
-    // TODO: virtual GPUObjectResult<IGPUGraphicsPipeline> CreateGraphicsPipeline(const GraphicsPipelineSpec &spec) = 0;
+    virtual GPUObjectResult<IGPUGraphicsPipeline> CreateGraphicsPipeline(const GraphicsPipelineSpec &spec) = 0;
 
     /// @brief Creates a compute pipeline.
     /// @param[in] shader a reference to the compute shader

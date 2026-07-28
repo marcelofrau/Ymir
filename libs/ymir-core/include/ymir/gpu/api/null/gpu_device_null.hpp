@@ -38,6 +38,10 @@ public:
         return MakeUnsupportedOperationError();
     }
 
+    GPUObjectResult<IGPUGraphicsPipeline> CreateGraphicsPipeline(const GraphicsPipelineSpec &spec) override {
+        return MakeUnsupportedOperationError();
+    }
+
     GPUObjectResult<IGPUComputePipeline> CreateComputePipeline(const CompiledShader &shader) override {
         return MakeUnsupportedOperationError();
     }

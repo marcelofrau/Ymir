@@ -35,25 +35,26 @@ GPUObjectResult<IGPUDevice> D3D12GPUDevice::Create(const D3D12GPUDeviceSpec &spe
         ymir::gpu::d3d12::DebugLayer::Get().BreakOnWarnings(device->GetPointer(), true);
     }
 
-    auto descMgrResult = D3D12DescriptorManager::Create(*device, spec.heaps.maxResources, spec.heaps.maxSamplers,
-                                                        spec.heaps.maxRTVs, spec.heaps.maxDSVs);
+    auto descMgrResult =
+        D3D12DescriptorManager::Create(*device, spec.resourceHeap.maxDescriptors, spec.samplerHeap.maxDescriptors,
+                                       spec.rtvHeap.maxDescriptors, spec.dsvHeap.maxDescriptors);
     if (!descMgrResult) {
         return GPUOperationError{
             fmt::format("Failed to create Direct3D 12 device heaps: {}", descMgrResult.Error().message)};
     }
 
     auto &descMgr = *descMgrResult.Value();
-    if (!spec.heaps.resourceHeapName.empty()) {
-        descMgr.SetResourceHeapName(spec.heaps.resourceHeapName);
+    if (!spec.resourceHeap.name.empty()) {
+        descMgr.SetResourceHeapName(spec.resourceHeap.name);
     }
-    if (!spec.heaps.samplerHeapName.empty()) {
-        descMgr.SetSamplerHeapName(spec.heaps.samplerHeapName);
+    if (!spec.samplerHeap.name.empty()) {
+        descMgr.SetSamplerHeapName(spec.samplerHeap.name);
     }
-    if (!spec.heaps.rtvHeapName.empty()) {
-        descMgr.SetRTVHeapName(spec.heaps.rtvHeapName);
+    if (!spec.rtvHeap.name.empty()) {
+        descMgr.SetRTVHeapName(spec.rtvHeap.name);
     }
-    if (!spec.heaps.dsvHeapName.empty()) {
-        descMgr.SetDSVHeapName(spec.heaps.dsvHeapName);
+    if (!spec.dsvHeap.name.empty()) {
+        descMgr.SetDSVHeapName(spec.dsvHeap.name);
     }
 
     auto rootSig = std::make_unique<d3d12::D3D12RootSignature>();
@@ -105,6 +106,11 @@ GPUObjectResult<IGPUBuffer> D3D12GPUDevice::CreateBuffer(BufferUsage usage, uint
 
 GPUObjectResult<IGPUBufferView> D3D12GPUDevice::CreateBufferView(const IGPUBuffer &buffer, BufferViewType type) {
     return D3D12BufferView::Create(*m_descMgr, buffer, type);
+}
+
+GPUObjectResult<IGPUGraphicsPipeline> D3D12GPUDevice::CreateGraphicsPipeline(const GraphicsPipelineSpec &spec) {
+    // return D3D12GraphicsPipeline::Create(*m_device, *m_rootSig, spec);
+    return GPUOperationError{"Unimplemented"};
 }
 
 GPUObjectResult<IGPUComputePipeline> D3D12GPUDevice::CreateComputePipeline(const CompiledShader &shader) {
