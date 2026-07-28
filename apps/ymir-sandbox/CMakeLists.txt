@@ -77,6 +77,18 @@ compile_hlsl_shader(
 )
 list(APPEND COMPILED_SHADERS ${SHADER_CSO})
 
+compile_hlsl_shader(
+    OUT_VAR SHADER_CSO
+    INPUT_DIR "${SHADER_INPUT_DIR}"
+    OUTPUT_DIR "${SHADER_OUTPUT_DIR}"
+    SOURCE "cs_flipbits.hlsl"
+    ENTRY "CSMain"
+    PROFILE "cs_6_6"
+    VARIANT_NAME "bindless_with_include"
+    FLAGS -Qstrip_debug -Qstrip_reflect -Zi -DUSE_INCLUDE=1 -DBINDLESS
+)
+list(APPEND COMPILED_SHADERS ${SHADER_CSO})
+
 ## Create the embedded resources target
 MESSAGE(STATUS "Generating shader resource library: ${COMPILED_SHADERS}")
 cmrc_add_resource_library(ymir-sandbox-shaders

@@ -13,10 +13,10 @@ int main(int argc, char **argv) {
     // runDiscInfoExtractor(argc, argv);
     // runDeadlockTest(argc, argv);
     // runHostCDSandbox();
-    // runD3D12Sandbox();
+    runD3D12Sandbox();
     // return runVulkanSandbox();
     // return runYmirGPUSandbox();
-    return runYmirGPUComputeSandbox();
+    // return runYmirGPUComputeSandbox();
 
     return EXIT_SUCCESS;
 }

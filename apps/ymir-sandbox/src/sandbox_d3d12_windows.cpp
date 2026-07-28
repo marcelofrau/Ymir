@@ -84,11 +84,11 @@ struct D3D12Context {
 
 } // namespace d3d12
 
-void runD3D12Sandbox() {
-    using clk = std::chrono::steady_clock;
-    using namespace std::chrono_literals;
-    using namespace util;
+using clk = std::chrono::steady_clock;
+using namespace std::chrono_literals;
+using namespace util;
 
+static void runFull() {
     // ---------------------------------
     // Initialize SDL subsystems
 
@@ -616,4 +616,411 @@ void runD3D12Sandbox() {
     ImGui_ImplDX12_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
+}
+
+static void runCompute() {
+    ymir::gpu::d3d12::D3D12Device device{};
+    ymir::gpu::d3d12::DebugLayer &debugLayer = ymir::gpu::d3d12::DebugLayer::Get();
+
+    UINT dxgiFactoryFlags = 0;
+    if (debugLayer.Init() && debugLayer.IsEnabled()) {
+        dxgiFactoryFlags |= DXGI_CREATE_FACTORY_DEBUG;
+    }
+
+    if (FAILED(device.Create(nullptr, D3D_FEATURE_LEVEL_12_0))) {
+        return;
+    }
+    debugLayer.BreakOnWarnings(device.GetPointer(), true);
+
+    // -------------------------------------------------------------------------
+
+#define USE_ENHANCED_BARRIERS
+#define BINDLESS
+
+    struct Stuff {
+        ~Stuff() {
+            fence.Signal(commandQueue);
+            fence.Wait(INFINITE);
+        }
+
+        ymir::gpu::d3d12::D3D12Resource bufUpload;   // CPU->GPU
+        ymir::gpu::d3d12::D3D12Resource bufIn;       // GPU-only, SRV
+        ymir::gpu::d3d12::D3D12Resource bufOut;      // GPU-only, UAV
+        ymir::gpu::d3d12::D3D12Resource bufDownload; // GPU->CPU
+        ymir::gpu::d3d12::D3D12DescriptorHeap heap;
+        ymir::gpu::d3d12::D3D12RootSignature rootSig;
+        ymir::gpu::d3d12::D3D12PipelineState computeState;
+        ymir::gpu::d3d12::D3D12CommandAllocator commandAllocator;
+        ymir::gpu::d3d12::D3D12CommandQueue commandQueue;
+        ymir::gpu::d3d12::D3D12GraphicsCommandList commandList;
+        ymir::gpu::d3d12::D3D12Fence fence;
+        std::array<uint8, 256> dataIn;
+        std::array<uint8, 256> dataOut;
+    } stuff;
+
+    for (size_t i = 0; i < stuff.dataIn.size(); ++i) {
+        stuff.dataIn[i] = i & 0xFF;
+    }
+
+    // Create command allocator, queue and list
+    {
+        if (FAILED(stuff.commandAllocator.Create(device, D3D12_COMMAND_LIST_TYPE_COMPUTE))) {
+            SDL_Log("Failed to create command allocator for compute shader");
+            return;
+        }
+        if (FAILED(stuff.commandQueue.Create(device, D3D12_COMMAND_LIST_TYPE_COMPUTE))) {
+            SDL_Log("Failed to create command queue for compute shader");
+            return;
+        }
+        if (FAILED(stuff.commandList.Create(device, stuff.commandAllocator, D3D12_COMMAND_LIST_TYPE_COMPUTE))) {
+            SDL_Log("Failed to create command list for compute shader");
+            return;
+        }
+    }
+
+    // Create fence
+    if (FAILED(stuff.fence.Create(device, -1, D3D12_FENCE_FLAG_NONE))) {
+        SDL_Log("Failed to create fence for compute shader");
+        return;
+    }
+
+    // Create upload buffer
+    {
+        auto builder = stuff.bufUpload.BufferBuilder(stuff.dataIn.size());
+        builder.InitialState(D3D12_RESOURCE_STATE_GENERIC_READ);
+        builder.Flags(D3D12_RESOURCE_FLAG_NONE);
+        builder.HeapType(D3D12_HEAP_TYPE_UPLOAD);
+        // builder.HeapNodeMasks(1, 1);
+        if (FAILED(builder.BuildCommitted(device))) {
+            SDL_Log("Failed to create bufUpload");
+            return;
+        }
+    }
+
+    // Create input buffer
+    {
+        auto builder = stuff.bufIn.BufferBuilder(stuff.dataIn.size());
+        builder.InitialState(D3D12_RESOURCE_STATE_COMMON);
+        builder.Flags(D3D12_RESOURCE_FLAG_NONE);
+        builder.HeapType(D3D12_HEAP_TYPE_DEFAULT);
+        // builder.HeapNodeMasks(1, 1);
+        if (FAILED(builder.BuildCommitted(device))) {
+            SDL_Log("Failed to create bufIn");
+            return;
+        }
+    }
+
+    // Create download buffer
+    {
+        auto builder = stuff.bufDownload.BufferBuilder(stuff.dataIn.size());
+        builder.InitialState(D3D12_RESOURCE_STATE_COPY_DEST);
+        // builder.Flags(D3D12_RESOURCE_FLAG_NONE); // can be omitted; default value
+        builder.HeapType(D3D12_HEAP_TYPE_READBACK);
+        // builder.HeapNodeMasks(1, 1);
+        if (FAILED(builder.BuildCommitted(device))) {
+            SDL_Log("Failed to create bufDownload");
+            return;
+        }
+    }
+
+    // Create output buffer
+    {
+        auto builder = stuff.bufOut.BufferBuilder(stuff.dataIn.size());
+        builder.InitialState(D3D12_RESOURCE_STATE_COMMON);
+        builder.Flags(D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+        builder.HeapType(D3D12_HEAP_TYPE_DEFAULT);
+        // builder.HeapNodeMasks(1, 1);
+        if (FAILED(builder.BuildCommitted(device))) {
+            SDL_Log("Failed to create bufOut");
+            return;
+        }
+    }
+
+    // Create root signature
+    {
+        auto builder = stuff.rootSig.Builder();
+#ifdef BINDLESS
+        builder.Flags(D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED);
+        builder.Add32BitConstants(0, 2);
+#endif
+        builder.AddDescriptorTable().AddSRVs(1, 0);
+        builder.AddDescriptorTable().AddUAVs(1, 0);
+        if (HRESULT hr = builder.Build(device); FAILED(hr)) {
+            SDL_Log("Failed to create root signature: 0x%08lX", hr);
+            auto msg = stuff.rootSig.GetSerializationError();
+            if (!msg.empty()) {
+                SDL_Log("Serialization error: %s", msg.data());
+            }
+            return;
+        }
+    }
+
+    // Create pipeline state object for compute shader
+    {
+        if (FAILED(stuff.heap.Create(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 2, true))) {
+            SDL_Log("Failed to create descriptor heap for compute shader resources");
+            return;
+        }
+
+        const D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {
+            .Format = DXGI_FORMAT_UNKNOWN,
+            .ViewDimension = D3D12_SRV_DIMENSION_BUFFER,
+            .Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+            .Buffer =
+                {
+                    .FirstElement = 0,
+                    .NumElements = stuff.dataIn.size() / sizeof(uint32),
+                    .StructureByteStride = sizeof(uint32),
+                    .Flags = D3D12_BUFFER_SRV_FLAG_NONE,
+                },
+        };
+        D3D12_CPU_DESCRIPTOR_HANDLE srvHandle = stuff.heap.GetCPUStart();
+        device->CreateShaderResourceView(stuff.bufIn.GetPointer(), &srvDesc, srvHandle);
+
+        const D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {
+            .Format = DXGI_FORMAT_UNKNOWN,
+            .ViewDimension = D3D12_UAV_DIMENSION_BUFFER,
+            .Buffer =
+                {
+                    .FirstElement = 0,
+                    .NumElements = stuff.dataIn.size() / sizeof(uint32),
+                    .StructureByteStride = sizeof(uint32),
+                    .CounterOffsetInBytes = 0,
+                    .Flags = D3D12_BUFFER_UAV_FLAG_NONE,
+                },
+        };
+        D3D12_CPU_DESCRIPTOR_HANDLE uavHandle = {stuff.heap.GetCPUStart().ptr + stuff.heap.GetDescriptorSize()};
+        device->CreateUnorderedAccessView(stuff.bufOut.GetPointer(), nullptr, &uavDesc, uavHandle);
+    }
+
+    // Compile shader
+    {
+        auto fs = cmrc::ymir_shaders::get_filesystem();
+#ifdef BINDLESS
+        auto shaderFile = fs.open("cs_flipbits_bindless_with_include.cso");
+#else
+        auto shaderFile = fs.open("cs_flipbits_with_include.cso");
+        // auto shaderFile = fs.open("cs_flipbits.cso");
+#endif
+        if (FAILED(stuff.computeState.CreateCompute(device, stuff.rootSig, shaderFile.begin(), shaderFile.size()))) {
+            SDL_Log("Failed to create compute pipeline state");
+            return;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+
+    // Upload resource
+    {
+        void *pData = nullptr;
+        const D3D12_RANGE range = {0, 0};
+        if (SUCCEEDED(stuff.bufUpload->Map(0, &range, &pData))) {
+            memcpy(pData, stuff.dataIn.data(), stuff.dataIn.size());
+            stuff.bufUpload->Unmap(0, nullptr);
+        }
+
+        // NOTE: this is *not* executed immediately!
+#ifdef USE_ENHANCED_BARRIERS
+        const D3D12_BUFFER_BARRIER preBarrier{
+            .SyncBefore = D3D12_BARRIER_SYNC_NONE,
+            .SyncAfter = D3D12_BARRIER_SYNC_COPY,
+            .AccessBefore = D3D12_BARRIER_ACCESS_NO_ACCESS,
+            .AccessAfter = D3D12_BARRIER_ACCESS_COPY_DEST,
+            .pResource = stuff.bufIn.GetPointer(),
+            .Offset = 0,
+            .Size = stuff.dataIn.size(),
+        };
+        const D3D12_BARRIER_GROUP preGroup{
+            .Type = D3D12_BARRIER_TYPE_BUFFER,
+            .NumBarriers = 1,
+            .pBufferBarriers = &preBarrier,
+        };
+        stuff.commandList->Barrier(1, &preGroup);
+
+        stuff.commandList->CopyBufferRegion(stuff.bufIn.GetPointer(), 0, stuff.bufUpload.GetPointer(), 0,
+                                            stuff.dataIn.size());
+
+        const D3D12_BUFFER_BARRIER postBarriers[] = {
+            {
+                .SyncBefore = D3D12_BARRIER_SYNC_COPY,
+                .SyncAfter = D3D12_BARRIER_SYNC_COMPUTE_SHADING,
+                .AccessBefore = D3D12_BARRIER_ACCESS_COPY_DEST,
+                .AccessAfter = D3D12_BARRIER_ACCESS_SHADER_RESOURCE,
+                .pResource = stuff.bufIn.GetPointer(),
+                .Offset = 0,
+                .Size = stuff.dataIn.size(),
+            },
+            {
+                .SyncBefore = D3D12_BARRIER_SYNC_NONE,
+                .SyncAfter = D3D12_BARRIER_SYNC_COMPUTE_SHADING,
+                .AccessBefore = D3D12_BARRIER_ACCESS_NO_ACCESS,
+                .AccessAfter = D3D12_BARRIER_ACCESS_UNORDERED_ACCESS,
+                .pResource = stuff.bufOut.GetPointer(),
+                .Offset = 0,
+                .Size = stuff.dataOut.size(),
+            },
+        };
+        const D3D12_BARRIER_GROUP postGroup{
+            .Type = D3D12_BARRIER_TYPE_BUFFER,
+            .NumBarriers = std::size(postBarriers),
+            .pBufferBarriers = postBarriers,
+        };
+        stuff.commandList->Barrier(1, &postGroup);
+
+#else
+
+        D3D12_RESOURCE_BARRIER barrier = {
+            .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+            .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+            .Transition =
+                {
+                    .pResource = stuff.bufIn.GetPointer(),
+                    .Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                    .StateBefore = D3D12_RESOURCE_STATE_COMMON,
+                    .StateAfter = D3D12_RESOURCE_STATE_COPY_DEST,
+                },
+        };
+        stuff.commandList->ResourceBarrier(1, &barrier);
+
+        stuff.commandList->CopyBufferRegion(stuff.bufIn.GetPointer(), 0, stuff.bufUpload.GetPointer(), 0,
+                                            stuff.dataIn.size());
+
+        barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+        barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_COMMON;
+        stuff.commandList->ResourceBarrier(1, &barrier);
+#endif
+    }
+
+    // Run compute shader
+    D3D12_GPU_DESCRIPTOR_HANDLE srvHandle = stuff.heap.GetGPUStart();
+    D3D12_GPU_DESCRIPTOR_HANDLE uavHandle = {stuff.heap.GetGPUStart().ptr + stuff.heap.GetDescriptorSize()};
+    stuff.commandList->SetDescriptorHeaps(1, stuff.heap.GetAddressOf());
+    stuff.commandList->SetComputeRootSignature(stuff.rootSig.GetPointer());
+#ifdef BINDLESS
+    stuff.commandList->SetComputeRoot32BitConstant(0, 0, 0);
+    stuff.commandList->SetComputeRoot32BitConstant(0, 1, 1);
+#else
+    stuff.commandList->SetComputeRootDescriptorTable(0, srvHandle);
+    stuff.commandList->SetComputeRootDescriptorTable(1, uavHandle);
+#endif
+    stuff.commandList->SetPipelineState(stuff.computeState.GetPointer());
+    stuff.commandList->Dispatch(stuff.dataIn.size() / 16 / sizeof(uint32), 1, 1);
+
+    // Download resource
+    // NOTE: this is *not* executed immediately!
+    {
+#ifdef USE_ENHANCED_BARRIERS
+        const D3D12_BUFFER_BARRIER preBarrier{
+            .SyncBefore = D3D12_BARRIER_SYNC_COMPUTE_SHADING,
+            .SyncAfter = D3D12_BARRIER_SYNC_COPY,
+            .AccessBefore = D3D12_BARRIER_ACCESS_UNORDERED_ACCESS,
+            .AccessAfter = D3D12_BARRIER_ACCESS_COPY_SOURCE,
+            .pResource = stuff.bufOut.GetPointer(),
+            .Offset = 0,
+            .Size = stuff.dataOut.size(),
+        };
+        const D3D12_BARRIER_GROUP preGroup{
+            .Type = D3D12_BARRIER_TYPE_BUFFER,
+            .NumBarriers = 1,
+            .pBufferBarriers = &preBarrier,
+        };
+        stuff.commandList->Barrier(1, &preGroup);
+
+        stuff.commandList->CopyResource(stuff.bufDownload.GetPointer(), stuff.bufOut.GetPointer());
+
+#else
+        D3D12_RESOURCE_BARRIER barrier = {
+            .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+            .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+            .Transition =
+                {
+                    .pResource = stuff.bufOut.GetPointer(),
+                    .Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                    .StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                    .StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE,
+                },
+
+        };
+        stuff.commandList->ResourceBarrier(1, &barrier);
+
+        stuff.commandList->CopyResource(stuff.bufDownload.GetPointer(), stuff.bufOut.GetPointer());
+
+        barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
+        barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        stuff.commandList->ResourceBarrier(1, &barrier);
+#endif
+    }
+
+    // Execute command list and wait for completion
+    stuff.fence.Signal(stuff.commandQueue);
+    stuff.commandList->Close();
+    stuff.commandQueue->ExecuteCommandLists(1, stuff.commandList.GetAddressOfBase());
+    stuff.fence.Wait(INFINITE);
+
+    // Read back data
+    void *pData = nullptr;
+    const D3D12_RANGE range = {0, stuff.dataOut.size()};
+    if (SUCCEEDED(stuff.bufDownload->Map(0, &range, &pData))) {
+        memcpy(stuff.dataOut.data(), pData, stuff.dataOut.size());
+        stuff.bufDownload->Unmap(0, nullptr);
+    }
+
+    // Print input
+    {
+        fmt::memory_buffer buf{};
+        auto out = std::back_inserter(buf);
+        for (uint32 i = 0; i < stuff.dataIn.size(); ++i) {
+            if (i % 16 == 0) {
+                fmt::format_to(out, "{:02X} |", i);
+            }
+
+            fmt::format_to(out, " {:02X}", stuff.dataIn[i]);
+
+            if (i % 16 == 15) {
+                /*fmt::format_to(out, " | ");
+                for (uint32 j = 0; j < 16; ++j) {
+                    char ch = stuff.dataIn[i + j - 15];
+                    if (ch < 0x20 || ch > 0x7F) {
+                        ch = '.';
+                    }
+                    fmt::format_to(out, "{:c}", ch);
+                }*/
+                fmt::println("{}", fmt::to_string(buf));
+                buf.clear();
+            }
+        }
+    }
+
+    fmt::println("");
+
+    // Print result
+    {
+        fmt::memory_buffer buf{};
+        auto out = std::back_inserter(buf);
+        for (uint32 i = 0; i < stuff.dataOut.size(); ++i) {
+            if (i % 16 == 0) {
+                fmt::format_to(out, "{:02X} |", i);
+            }
+
+            fmt::format_to(out, " {:02X}", stuff.dataOut[i]);
+
+            if (i % 16 == 15) {
+                /*fmt::format_to(out, " | ");
+                for (uint32 j = 0; j < 16; ++j) {
+                    char ch = stuff.dataOut[i + j - 15];
+                    if (ch < 0x20 || ch > 0x7F) {
+                        ch = '.';
+                    }
+                    fmt::format_to(out, "{:c}", ch);
+                }*/
+                fmt::println("{}", fmt::to_string(buf));
+                buf.clear();
+            }
+        }
+    }
+}
+
+void runD3D12Sandbox() {
+    // runFull();
+    runCompute();
 }
