@@ -173,7 +173,7 @@ float4 PSMain(PSInput input) : SV_Target {
         // -----------------------------------------------------
         // Present frame
 
-        swapchain->Present(0);
+        swapchain->Present(1);
     }
     cmdQueue->Wait();
 

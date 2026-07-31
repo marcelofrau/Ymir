@@ -108,7 +108,8 @@ void D3D12Swapchain::SetName(std::string_view name) {
 }
 
 void D3D12Swapchain::Present(uint32 interval) {
-    m_swapchain->Present(interval, 0);
+    const UINT flags = interval == 0 && m_swapchain.IsTearingSupported() ? DXGI_PRESENT_ALLOW_TEARING : 0;
+    m_swapchain->Present(interval, flags);
 }
 
 } // namespace ymir::gpu
