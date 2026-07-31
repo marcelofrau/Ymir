@@ -29,9 +29,9 @@ public:
     GPUObjectResult<IGPUCommandQueue> CreateCommandQueue(CommandQueueType type,
                                                          const util::PropertyBag *props = nullptr) override;
 
-    GPUObjectResult<IGPUSurface> CreateSurface(const WindowParams &windowParams, const IGPUCommandQueue &queue,
-                                               uint32 maxFramesInFlight,
-                                               const util::PropertyBag *props = nullptr) override;
+    GPUObjectResult<IGPUSwapchain> CreateSwapchain(const WindowParams &windowParams, const IGPUCommandQueue &queue,
+                                                   uint32 maxFramesInFlight,
+                                                   const util::PropertyBag *props = nullptr) override;
 
     GPUObjectResult<IGPUTexture> CreateTexture(const TextureSpec &spec) override;
     GPUObjectResult<IGPUTextureView> CreateTextureView(const TextureViewSpec &spec) override;

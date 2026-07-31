@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ymir/gpu/api/base/gpu_surface.hpp>
+#include <ymir/gpu/api/base/gpu_swapchain.hpp>
 
 #include <ymir/gpu/api/base/gpu_command_queue.hpp>
 
@@ -13,15 +13,15 @@
 
 namespace ymir::gpu {
 
-class D3D12Surface : public IGPUSurface {
+class D3D12Swapchain : public IGPUSwapchain {
 public:
     static constexpr Backend kBackend = Backend::Direct3D12;
 
-    D3D12Surface(d3d12::D3D12Device &device, d3d12::D3D12SwapChain swapchain);
+    D3D12Swapchain(d3d12::D3D12Device &device, d3d12::D3D12SwapChain swapchain);
 
-    static GPUObjectResult<IGPUSurface> Create(d3d12::D3D12Device &device, const WindowParams &windowParams,
-                                               const IGPUCommandQueue &queue, uint32 maxFramesInFlight, bool debug,
-                                               const util::PropertyBag *props);
+    static GPUObjectResult<IGPUSwapchain> Create(d3d12::D3D12Device &device, const WindowParams &windowParams,
+                                                 const IGPUCommandQueue &queue, uint32 maxFramesInFlight, bool debug,
+                                                 const util::PropertyBag *props);
 
     void SetName(std::string_view name) override;
 

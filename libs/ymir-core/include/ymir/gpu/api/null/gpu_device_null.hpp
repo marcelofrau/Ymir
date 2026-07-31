@@ -16,9 +16,9 @@ public:
         return MakeUnsupportedOperationError();
     }
 
-    GPUObjectResult<IGPUSurface> CreateSurface(const WindowParams &windowParams, const IGPUCommandQueue &queue,
-                                               uint32 maxFramesInFlight,
-                                               const util::PropertyBag *props = nullptr) override {
+    GPUObjectResult<IGPUSwapchain> CreateSwapchain(const WindowParams &windowParams, const IGPUCommandQueue &queue,
+                                                   uint32 maxFramesInFlight,
+                                                   const util::PropertyBag *props = nullptr) override {
         return MakeUnsupportedOperationError();
     }
 

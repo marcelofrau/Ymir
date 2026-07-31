@@ -37,7 +37,7 @@ add_library(ymir-core
     include/ymir/gpu/api/base/gpu_device.hpp
     include/ymir/gpu/api/base/gpu_graphics_pipeline.hpp
     include/ymir/gpu/api/base/gpu_object.hpp
-    include/ymir/gpu/api/base/gpu_surface.hpp
+    include/ymir/gpu/api/base/gpu_swapchain.hpp
     include/ymir/gpu/api/base/gpu_texture.hpp
     include/ymir/gpu/api/base/gpu_texture_view.hpp
 
@@ -390,7 +390,7 @@ if (WIN32)
         include/ymir/gpu/api/d3d12/d3d12_gpu_compute_pipeline.hpp
         include/ymir/gpu/api/d3d12/d3d12_gpu_device.hpp
         include/ymir/gpu/api/d3d12/d3d12_gpu_graphics_pipeline.hpp
-        include/ymir/gpu/api/d3d12/d3d12_gpu_surface.hpp
+        include/ymir/gpu/api/d3d12/d3d12_gpu_swapchain.hpp
         include/ymir/gpu/api/d3d12/d3d12_gpu_texture.hpp
         include/ymir/gpu/api/d3d12/d3d12_gpu_texture_view.hpp
         include/ymir/gpu/api/d3d12/d3d12_params.hpp
@@ -418,7 +418,7 @@ if (WIN32)
         src/ymir/gpu/api/d3d12/d3d12_gpu_compute_pipeline.cpp
         src/ymir/gpu/api/d3d12/d3d12_gpu_device.cpp
         src/ymir/gpu/api/d3d12/d3d12_gpu_graphics_pipeline.cpp
-        src/ymir/gpu/api/d3d12/d3d12_gpu_surface.cpp
+        src/ymir/gpu/api/d3d12/d3d12_gpu_swapchain.cpp
         src/ymir/gpu/api/d3d12/d3d12_gpu_texture.cpp
         src/ymir/gpu/api/d3d12/d3d12_gpu_texture_view.cpp
 

@@ -1,12 +1,14 @@
 #include <ymir/gpu/gpu.hpp>
 
 #if YMIR_PLATFORM_HAS_DIRECT3D12
-    #include <ymir/gpu/api/d3d12/d3d12_gpu_device.hpp>
+    #include <ymir/gpu/api/d3d12/d3d12_params.hpp>
 
     #include <ymir/gpu/api/d3d12/helpers/d3d12_debug.hpp>
 #endif
 
 #include <ymir/util/scope_guard.hpp>
+
+#include <SDL3/SDL.h>
 
 using namespace ymir::gpu;
 
@@ -44,10 +46,11 @@ int runYmirGPUGraphicsSandbox() {
     // -----------------------------------------------------
     // Create resources
 
-    std::unique_ptr<IGPUCommandQueue> cmdQueue = gpuDevice.CreateCommandQueue(CommandQueueType::Compute).Value();
+    std::unique_ptr<IGPUCommandQueue> cmdQueue = gpuDevice.CreateCommandQueue(CommandQueueType::Graphics).Value();
     std::unique_ptr<IGPUCommandList> cmdList = cmdQueue->CreateCommandList().Value();
 
-    // TODO: surface/swapchain
+    std::unique_ptr<IGPUSwapchain> swapchain;
+
     // TODO: a few textures to play with
     // TODO: vertex and index buffers probably?
     // TODO: vertex and pixel shaders
@@ -120,23 +123,57 @@ float4 PSMain(PSInput input) : SV_Target {
             .Value();
 
     // -----------------------------------------------------
-    // TODO: create window and swapchain, enter main loop
+    // Create window and swapchain, and enter main loop
 
-    // -----------------------------------------------------
-    // Begin command list
+    SDL_Window *window = SDL_CreateWindow("Sandbox", 640, 480, 0);
+    SDL_PropertiesID windowProps = SDL_GetWindowProperties(window);
+    const auto hwnd = (HWND)SDL_GetPointerProperty(windowProps, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
+    int ww, wh;
+    SDL_GetWindowSize(window, &ww, &wh);
 
-    cmdList->Reset();
-    cmdList->Begin();
+    const WindowParams windowParams{.windowHandle = hwnd, .width = (uint32)ww, .height = (uint32)wh};
+    swapchain = gpuDevice.CreateSwapchain(windowParams, *cmdQueue, 3).Value();
 
-    // -----------------------------------------------------
-    // TODO: render some graphics
+    SDL_Event evt;
+    bool running = true;
+    while (running) {
+        while (SDL_PollEvent(&evt)) {
+            switch (evt.type) {
+            case SDL_EVENT_QUIT: running = false; break;
+            case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+                if (evt.window.windowID == SDL_GetWindowID(window)) {
+                    running = false;
+                }
+                break;
+            case SDL_EVENT_WINDOW_RESIZED:
+                if (evt.window.windowID == SDL_GetWindowID(window)) {
+                    // Release all outstanding references to the swap chain's buffers before resizing.
+                    // d3d.gfx.ResizeSwapChainBuffers(evt.window.data1, evt.window.data2);
+                }
+            }
+        }
 
-    // -----------------------------------------------------
-    // Execute command list
+        // -----------------------------------------------------
+        // Begin command list
 
-    cmdList->End();
-    cmdQueue->CommitCommandList(*cmdList);
-    cmdQueue->Wait();
+        cmdList->Reset();
+        cmdList->Begin();
+
+        // -----------------------------------------------------
+        // TODO: render some graphics
+
+        // -----------------------------------------------------
+        // Execute command list
+
+        cmdList->End();
+        cmdQueue->CommitCommandList(*cmdList);
+        cmdQueue->Wait();
+
+        // -----------------------------------------------------
+        // Present frame
+
+        // TODO: swapchain->Present(...);
+    }
 
     return EXIT_SUCCESS;
 }

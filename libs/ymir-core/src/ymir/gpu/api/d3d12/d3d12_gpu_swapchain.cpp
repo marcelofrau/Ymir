@@ -1,17 +1,17 @@
-#include <ymir/gpu/api/d3d12/d3d12_gpu_surface.hpp>
+#include <ymir/gpu/api/d3d12/d3d12_gpu_swapchain.hpp>
 
 #include <ymir/gpu/api/d3d12/d3d12_gpu_command_queue.hpp>
 
 namespace ymir::gpu {
 
-D3D12Surface::D3D12Surface(d3d12::D3D12Device &device, d3d12::D3D12SwapChain swapchain)
-    : IGPUSurface(kBackend)
+D3D12Swapchain::D3D12Swapchain(d3d12::D3D12Device &device, d3d12::D3D12SwapChain swapchain)
+    : IGPUSwapchain(kBackend)
     , m_device(device)
     , m_swapchain(std::move(swapchain)) {}
 
-GPUObjectResult<IGPUSurface> D3D12Surface::Create(d3d12::D3D12Device &device, const WindowParams &windowParams,
-                                                  const IGPUCommandQueue &queue, uint32 maxFramesInFlight, bool debug,
-                                                  const util::PropertyBag *props) {
+GPUObjectResult<IGPUSwapchain> D3D12Swapchain::Create(d3d12::D3D12Device &device, const WindowParams &windowParams,
+                                                      const IGPUCommandQueue &queue, uint32 maxFramesInFlight,
+                                                      bool debug, const util::PropertyBag *props) {
     auto *dx12Queue = queue.As<D3D12CommandQueue>();
     if (dx12Queue == nullptr) {
         return GPUOperationError{"Provided command queue is not a Direct3D 12 object"};
@@ -48,10 +48,10 @@ GPUObjectResult<IGPUSurface> D3D12Surface::Create(d3d12::D3D12Device &device, co
 
     // TODO: create textures and views
 
-    return {std::make_unique<D3D12Surface>(device, std::move(swapchain))};
+    return {std::make_unique<D3D12Swapchain>(device, std::move(swapchain))};
 }
 
-void D3D12Surface::SetName(std::string_view name) {
+void D3D12Swapchain::SetName(std::string_view name) {
     // TODO: rename textures and views
 }
 

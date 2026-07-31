@@ -7,7 +7,7 @@
 #include "gpu_command_queue.hpp"
 #include "gpu_compute_pipeline.hpp"
 #include "gpu_graphics_pipeline.hpp"
-#include "gpu_surface.hpp"
+#include "gpu_swapchain.hpp"
 #include "gpu_texture.hpp"
 #include "gpu_texture_view.hpp"
 
@@ -35,15 +35,15 @@ public:
     virtual GPUObjectResult<IGPUCommandQueue> CreateCommandQueue(CommandQueueType type,
                                                                  const util::PropertyBag *props = nullptr) = 0;
 
-    /// @brief Creates a surface/swapchain.
+    /// @brief Creates a swapchain.
     /// @param[in] windowParams parameters of the window on which to create the surface
     /// @param[in] queue the swapchain command queue
     /// @param[in] maxFramesInFlight the maximum number of frames in flight (i.e., the number of surface buffers)
     /// @param[in,opt] props platform-specific properties
-    /// @return a pointer to the surface or an error
-    virtual GPUObjectResult<IGPUSurface> CreateSurface(const WindowParams &windowParams, const IGPUCommandQueue &queue,
-                                                       uint32 maxFramesInFlight,
-                                                       const util::PropertyBag *props = nullptr) = 0;
+    /// @return a pointer to the swapchain or an error
+    virtual GPUObjectResult<IGPUSwapchain> CreateSwapchain(const WindowParams &windowParams,
+                                                           const IGPUCommandQueue &queue, uint32 maxFramesInFlight,
+                                                           const util::PropertyBag *props = nullptr) = 0;
 
     /// @brief Creates a texture.
     /// @param[in] spec texture specifications

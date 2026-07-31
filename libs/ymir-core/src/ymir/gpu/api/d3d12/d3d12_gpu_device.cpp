@@ -6,7 +6,7 @@
 #include <ymir/gpu/api/d3d12/d3d12_gpu_command_queue.hpp>
 #include <ymir/gpu/api/d3d12/d3d12_gpu_compute_pipeline.hpp>
 #include <ymir/gpu/api/d3d12/d3d12_gpu_graphics_pipeline.hpp>
-#include <ymir/gpu/api/d3d12/d3d12_gpu_surface.hpp>
+#include <ymir/gpu/api/d3d12/d3d12_gpu_swapchain.hpp>
 #include <ymir/gpu/api/d3d12/d3d12_gpu_texture.hpp>
 #include <ymir/gpu/api/d3d12/d3d12_gpu_texture_view.hpp>
 
@@ -87,10 +87,10 @@ GPUObjectResult<IGPUCommandQueue> D3D12GPUDevice::CreateCommandQueue(CommandQueu
     return D3D12CommandQueue::Create(*this, type, props);
 }
 
-GPUObjectResult<IGPUSurface> D3D12GPUDevice::CreateSurface(const WindowParams &windowParams,
-                                                           const IGPUCommandQueue &queue, uint32 maxFramesInFlight,
-                                                           const util::PropertyBag *props) {
-    return D3D12Surface::Create(*m_device, windowParams, queue, maxFramesInFlight, m_debug, props);
+GPUObjectResult<IGPUSwapchain> D3D12GPUDevice::CreateSwapchain(const WindowParams &windowParams,
+                                                               const IGPUCommandQueue &queue, uint32 maxFramesInFlight,
+                                                               const util::PropertyBag *props) {
+    return D3D12Swapchain::Create(*m_device, windowParams, queue, maxFramesInFlight, m_debug, props);
 }
 
 GPUObjectResult<IGPUTexture> D3D12GPUDevice::CreateTexture(const TextureSpec &spec) {

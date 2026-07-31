@@ -7,7 +7,7 @@
     #include <ymir/gpu/api/d3d12/d3d12_gpu_command_queue.hpp>
     #include <ymir/gpu/api/d3d12/d3d12_gpu_compute_pipeline.hpp>
     #include <ymir/gpu/api/d3d12/d3d12_gpu_device.hpp>
-    #include <ymir/gpu/api/d3d12/d3d12_gpu_surface.hpp>
+    #include <ymir/gpu/api/d3d12/d3d12_gpu_swapchain.hpp>
     #include <ymir/gpu/api/d3d12/d3d12_gpu_texture.hpp>
     #include <ymir/gpu/api/d3d12/d3d12_gpu_texture_view.hpp>
 
@@ -440,15 +440,15 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     SDL_GetWindowSize(window, &ww, &wh);
 
     const WindowParams windowParams{.windowHandle = hwnd, .width = (uint32)ww, .height = (uint32)wh};
-    auto surfaceResult = gpuDevice.CreateSurface(windowParams, *cmdQueue, 3);
+    auto surfaceResult = gpuDevice.CreateSwapchain(windowParams, *cmdQueue, 3);
     if (!surfaceResult) {
         fmt::println("Failed to create surface: {}", surfaceResult.Error().message);
         return EXIT_FAILURE;
     }
-    std::unique_ptr<IGPUSurface> surface{std::move(surfaceResult.Value())};
-    fmt::println("Surface created: {}", (void *)&surface);
-    if (auto *dx12Surface = surface->As<D3D12Surface>()) {
-        fmt::println("D3D12 swapchain: {}", (void *)dx12Surface->GetSwapChain().GetPointer());
+    std::unique_ptr<IGPUSwapchain> surface{std::move(surfaceResult.Value())};
+    fmt::println("Swapchain created: {}", (void *)&surface);
+    if (auto *dx12Swapchain = surface->As<D3D12Swapchain>()) {
+        fmt::println("D3D12 swapchain: {}", (void *)dx12Swapchain->GetSwapChain().GetPointer());
     }
 
     // TODO: finish D3D12 swapchain/surface implementation
