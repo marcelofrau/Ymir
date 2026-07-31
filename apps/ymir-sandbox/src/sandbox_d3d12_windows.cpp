@@ -341,8 +341,11 @@ static void runFull() {
         auto fs = cmrc::ymir_shaders::get_filesystem();
         auto shaderFile = fs.open("cs_flipbits_with_include.cso");
         // auto shaderFile = fs.open("cs_flipbits.cso");
-        if (FAILED(
-                stuff.computeState.CreateCompute(d3d.device, stuff.rootSig, shaderFile.begin(), shaderFile.size()))) {
+        const D3D12_COMPUTE_PIPELINE_STATE_DESC desc{
+            .pRootSignature = stuff.rootSig.GetPointer(),
+            .CS = {.pShaderBytecode = shaderFile.begin(), .BytecodeLength = shaderFile.size()},
+        };
+        if (FAILED(stuff.computeState.CreateCompute(d3d.device, desc))) {
             SDL_Log("Failed to create compute pipeline state");
             return;
         }
@@ -803,7 +806,11 @@ static void runCompute() {
         auto shaderFile = fs.open("cs_flipbits_with_include.cso");
         // auto shaderFile = fs.open("cs_flipbits.cso");
 #endif
-        if (FAILED(stuff.computeState.CreateCompute(device, stuff.rootSig, shaderFile.begin(), shaderFile.size()))) {
+        const D3D12_COMPUTE_PIPELINE_STATE_DESC desc{
+            .pRootSignature = stuff.rootSig.GetPointer(),
+            .CS = {.pShaderBytecode = shaderFile.begin(), .BytecodeLength = shaderFile.size()},
+        };
+        if (FAILED(stuff.computeState.CreateCompute(device, desc))) {
             SDL_Log("Failed to create compute pipeline state");
             return;
         }

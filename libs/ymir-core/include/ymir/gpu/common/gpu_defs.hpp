@@ -228,7 +228,73 @@ using ComputeShaderCompileSpec = ShaderCompileSpec<ShaderStage::Compute>;
 
 enum class FillMode { Solid, Wireframe };
 enum class CullMode { None, Back, Front };
-enum class PrimitiveTopology { Triangles, Lines, Points };
+enum class PrimitiveTopology { Undefined, Triangles, Lines, Points };
+enum class DepthOperation { None, Never, Less, Equal, LessEqual, Greater, NotEqual, GreaterEqual, Always };
+
+enum class BlendMode { None, Blend, Logic };
+enum class BlendFactor {
+    Zero,
+    One,
+    SrcColor,
+    InvSrcColor,
+    SrcAlpha,
+    InvSrcAlpha,
+    DstAlpha,
+    InvDstAlpha,
+    DstColor,
+    InvDstColor,
+    SrcAlphaSat,
+    BlendFactor,
+    InvBlendFactor,
+    Src1Color,
+    InvSrc1Color,
+    Src1Alpha,
+    InvSrc1Alpha,
+    AlphaFactor,
+    InvAlphaFactor
+};
+enum class BlendOp { Add, Subtract, RevSubtract, Min, Max };
+
+enum class LogicOp {
+    Clear,
+    Set,
+    Copy,
+    CopyInverted,
+    Noop,
+    Invert,
+    And,
+    Nand,
+    Or,
+    Nor,
+    Xor,
+    Equiv,
+    AndReversed,
+    AndInverted,
+    OrReversed,
+    OrInverted
+};
+
+struct RenderTargetSpec {
+    TextureFormat format = TextureFormat::Undefined;
+
+    BlendMode blendMode = BlendMode::None;
+
+    // Options valid when blendMode == BlendMode::Blend
+    struct BlendParams {
+        BlendFactor src = BlendFactor::SrcAlpha;
+        BlendFactor dst = BlendFactor::InvSrcAlpha;
+        BlendOp op = BlendOp::Add;
+
+        BlendFactor srcAlpha = BlendFactor::One;
+        BlendFactor dstAlpha = BlendFactor::Zero;
+        BlendOp opAlpha = BlendOp::Add;
+    } blendParams;
+
+    // Options valid when blendMode == BlendMode::Logic
+    struct LogicParams {
+        LogicOp op = LogicOp::Copy;
+    } logicParams;
+};
 
 struct GraphicsPipelineSpec {
     struct Shaders {
@@ -243,6 +309,15 @@ struct GraphicsPipelineSpec {
     CullMode cullMode = CullMode::None;
     PrimitiveTopology topology = PrimitiveTopology::Triangles;
     bool windingCCW = true;
+
+    std::vector<RenderTargetSpec> renderTargets;
+
+    bool depthEnable = false;
+    bool depthWrite = true;
+    bool depthClip = false;
+    bool depthClamp = false;
+    DepthOperation depthOperation = DepthOperation::Less;
+    TextureFormat depthFormat = TextureFormat::D32_FLOAT;
 };
 
 // ---------------------------------------------------------------------------------------------------------------------

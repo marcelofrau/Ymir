@@ -56,39 +56,27 @@ int runYmirGPUGraphicsSandbox() {
     // Create graphics pipeline
 
     static constexpr const char *kVertexShaderCode = R"(
-struct VSInput {
-    float4 position : POSITION;
-    float2 uv       : TEXCOORD0;
-};
-
 struct VSOutput {
     float4 position : SV_POSITION;
     float2 uv       : TEXCOORD0;
 };
 
-VSOutput VSMain(VSInput input) {
+VSOutput VSMain(uint vertexID : SV_VertexID) {
     VSOutput output;
-    output.position = input.position;
-    output.uv = input.uv;
+    output.uv = float2((vertexID << 1) & 2, vertexID & 2);
+    output.position = float4(output.uv * float2(2.0f, -2.0f) + float2(-1.0f, 1.0f), 0.0f, 1.0f);
     return output;
 }
 )";
 
     static constexpr const char *kPixelShaderCode = R"(
-cbuffer Constants : register(b0) {
-    uint textureIndex;
-    uint samplerIndex;
-}
-
 struct PSInput {
     float4 position : SV_POSITION;
     float2 uv       : TEXCOORD0;
 };
 
-float4 PSMain(PSInput input) : SV_TARGET0 {
-    Texture2D    texture = ResourceDescriptorHeap[textureIndex];
-    SamplerState sampler = SamplerDescriptorHeap[samplerIndex];
-    return texture.Sample(sampler, input.uv);
+float4 PSMain(PSInput input) : SV_Target {
+    return float4(input.uv, 0.0f, 1.0f);
 }
 )";
 
@@ -127,7 +115,8 @@ float4 PSMain(PSInput input) : SV_TARGET0 {
                                      .fillMode = FillMode::Solid,
                                      .cullMode = CullMode::None,
                                      .topology = PrimitiveTopology::Triangles,
-                                     .windingCCW = true})
+                                     .windingCCW = true,
+                                     .renderTargets = {RenderTargetSpec{.format = TextureFormat::B8G8R8A8_UNORM}}})
             .Value();
 
     // -----------------------------------------------------

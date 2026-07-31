@@ -18,11 +18,12 @@ GPUObjectResult<IGPUComputePipeline> D3D12ComputePipeline::Create(d3d12::D3D12De
     }
 
     d3d12::D3D12PipelineState pipelineState{};
-    auto builder = pipelineState.ComputeBuilder();
-    // TODO: builder.NodeMask(nodeMask);
-    // TODO: builder.Flags(...)?
-    // TODO: builder.CachedPSO()?
-    HRESULT hr = builder.Build(device, rootSig, shader.bytecode.data(), shader.bytecode.size());
+    const D3D12_COMPUTE_PIPELINE_STATE_DESC desc{
+        .pRootSignature = rootSig.GetPointer(),
+        .CS = {.pShaderBytecode = shader.bytecode.data(), .BytecodeLength = shader.bytecode.size()},
+        // TODO: NodeMask, CachedPSO, Flags
+    };
+    HRESULT hr = pipelineState.CreateCompute(device, desc);
     if (FAILED(hr)) {
         return GPUOperationError{fmt::format("Failed to build compute pipeline: error code {:X}", hr)};
     }
