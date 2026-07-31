@@ -107,4 +107,8 @@ void D3D12Swapchain::SetName(std::string_view name) {
     }
 }
 
+void D3D12Swapchain::Present(uint32 interval) {
+    m_swapchain->Present(interval, 0);
+}
+
 } // namespace ymir::gpu

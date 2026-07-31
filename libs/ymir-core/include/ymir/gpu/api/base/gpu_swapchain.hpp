@@ -26,6 +26,10 @@ protected:
 public:
     virtual ~IGPUSwapchain() = default;
 
+    /// @brief Presents a frame.
+    /// @param[in] interval the presentation interval - waits for vertical synchronization after this many frames
+    virtual void Present(uint32 interval) = 0;
+
     /// @brief Retrieves the number of surfaces allocated in this swapchain.
     /// @return the number of surfaces in the swapchain
     uint32 GetSurfaceCount() const {

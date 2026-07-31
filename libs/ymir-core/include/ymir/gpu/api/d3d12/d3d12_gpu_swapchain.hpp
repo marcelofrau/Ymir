@@ -27,6 +27,8 @@ public:
 
     void SetName(std::string_view name) override;
 
+    void Present(uint32 interval) override;
+
     d3d12::D3D12SwapChain &GetSwapChain() {
         return m_swapchain;
     }

@@ -149,7 +149,7 @@ float4 PSMain(PSInput input) : SV_Target {
             case SDL_EVENT_WINDOW_RESIZED:
                 if (evt.window.windowID == SDL_GetWindowID(window)) {
                     // Release all outstanding references to the swap chain's buffers before resizing.
-                    // d3d.gfx.ResizeSwapChainBuffers(evt.window.data1, evt.window.data2);
+                    // TODO: d3d.gfx.ResizeSwapChainBuffers(evt.window.data1, evt.window.data2);
                 }
             }
         }
@@ -173,8 +173,9 @@ float4 PSMain(PSInput input) : SV_Target {
         // -----------------------------------------------------
         // Present frame
 
-        // TODO: swapchain->Present(...);
+        swapchain->Present(0);
     }
+    cmdQueue->Wait();
 
     return EXIT_SUCCESS;
 }
