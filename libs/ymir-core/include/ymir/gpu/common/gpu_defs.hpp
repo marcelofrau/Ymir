@@ -103,10 +103,10 @@ struct TextureSpec {
 enum class Texture2DViewMode { Normal, Multisampled, Cube };
 
 struct TextureViewSpec {
-    IGPUTexture *texture = nullptr;                  // Must not be nullptr
-    TextureViewType type = TextureViewType::None;    // Must not be None
-    TextureFormat format = TextureFormat::Undefined; // Undefined mirrors the texture's format
-    Texture2DViewMode viewMode2D;                    // 2D texture handling mode
+    IGPUTexture *texture = nullptr;                           // Must not be nullptr
+    TextureViewType type = TextureViewType::None;             // Must not be None
+    TextureFormat format = TextureFormat::Undefined;          // Undefined mirrors the texture's format
+    Texture2DViewMode viewMode2D = Texture2DViewMode::Normal; // 2D texture handling mode
 
     uint32 arrayIndex = 0;    // Starting array index, cube texture slice index or W slice
     uint32 arraySize = 0;     // Number of array entries, cubes or W slices; 0 means maximum

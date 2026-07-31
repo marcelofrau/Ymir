@@ -90,7 +90,7 @@ GPUObjectResult<IGPUCommandQueue> D3D12GPUDevice::CreateCommandQueue(CommandQueu
 GPUObjectResult<IGPUSwapchain> D3D12GPUDevice::CreateSwapchain(const WindowParams &windowParams,
                                                                const IGPUCommandQueue &queue, uint32 maxFramesInFlight,
                                                                const util::PropertyBag *props) {
-    return D3D12Swapchain::Create(*m_device, windowParams, queue, maxFramesInFlight, m_debug, props);
+    return D3D12Swapchain::Create(*m_device, *m_descMgr, windowParams, queue, maxFramesInFlight, m_debug, props);
 }
 
 GPUObjectResult<IGPUTexture> D3D12GPUDevice::CreateTexture(const TextureSpec &spec) {

@@ -19,8 +19,9 @@ struct Surface {
 /// @brief Represents a GPU swapchain.
 class IGPUSwapchain : public GPUObject<IGPUSwapchain> {
 protected:
-    IGPUSwapchain(Backend backend)
-        : GPUObject(backend) {}
+    IGPUSwapchain(Backend backend, std::vector<Surface> &&surfaces)
+        : GPUObject(backend)
+        , m_surfaces(std::move(surfaces)) {}
 
 public:
     virtual ~IGPUSwapchain() = default;
@@ -41,7 +42,7 @@ public:
         return nullptr;
     }
 
-protected:
+private:
     std::vector<Surface> m_surfaces;
 };
 

@@ -133,6 +133,7 @@ float4 PSMain(PSInput input) : SV_Target {
 
     const WindowParams windowParams{.windowHandle = hwnd, .width = (uint32)ww, .height = (uint32)wh};
     swapchain = gpuDevice.CreateSwapchain(windowParams, *cmdQueue, 3).Value();
+    swapchain->SetName("Ymir swapchain");
 
     SDL_Event evt;
     bool running = true;

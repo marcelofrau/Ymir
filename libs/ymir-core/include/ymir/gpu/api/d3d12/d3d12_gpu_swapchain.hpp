@@ -4,6 +4,8 @@
 
 #include <ymir/gpu/api/base/gpu_command_queue.hpp>
 
+#include <ymir/gpu/api/d3d12/d3d12_descriptor_manager.hpp>
+
 #include <ymir/gpu/api/d3d12/wrappers/d3d12_device.hpp>
 #include <ymir/gpu/api/d3d12/wrappers/d3d12_swap_chain.hpp>
 
@@ -17,11 +19,11 @@ class D3D12Swapchain : public IGPUSwapchain {
 public:
     static constexpr Backend kBackend = Backend::Direct3D12;
 
-    D3D12Swapchain(d3d12::D3D12Device &device, d3d12::D3D12SwapChain swapchain);
+    D3D12Swapchain(d3d12::D3D12Device &device, d3d12::D3D12SwapChain swapchain, std::vector<Surface> &&surfaces);
 
-    static GPUObjectResult<IGPUSwapchain> Create(d3d12::D3D12Device &device, const WindowParams &windowParams,
-                                                 const IGPUCommandQueue &queue, uint32 maxFramesInFlight, bool debug,
-                                                 const util::PropertyBag *props);
+    static GPUObjectResult<IGPUSwapchain> Create(d3d12::D3D12Device &device, D3D12DescriptorManager &descMgr,
+                                                 const WindowParams &windowParams, const IGPUCommandQueue &queue,
+                                                 uint32 maxFramesInFlight, bool debug, const util::PropertyBag *props);
 
     void SetName(std::string_view name) override;
 
