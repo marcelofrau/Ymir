@@ -70,7 +70,7 @@ public:
 };
 
 /// @brief Manages an `ID3D12GraphicsCommandList`.
-class D3D12GraphicsCommandList final : public D3D12ObjectWrapper<ID3D12GraphicsCommandList10> {
+class D3D12GraphicsCommandList final : public D3D12ObjectWrapper<ID3D12GraphicsCommandList> {
 public:
     /// @brief Creates a command list of the specified type using the given allocator.
     /// @param[in] device the device that will own the command list
@@ -81,8 +81,12 @@ public:
     /// @return the result of the attempt to create the command list
     HRESULT Create(const D3D12Device &device, const D3D12CommandAllocator &allocator, D3D12_COMMAND_LIST_TYPE type,
                    ID3D12PipelineState *pipelineState = nullptr, UINT nodeMask = 0) {
-        return device->CreateCommandList(nodeMask, type, allocator.GetPointer(), pipelineState,
-                                         IID_PPV_ARGS(m_object.put()));
+        const HRESULT hr = device->CreateCommandList(nodeMask, type, allocator.GetPointer(), pipelineState,
+                                                     IID_PPV_ARGS(m_object.put()));
+        if (SUCCEEDED(hr)) {
+            QueryUpgrades();
+        }
+        return hr;
     }
 
     /// @brief Retrieves the address to the pointer to the command list cast to `ID3D12CommandList`.
@@ -90,6 +94,59 @@ public:
     ID3D12CommandList *const *GetAddressOfBase() const {
         return (ID3D12CommandList *const *)GetAddressOf();
     }
+
+    // clang-format off
+    ID3D12GraphicsCommandList1  *As1 () const { return m_list1 .get(); }
+    ID3D12GraphicsCommandList2  *As2 () const { return m_list2 .get(); }
+    ID3D12GraphicsCommandList3  *As3 () const { return m_list3 .get(); }
+    ID3D12GraphicsCommandList4  *As4 () const { return m_list4 .get(); }
+    ID3D12GraphicsCommandList5  *As5 () const { return m_list5 .get(); }
+    ID3D12GraphicsCommandList6  *As6 () const { return m_list6 .get(); }
+    ID3D12GraphicsCommandList7  *As7 () const { return m_list7 .get(); }
+    ID3D12GraphicsCommandList8  *As8 () const { return m_list8 .get(); }
+    ID3D12GraphicsCommandList9  *As9 () const { return m_list9 .get(); }
+    ID3D12GraphicsCommandList10 *As10() const { return m_list10.get(); }
+    // clang-format on
+
+private:
+    void QueryUpgrades() {
+        // clang-format off
+        m_list1  = m_object.try_query<ID3D12GraphicsCommandList1 >(); if (!m_list1) { return; }
+        m_list2  = m_object.try_query<ID3D12GraphicsCommandList2 >(); if (!m_list2) { return; }
+        m_list3  = m_object.try_query<ID3D12GraphicsCommandList3 >(); if (!m_list3) { return; }
+        m_list4  = m_object.try_query<ID3D12GraphicsCommandList4 >(); if (!m_list4) { return; }
+        m_list5  = m_object.try_query<ID3D12GraphicsCommandList5 >(); if (!m_list5) { return; }
+        m_list6  = m_object.try_query<ID3D12GraphicsCommandList6 >(); if (!m_list6) { return; }
+        m_list7  = m_object.try_query<ID3D12GraphicsCommandList7 >(); if (!m_list7) { return; }
+        m_list8  = m_object.try_query<ID3D12GraphicsCommandList8 >(); if (!m_list8) { return; }
+        m_list9  = m_object.try_query<ID3D12GraphicsCommandList9 >(); if (!m_list9) { return; }
+        m_list10 = m_object.try_query<ID3D12GraphicsCommandList10>();
+        // clang-format on
+    }
+
+    void DestroyExt() override {
+        m_list10.reset();
+        m_list9.reset();
+        m_list8.reset();
+        m_list7.reset();
+        m_list6.reset();
+        m_list5.reset();
+        m_list4.reset();
+        m_list3.reset();
+        m_list2.reset();
+        m_list1.reset();
+    }
+
+    wil::com_ptr_nothrow<ID3D12GraphicsCommandList1> m_list1;
+    wil::com_ptr_nothrow<ID3D12GraphicsCommandList2> m_list2;
+    wil::com_ptr_nothrow<ID3D12GraphicsCommandList3> m_list3;
+    wil::com_ptr_nothrow<ID3D12GraphicsCommandList4> m_list4;
+    wil::com_ptr_nothrow<ID3D12GraphicsCommandList5> m_list5;
+    wil::com_ptr_nothrow<ID3D12GraphicsCommandList6> m_list6;
+    wil::com_ptr_nothrow<ID3D12GraphicsCommandList7> m_list7;
+    wil::com_ptr_nothrow<ID3D12GraphicsCommandList8> m_list8;
+    wil::com_ptr_nothrow<ID3D12GraphicsCommandList9> m_list9;
+    wil::com_ptr_nothrow<ID3D12GraphicsCommandList10> m_list10;
 };
 
 } // namespace ymir::gpu::d3d12

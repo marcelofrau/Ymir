@@ -18,6 +18,12 @@ namespace ymir::gpu::d3d12 {
 /// @brief Manages an `ID3D12RootSignature`.
 class D3D12RootSignature final : public D3D12ObjectWrapper<ID3D12RootSignature> {
 public:
+    D3D12RootSignature() = default;
+    D3D12RootSignature(wil::com_ptr_nothrow<ID3D12RootSignature> &&ptr)
+        : D3D12ObjectWrapper(std::move(ptr)) {}
+    D3D12RootSignature(ID3D12RootSignature *ptr)
+        : D3D12ObjectWrapper(ptr) {}
+
     /// @brief Helper object to create root signature parameters with less boilerplate using the Builder design pattern.
     class RSBuilder;
 

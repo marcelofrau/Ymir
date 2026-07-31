@@ -1,6 +1,8 @@
 #include <ymir/gpu/api/d3d12/d3d12_gpu_swapchain.hpp>
 
 #include <ymir/gpu/api/d3d12/d3d12_gpu_command_queue.hpp>
+#include <ymir/gpu/api/d3d12/d3d12_gpu_texture.hpp>
+#include <ymir/gpu/api/d3d12/d3d12_gpu_texture_view.hpp>
 
 namespace ymir::gpu {
 
@@ -47,6 +49,30 @@ GPUObjectResult<IGPUSwapchain> D3D12Swapchain::Create(d3d12::D3D12Device &device
     }
 
     // TODO: create textures and views
+
+    for (int i = 0; i < maxFramesInFlight; ++i) {
+        ID3D12Resource *backbuffer = nullptr;
+        HRESULT hr = swapchain->GetBuffer(i, IID_PPV_ARGS(&backbuffer));
+        if (FAILED(hr)) {
+            return GPUOperationError{fmt::format("Could not get swapchain backbuffer #{}", i)};
+        }
+
+        const TextureSpec spec{
+            .dimensions = TextureDimensions::Tex2D,
+            .format = TextureFormat::R8G8B8A8_UNORM,
+            .usage = TextureUsage::RenderTarget,
+            .width = desc.Width,
+            .height = desc.Height,
+            .depthOrArrayLength = 1,
+            .mipLevels = 1,
+            .swapchain = true,
+        };
+        auto textureResult = D3D12Texture::CreateFromResource(device, spec, backbuffer);
+        if (!textureResult) {
+            return GPUOperationError{
+                fmt::format("Could not create D3D12Texture for backbuffer #{}: {}", i, textureResult.Error().message)};
+        }
+    }
 
     return {std::make_unique<D3D12Swapchain>(device, std::move(swapchain))};
 }

@@ -829,74 +829,75 @@ static void runCompute() {
 
         // NOTE: this is *not* executed immediately!
 #ifdef USE_ENHANCED_BARRIERS
-        const D3D12_BUFFER_BARRIER preBarrier{
-            .SyncBefore = D3D12_BARRIER_SYNC_NONE,
-            .SyncAfter = D3D12_BARRIER_SYNC_COPY,
-            .AccessBefore = D3D12_BARRIER_ACCESS_NO_ACCESS,
-            .AccessAfter = D3D12_BARRIER_ACCESS_COPY_DEST,
-            .pResource = stuff.bufIn.GetPointer(),
-            .Offset = 0,
-            .Size = stuff.dataIn.size(),
-        };
-        const D3D12_BARRIER_GROUP preGroup{
-            .Type = D3D12_BARRIER_TYPE_BUFFER,
-            .NumBarriers = 1,
-            .pBufferBarriers = &preBarrier,
-        };
-        stuff.commandList->Barrier(1, &preGroup);
-
-        stuff.commandList->CopyBufferRegion(stuff.bufIn.GetPointer(), 0, stuff.bufUpload.GetPointer(), 0,
-                                            stuff.dataIn.size());
-
-        const D3D12_BUFFER_BARRIER postBarriers[] = {
-            {
-                .SyncBefore = D3D12_BARRIER_SYNC_COPY,
-                .SyncAfter = D3D12_BARRIER_SYNC_COMPUTE_SHADING,
-                .AccessBefore = D3D12_BARRIER_ACCESS_COPY_DEST,
-                .AccessAfter = D3D12_BARRIER_ACCESS_SHADER_RESOURCE,
+        if (auto *list7 = stuff.commandList.As7()) {
+            const D3D12_BUFFER_BARRIER preBarrier{
+                .SyncBefore = D3D12_BARRIER_SYNC_NONE,
+                .SyncAfter = D3D12_BARRIER_SYNC_COPY,
+                .AccessBefore = D3D12_BARRIER_ACCESS_NO_ACCESS,
+                .AccessAfter = D3D12_BARRIER_ACCESS_COPY_DEST,
                 .pResource = stuff.bufIn.GetPointer(),
                 .Offset = 0,
                 .Size = stuff.dataIn.size(),
-            },
-            {
-                .SyncBefore = D3D12_BARRIER_SYNC_NONE,
-                .SyncAfter = D3D12_BARRIER_SYNC_COMPUTE_SHADING,
-                .AccessBefore = D3D12_BARRIER_ACCESS_NO_ACCESS,
-                .AccessAfter = D3D12_BARRIER_ACCESS_UNORDERED_ACCESS,
-                .pResource = stuff.bufOut.GetPointer(),
-                .Offset = 0,
-                .Size = stuff.dataOut.size(),
-            },
-        };
-        const D3D12_BARRIER_GROUP postGroup{
-            .Type = D3D12_BARRIER_TYPE_BUFFER,
-            .NumBarriers = std::size(postBarriers),
-            .pBufferBarriers = postBarriers,
-        };
-        stuff.commandList->Barrier(1, &postGroup);
+            };
+            const D3D12_BARRIER_GROUP preGroup{
+                .Type = D3D12_BARRIER_TYPE_BUFFER,
+                .NumBarriers = 1,
+                .pBufferBarriers = &preBarrier,
+            };
+            list7->Barrier(1, &preGroup);
 
-#else
+            stuff.commandList->CopyBufferRegion(stuff.bufIn.GetPointer(), 0, stuff.bufUpload.GetPointer(), 0,
+                                                stuff.dataIn.size());
 
-        D3D12_RESOURCE_BARRIER barrier = {
-            .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-            .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
-            .Transition =
+            const D3D12_BUFFER_BARRIER postBarriers[] = {
                 {
+                    .SyncBefore = D3D12_BARRIER_SYNC_COPY,
+                    .SyncAfter = D3D12_BARRIER_SYNC_COMPUTE_SHADING,
+                    .AccessBefore = D3D12_BARRIER_ACCESS_COPY_DEST,
+                    .AccessAfter = D3D12_BARRIER_ACCESS_SHADER_RESOURCE,
                     .pResource = stuff.bufIn.GetPointer(),
-                    .Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
-                    .StateBefore = D3D12_RESOURCE_STATE_COMMON,
-                    .StateAfter = D3D12_RESOURCE_STATE_COPY_DEST,
+                    .Offset = 0,
+                    .Size = stuff.dataIn.size(),
                 },
-        };
-        stuff.commandList->ResourceBarrier(1, &barrier);
-
-        stuff.commandList->CopyBufferRegion(stuff.bufIn.GetPointer(), 0, stuff.bufUpload.GetPointer(), 0,
-                                            stuff.dataIn.size());
-
-        barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
-        barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_COMMON;
-        stuff.commandList->ResourceBarrier(1, &barrier);
+                {
+                    .SyncBefore = D3D12_BARRIER_SYNC_NONE,
+                    .SyncAfter = D3D12_BARRIER_SYNC_COMPUTE_SHADING,
+                    .AccessBefore = D3D12_BARRIER_ACCESS_NO_ACCESS,
+                    .AccessAfter = D3D12_BARRIER_ACCESS_UNORDERED_ACCESS,
+                    .pResource = stuff.bufOut.GetPointer(),
+                    .Offset = 0,
+                    .Size = stuff.dataOut.size(),
+                },
+            };
+            const D3D12_BARRIER_GROUP postGroup{
+                .Type = D3D12_BARRIER_TYPE_BUFFER,
+                .NumBarriers = std::size(postBarriers),
+                .pBufferBarriers = postBarriers,
+            };
+            list7->Barrier(1, &postGroup);
+        } else
 #endif
+        {
+            D3D12_RESOURCE_BARRIER barrier = {
+                .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+                .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+                .Transition =
+                    {
+                        .pResource = stuff.bufIn.GetPointer(),
+                        .Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                        .StateBefore = D3D12_RESOURCE_STATE_COMMON,
+                        .StateAfter = D3D12_RESOURCE_STATE_COPY_DEST,
+                    },
+            };
+            stuff.commandList->ResourceBarrier(1, &barrier);
+
+            stuff.commandList->CopyBufferRegion(stuff.bufIn.GetPointer(), 0, stuff.bufUpload.GetPointer(), 0,
+                                                stuff.dataIn.size());
+
+            barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+            barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_COMMON;
+            stuff.commandList->ResourceBarrier(1, &barrier);
+        }
     }
 
     // Run compute shader
@@ -916,8 +917,8 @@ static void runCompute() {
 
     // Download resource
     // NOTE: this is *not* executed immediately!
-    {
 #ifdef USE_ENHANCED_BARRIERS
+    if (auto *list7 = stuff.commandList.As7()) {
         const D3D12_BUFFER_BARRIER preBarrier{
             .SyncBefore = D3D12_BARRIER_SYNC_COMPUTE_SHADING,
             .SyncAfter = D3D12_BARRIER_SYNC_COPY,
@@ -932,12 +933,12 @@ static void runCompute() {
             .NumBarriers = 1,
             .pBufferBarriers = &preBarrier,
         };
-        stuff.commandList->Barrier(1, &preGroup);
+        list7->Barrier(1, &preGroup);
 
         stuff.commandList->CopyResource(stuff.bufDownload.GetPointer(), stuff.bufOut.GetPointer());
-
-#else
-
+    } else
+#endif
+    {
         D3D12_RESOURCE_BARRIER barrier = {
             .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
             .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
@@ -957,7 +958,6 @@ static void runCompute() {
         barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
         barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
         stuff.commandList->ResourceBarrier(1, &barrier);
-#endif
     }
 
     // Execute command list and wait for completion

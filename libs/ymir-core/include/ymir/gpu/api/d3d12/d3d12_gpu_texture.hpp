@@ -14,8 +14,11 @@ public:
     static constexpr Backend kBackend = Backend::Direct3D12;
 
     D3D12Texture(d3d12::D3D12Device &device, const TextureSpec &spec, d3d12::D3D12Resource resource);
+    ~D3D12Texture() override;
 
     static GPUObjectResult<IGPUTexture> Create(d3d12::D3D12Device &device, const TextureSpec &spec);
+    static GPUObjectResult<IGPUTexture> CreateFromResource(d3d12::D3D12Device &device, const TextureSpec &spec,
+                                                           ID3D12Resource *resource);
 
     void SetName(std::string_view name) override;
 

@@ -2,7 +2,7 @@
 
 /**
 @file
-@brief Defines `D3D12Resource`, a wrapper for `ID3D12Resource2` objects.
+@brief Defines `D3D12Resource`, a wrapper for `ID3D12Resource` objects.
 */
 
 #include "d3d12_device.hpp"
@@ -12,9 +12,15 @@
 
 namespace ymir::gpu::d3d12 {
 
-/// @brief Manages an `ID3D12Resource2`.
-class D3D12Resource final : public D3D12ObjectWrapper<ID3D12Resource2> {
+/// @brief Manages an `ID3D12Resource`.
+class D3D12Resource final : public D3D12ObjectWrapper<ID3D12Resource> {
 public:
+    D3D12Resource() = default;
+    D3D12Resource(wil::com_ptr_nothrow<ID3D12Resource> &&ptr)
+        : D3D12ObjectWrapper(std::move(ptr)) {}
+    D3D12Resource(ID3D12Resource *ptr)
+        : D3D12ObjectWrapper(ptr) {}
+
     /// @brief Helper object to create resource parameters with less boilerplate using the Builder design pattern.
     class D3D12ResourceBuilder;
 
@@ -55,9 +61,34 @@ public:
     HRESULT CreateCommitted(const D3D12Device &device, const D3D12_HEAP_PROPERTIES &heapProperties,
                             D3D12_HEAP_FLAGS heapFlags, const D3D12_RESOURCE_DESC &desc,
                             D3D12_RESOURCE_STATES initState, const D3D12_CLEAR_VALUE *optimizedClearValue = nullptr) {
-        return device->CreateCommittedResource(&heapProperties, heapFlags, &desc, initState, optimizedClearValue,
-                                               IID_PPV_ARGS(m_object.put()));
+        const HRESULT hr = device->CreateCommittedResource(&heapProperties, heapFlags, &desc, initState,
+                                                           optimizedClearValue, IID_PPV_ARGS(m_object.put()));
+        if (SUCCEEDED(hr)) {
+            QueryUpgrades();
+        }
+        return hr;
     }
+
+    // clang-format off
+    ID3D12Resource1 *As1() const { return m_resource1.get(); }
+    ID3D12Resource2 *As2() const { return m_resource2.get(); }
+    // clang-format on
+
+private:
+    void QueryUpgrades() {
+        // clang-format off
+        m_resource1 = m_object.try_query<ID3D12Resource1>(); if (!m_resource1) { return; }
+        m_resource2 = m_object.try_query<ID3D12Resource2>();
+        // clang-format on
+    }
+
+    void DestroyExt() override {
+        m_resource2.reset();
+        m_resource1.reset();
+    }
+
+    wil::com_ptr_nothrow<ID3D12Resource1> m_resource1;
+    wil::com_ptr_nothrow<ID3D12Resource2> m_resource2;
 };
 
 // -----------------------------------------------------------------------------

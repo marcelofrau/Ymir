@@ -72,74 +72,86 @@ static void SetupBarrier(const MemoryBarrierSpec &spec, D3D12_GLOBAL_BARRIER &ou
 }
 
 void D3D12CommandList::Barrier(const BufferBarrierSpec &spec) {
-    D3D12_BUFFER_BARRIER barrier{};
-    if (!SetupBarrier(spec, barrier)) {
-        // TODO: report error
-        return;
-    }
-    if (barrier.AccessBefore == barrier.AccessAfter) {
-        return;
-    }
+    if (auto *list7 = m_list.As7()) {
+        D3D12_BUFFER_BARRIER barrier{};
+        if (!SetupBarrier(spec, barrier)) {
+            // TODO: report error
+            return;
+        }
+        if (barrier.AccessBefore == barrier.AccessAfter) {
+            return;
+        }
 
-    D3D12_BARRIER_GROUP group{
-        .Type = D3D12_BARRIER_TYPE_BUFFER,
-        .NumBarriers = 1,
-        .pBufferBarriers = &barrier,
-    };
-    m_list->Barrier(1, &group);
+        D3D12_BARRIER_GROUP group{
+            .Type = D3D12_BARRIER_TYPE_BUFFER,
+            .NumBarriers = 1,
+            .pBufferBarriers = &barrier,
+        };
+        list7->Barrier(1, &group);
+    } else {
+        // TODO: implement legacy barrier fallback
+    }
 }
 
 void D3D12CommandList::Barrier(const MemoryBarrierSpec &spec) {
-    D3D12_GLOBAL_BARRIER barrier{};
-    SetupBarrier(spec, barrier);
-    if (barrier.AccessBefore == barrier.AccessAfter) {
-        return;
-    }
+    if (auto *list7 = m_list.As7()) {
+        D3D12_GLOBAL_BARRIER barrier{};
+        SetupBarrier(spec, barrier);
+        if (barrier.AccessBefore == barrier.AccessAfter) {
+            return;
+        }
 
-    D3D12_BARRIER_GROUP group{
-        .Type = D3D12_BARRIER_TYPE_GLOBAL,
-        .NumBarriers = 1,
-        .pGlobalBarriers = &barrier,
-    };
-    m_list->Barrier(1, &group);
+        D3D12_BARRIER_GROUP group{
+            .Type = D3D12_BARRIER_TYPE_GLOBAL,
+            .NumBarriers = 1,
+            .pGlobalBarriers = &barrier,
+        };
+        list7->Barrier(1, &group);
+    } else {
+        // TODO: implement legacy barrier fallback
+    }
 }
 
 void D3D12CommandList::Barrier(const BarrierGroupSpec &spec) {
-    std::vector<D3D12_GLOBAL_BARRIER> globalBarriers{};
-    std::vector<D3D12_TEXTURE_BARRIER> textureBarriers{};
-    std::vector<D3D12_BUFFER_BARRIER> bufferBarriers{};
-    std::vector<D3D12_BARRIER_GROUP> groups{};
+    if (auto *list7 = m_list.As7()) {
+        std::vector<D3D12_GLOBAL_BARRIER> globalBarriers{};
+        std::vector<D3D12_TEXTURE_BARRIER> textureBarriers{};
+        std::vector<D3D12_BUFFER_BARRIER> bufferBarriers{};
+        std::vector<D3D12_BARRIER_GROUP> groups{};
 
-    for (const MemoryBarrierSpec &barrier : spec.memoryBarriers) {
-        SetupBarrier(barrier, globalBarriers.emplace_back());
-    }
-    // TODO: implement texture barriers
-    for (const BufferBarrierSpec &barrier : spec.bufferBarriers) {
-        SetupBarrier(barrier, bufferBarriers.emplace_back());
-    }
+        for (const MemoryBarrierSpec &barrier : spec.memoryBarriers) {
+            SetupBarrier(barrier, globalBarriers.emplace_back());
+        }
+        // TODO: implement texture barriers
+        for (const BufferBarrierSpec &barrier : spec.bufferBarriers) {
+            SetupBarrier(barrier, bufferBarriers.emplace_back());
+        }
 
-    if (!globalBarriers.empty()) {
-        D3D12_BARRIER_GROUP &group = groups.emplace_back();
-        group.Type = D3D12_BARRIER_TYPE_GLOBAL;
-        group.NumBarriers = globalBarriers.size();
-        group.pGlobalBarriers = globalBarriers.data();
-    }
-    if (!textureBarriers.empty()) {
-        D3D12_BARRIER_GROUP &group = groups.emplace_back();
-        group.Type = D3D12_BARRIER_TYPE_TEXTURE;
-        group.NumBarriers = textureBarriers.size();
-        group.pTextureBarriers = textureBarriers.data();
-    }
+        if (!globalBarriers.empty()) {
+            D3D12_BARRIER_GROUP &group = groups.emplace_back();
+            group.Type = D3D12_BARRIER_TYPE_GLOBAL;
+            group.NumBarriers = globalBarriers.size();
+            group.pGlobalBarriers = globalBarriers.data();
+        }
+        if (!textureBarriers.empty()) {
+            D3D12_BARRIER_GROUP &group = groups.emplace_back();
+            group.Type = D3D12_BARRIER_TYPE_TEXTURE;
+            group.NumBarriers = textureBarriers.size();
+            group.pTextureBarriers = textureBarriers.data();
+        }
 
-    if (!bufferBarriers.empty()) {
-        D3D12_BARRIER_GROUP &group = groups.emplace_back();
-        group.Type = D3D12_BARRIER_TYPE_BUFFER;
-        group.NumBarriers = bufferBarriers.size();
-        group.pBufferBarriers = bufferBarriers.data();
-    }
+        if (!bufferBarriers.empty()) {
+            D3D12_BARRIER_GROUP &group = groups.emplace_back();
+            group.Type = D3D12_BARRIER_TYPE_BUFFER;
+            group.NumBarriers = bufferBarriers.size();
+            group.pBufferBarriers = bufferBarriers.data();
+        }
 
-    if (!groups.empty()) {
-        m_list->Barrier(groups.size(), groups.data());
+        if (!groups.empty()) {
+            list7->Barrier(groups.size(), groups.data());
+        }
+    } else {
+        // TODO: implement legacy barrier fallback
     }
 }
 

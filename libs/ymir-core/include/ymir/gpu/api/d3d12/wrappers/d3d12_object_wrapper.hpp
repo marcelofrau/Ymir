@@ -13,7 +13,26 @@ namespace ymir::gpu::d3d12 {
 template <typename T>
 class D3D12ObjectWrapper {
 public:
+    D3D12ObjectWrapper() = default;
+    D3D12ObjectWrapper(wil::com_ptr_nothrow<T> &&ptr)
+        : m_object(ptr) {}
+    D3D12ObjectWrapper(T *instance) {
+        Attach(instance);
+    }
+
     virtual ~D3D12ObjectWrapper() = default;
+
+    /// @brief Attaches this wrapper to an existing object without incrementing the reference counter.
+    /// @param[in] instance pointer to an instance of the object to attach to
+    void Attach(T *instance) {
+        m_object.attach(instance);
+    }
+
+    /// @brief Detaches the underlying object from this wrapper without decrementing the reference counter.
+    /// @return a pointer to the detached object
+    T *Detach() {
+        return m_object.detach();
+    }
 
     /// @brief Destroys the resource associated with this object.
     void Destroy() {

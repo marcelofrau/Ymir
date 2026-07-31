@@ -17,6 +17,12 @@ namespace ymir::gpu::d3d12 {
 /// @brief Manages an `ID3D12PipelineState`.
 class D3D12PipelineState final : public D3D12ObjectWrapper<ID3D12PipelineState> {
 public:
+    D3D12PipelineState() = default;
+    D3D12PipelineState(wil::com_ptr_nothrow<ID3D12PipelineState> &&ptr)
+        : D3D12ObjectWrapper(std::move(ptr)) {}
+    D3D12PipelineState(ID3D12PipelineState *ptr)
+        : D3D12ObjectWrapper(ptr) {}
+
     /// @brief Creates a graphics pipeline state object.
     /// @param[in] desc the graphics pipeline state descriptor
     /// @return the result of the attempt to create the graphics pipeline state object

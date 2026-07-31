@@ -15,6 +15,12 @@ namespace ymir::gpu::d3d12 {
 /// @brief Manages an `IDXGISwapChain3` and a waitable object for frame synchronization.
 class D3D12SwapChain final : public D3D12ObjectWrapper<IDXGISwapChain3> {
 public:
+    D3D12SwapChain() = default;
+    D3D12SwapChain(wil::com_ptr_nothrow<IDXGISwapChain3> &&ptr)
+        : D3D12ObjectWrapper(std::move(ptr)) {}
+    D3D12SwapChain(IDXGISwapChain3 *ptr)
+        : D3D12ObjectWrapper(ptr) {}
+
     /// @brief Creates an `IDXGISwapChain3` with the specified parameters
     /// @param[in] dxgiFactoryFlags base flags to apply to the `IDXGIFactory6` instance
     /// @param[in] commandQueue the direct command queue to bind to the swap chain
@@ -68,7 +74,7 @@ public:
     /// @brief Presents the next frame.
     /// @param[in] syncInterval the frame synchronization interval
     /// @param[in,opt] flags frame presentation options
-    /// @return
+    /// @return the result of the operation
     HRESULT Present(UINT syncInterval, UINT flags) const {
         return m_object->Present(syncInterval, flags);
     }
@@ -79,18 +85,8 @@ public:
         return m_waitableObject.get();
     }
 
-    /// @brief Returns a pointer to the `IDXGISwapChain3` instance for convenience.
-    /// @return a pointer to the `IDXGISwapChain3` instance
-    IDXGISwapChain3 *operator->() {
-        return m_object.get();
-    }
-
-    /// @brief Returns a pointer to the `IDXGISwapChain3` instance for convenience.
-    /// @return a pointer to the `IDXGISwapChain3` instance
-    IDXGISwapChain3 *operator->() const {
-        return m_object.get();
-    }
-
+    /// @brief Determines if presentation tearing is supported with this swap chain.
+    /// @return `true` if presentation tearing is supported
     bool IsTearingSupported() const {
         return m_tearingSupport;
     }

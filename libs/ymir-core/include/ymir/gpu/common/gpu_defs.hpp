@@ -97,6 +97,7 @@ struct TextureSpec {
     uint32 height = 1;             // Valid for 2D, 3D
     uint32 depthOrArrayLength = 1; // Depth for 3D, array length for 1D and 2D
     uint32 mipLevels = 1;
+    bool swapchain = false; // Part of a swapchain if `true`
 };
 
 enum class Texture2DViewMode { Normal, Multisampled, Cube };

@@ -2,7 +2,7 @@
 
 /**
 @file
-@brief Defines `D3D12Fence`, a wrapper for `ID3D12Fence1` objects.
+@brief Defines `D3D12Fence`, a wrapper for `ID3D12Fence` objects.
 */
 
 #include "d3d12_device.hpp"
@@ -12,9 +12,15 @@
 
 namespace ymir::gpu::d3d12 {
 
-/// @brief Manages an `ID3D12Fence1` and includes a wait handle and the last signaled value for convenience.
+/// @brief Manages an `ID3D12Fence` and includes a wait handle and the last signaled value for convenience.
 class D3D12Fence final : public D3D12ObjectWrapper<ID3D12Fence> {
 public:
+    D3D12Fence() = default;
+    D3D12Fence(wil::com_ptr_nothrow<ID3D12Fence> &&ptr)
+        : D3D12ObjectWrapper(std::move(ptr)) {}
+    D3D12Fence(ID3D12Fence *ptr)
+        : D3D12ObjectWrapper(ptr) {}
+
     /// @brief Creates an `ID3D12Fence` object using the given device and parameters.
     /// @param[in] device the device instance that will own the fence
     /// @param[in] initialValue the initial fence value
@@ -22,7 +28,11 @@ public:
     /// @return the result of the attempt to create the fence
     HRESULT Create(const D3D12Device &device, UINT64 initialValue, D3D12_FENCE_FLAGS flags) {
         m_lastSignaledValue = initialValue;
-        return device->CreateFence(initialValue, flags, IID_PPV_ARGS(m_object.put()));
+        const HRESULT hr = device->CreateFence(initialValue, flags, IID_PPV_ARGS(m_object.put()));
+        if (SUCCEEDED(hr)) {
+            QueryUpgrades();
+        }
+        return hr;
     }
 
     /// @brief Enqueues a fence signal into the given command queue.
@@ -65,17 +75,28 @@ public:
         return m_lastSignaledValue;
     }
 
+    // clang-format off
+    ID3D12Fence1 *As1() const { return m_fence1.get(); }
+    // clang-format on
+
 private:
     wil::unique_handle m_waitEvent{CreateEvent(nullptr, FALSE, FALSE, nullptr)};
     UINT64 m_lastSignaledValue = 0;
 
+    void QueryUpgrades() {
+        m_fence1 = m_object.try_query<ID3D12Fence1>();
+    }
+
     void DestroyExt() override {
         m_waitEvent.reset();
+        m_fence1.reset();
     }
 
     bool IsValidExt() const override {
         return (bool)m_waitEvent;
     }
+
+    wil::com_ptr_nothrow<ID3D12Fence1> m_fence1;
 };
 
 } // namespace ymir::gpu::d3d12

@@ -11,6 +11,12 @@ D3D12Texture::D3D12Texture(d3d12::D3D12Device &device, const TextureSpec &spec, 
     , m_device(device)
     , m_resource(std::move(resource)) {}
 
+D3D12Texture::~D3D12Texture() {
+    if (GetSpec().swapchain) {
+        m_resource.Detach();
+    }
+}
+
 GPUObjectResult<IGPUTexture> D3D12Texture::Create(d3d12::D3D12Device &device, const TextureSpec &spec) {
     switch (spec.dimensions) {
     case TextureDimensions::Tex1D: break;
@@ -59,6 +65,18 @@ GPUObjectResult<IGPUTexture> D3D12Texture::Create(d3d12::D3D12Device &device, co
         return GPUOperationError{fmt::format("Failed to create D3D12 texture: error code {:X}", hr)};
     }
     return {std::make_unique<D3D12Texture>(device, spec, std::move(resource))};
+}
+
+GPUObjectResult<IGPUTexture> D3D12Texture::CreateFromResource(d3d12::D3D12Device &device, const TextureSpec &spec,
+                                                              ID3D12Resource *resource) {
+    switch (spec.dimensions) {
+    case TextureDimensions::Tex1D: break;
+    case TextureDimensions::Tex2D: break;
+    case TextureDimensions::Tex3D: break;
+    default: return GPUOperationError{"Illegal texture dimensions value"};
+    }
+
+    return {std::make_unique<D3D12Texture>(device, spec, d3d12::D3D12Resource{resource})};
 }
 
 void D3D12Texture::SetName(std::string_view name) {

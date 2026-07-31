@@ -107,7 +107,7 @@ GPUValueResult<D3D12DescriptorAllocation> D3D12DescriptorManager::AllocateRTV(co
     if (dx12Texture == nullptr) {
         return GPUOperationError{"Texture referenced by view is not a D3D12 texture"};
     }
-    ID3D12Resource2 *resource = dx12Texture->GetResource().GetPointer();
+    ID3D12Resource *resource = dx12Texture->GetResource().GetPointer();
     assert(resource != nullptr);
 
     const UINT mipSlice = viewSpec.mipLevelBase;
@@ -191,7 +191,7 @@ GPUValueResult<D3D12DescriptorAllocation> D3D12DescriptorManager::AllocateDSV(co
     if (dx12Texture == nullptr) {
         return GPUOperationError{"Texture referenced by view is not a D3D12 texture"};
     }
-    ID3D12Resource2 *resource = dx12Texture->GetResource().GetPointer();
+    ID3D12Resource *resource = dx12Texture->GetResource().GetPointer();
     assert(resource != nullptr);
 
     const UINT mipSlice = viewSpec.mipLevelBase;
@@ -268,7 +268,7 @@ GPUValueResult<D3D12DescriptorAllocation> D3D12DescriptorManager::AllocateSRV(co
     if (dx12Texture == nullptr) {
         return GPUOperationError{"Texture referenced by view is not a D3D12 texture"};
     }
-    ID3D12Resource2 *resource = dx12Texture->GetResource().GetPointer();
+    ID3D12Resource *resource = dx12Texture->GetResource().GetPointer();
     assert(resource != nullptr);
 
     const UINT mostDetailedMip = viewSpec.mipLevelBase;
@@ -368,7 +368,7 @@ GPUValueResult<D3D12DescriptorAllocation> D3D12DescriptorManager::AllocateUAV(co
     if (dx12Texture == nullptr) {
         return GPUOperationError{"Texture referenced by view is not a D3D12 texture"};
     }
-    ID3D12Resource2 *resource = dx12Texture->GetResource().GetPointer();
+    ID3D12Resource *resource = dx12Texture->GetResource().GetPointer();
     assert(resource != nullptr);
 
     const UINT mipSlice = viewSpec.mipLevelBase;
@@ -447,7 +447,7 @@ GPUValueResult<D3D12DescriptorAllocation> D3D12DescriptorManager::AllocateCBV(co
     if (dx12Buffer == nullptr) {
         return GPUOperationError{"Buffer referenced by view is not a D3D12 buffer"};
     }
-    ID3D12Resource2 *resource = dx12Buffer->GetResource().GetPointer();
+    ID3D12Resource *resource = dx12Buffer->GetResource().GetPointer();
     assert(resource != nullptr);
 
     D3D12_CONSTANT_BUFFER_VIEW_DESC desc{};
@@ -470,7 +470,7 @@ GPUValueResult<D3D12DescriptorAllocation> D3D12DescriptorManager::AllocateSRV(co
     if (dx12Buffer == nullptr) {
         return GPUOperationError{"Buffer referenced by view is not a D3D12 buffer"};
     }
-    ID3D12Resource2 *resource = dx12Buffer->GetResource().GetPointer();
+    ID3D12Resource *resource = dx12Buffer->GetResource().GetPointer();
     assert(resource != nullptr);
 
     D3D12_SHADER_RESOURCE_VIEW_DESC desc{};
@@ -498,7 +498,7 @@ GPUValueResult<D3D12DescriptorAllocation> D3D12DescriptorManager::AllocateUAV(co
     if (dx12Buffer == nullptr) {
         return GPUOperationError{"Buffer referenced by view is not a D3D12 buffer"};
     }
-    ID3D12Resource2 *resource = dx12Buffer->GetResource().GetPointer();
+    ID3D12Resource *resource = dx12Buffer->GetResource().GetPointer();
     assert(resource != nullptr);
 
     D3D12_UNORDERED_ACCESS_VIEW_DESC desc{};

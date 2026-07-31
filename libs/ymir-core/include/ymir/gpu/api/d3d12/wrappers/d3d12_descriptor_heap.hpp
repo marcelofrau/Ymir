@@ -15,6 +15,12 @@ namespace ymir::gpu::d3d12 {
 /// @brief Manages an `ID3D12DescriptorHeap` along with handles for the start of the CPU and GPU pointers.
 class D3D12DescriptorHeap final : public D3D12ObjectWrapper<ID3D12DescriptorHeap> {
 public:
+    D3D12DescriptorHeap() = default;
+    D3D12DescriptorHeap(wil::com_ptr_nothrow<ID3D12DescriptorHeap> &&ptr)
+        : D3D12ObjectWrapper(std::move(ptr)) {}
+    D3D12DescriptorHeap(ID3D12DescriptorHeap *ptr)
+        : D3D12ObjectWrapper(ptr) {}
+
     /// @brief Creates an `ID3D12DescriptorHeap` with the specified parameters.
     /// @param[in] device the device instance that will own the descriptor heap
     /// @param[in] desc the parameters of the descriptor heap
