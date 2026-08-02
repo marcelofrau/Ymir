@@ -1106,10 +1106,12 @@ static void runGraphics() {
     };
 
     // Triangle
+    ymir::gpu::d3d12::D3D12DescriptorHeap cbvHeap{};
     ymir::gpu::d3d12::D3D12RootSignature rootSig{};
     ymir::gpu::d3d12::D3D12PipelineState pipelineState{};
     ymir::gpu::d3d12::D3D12Resource vertexUploadBuffer{};
     ymir::gpu::d3d12::D3D12Resource vertexBuffer{};
+    ymir::gpu::d3d12::D3D12Resource constBuffer{};
     D3D12_VERTEX_BUFFER_VIEW vertexBufferView{};
 
     // ---------------------------------
@@ -1179,7 +1181,7 @@ static void runGraphics() {
     }
     frameIndex = swapchain->GetCurrentBackBufferIndex();
 
-    // Create descriptor heap
+    // Create descriptor heaps
     {
         D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc{};
         rtvHeapDesc.NumDescriptors = kFrameCount;
@@ -1190,13 +1192,23 @@ static void runGraphics() {
             return;
         }
         rtvHeap->SetName(L"RTV heap");
+
+        D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc{};
+        cbvHeapDesc.NumDescriptors = 1;
+        cbvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+        cbvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+        if (FAILED(cbvHeap.Create(device, cbvHeapDesc))) {
+            SDL_Log("Failed to create CBV heap");
+            return;
+        }
+        cbvHeap->SetName(L"CBV heap");
     }
 
     // Create frame resources
     {
         D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle(rtvHeap.GetCPUStart());
 
-        // Create a RTV for each frame.
+        // Create a RTV for each frame
         for (UINT n = 0; n < kFrameCount; n++) {
             ID3D12Resource *resource;
             if (FAILED(swapchain->GetBuffer(n, IID_PPV_ARGS(&resource)))) {
@@ -1241,8 +1253,12 @@ static void runGraphics() {
         Float3 position;
         Float4 color;
     };
-
-    float aspectRatio = static_cast<float>(windowWidth) / windowHeight;
+    struct alignas(256) SceneConstantBuffer {
+        Float4 offset = {0.0f, 0.0f, 0.0f, 0.0f};
+        float aspectRatio = 1.0f;
+    } constBufferData;
+    constBufferData.aspectRatio = static_cast<float>(windowWidth) / windowHeight;
+    void *constBufferPtr = nullptr;
 
     D3D12_VIEWPORT viewport{
         .TopLeftX = 0.0f,
@@ -1271,9 +1287,49 @@ static void runGraphics() {
         rootSig->SetName(L"Main root signature");
     }
 
+    // Create a root signature consisting of a descriptor table with a single CBV
+    {
+        // This is the highest version the sample supports. If CheckFeatureSupport succeeds, the HighestVersion returned
+        // will not be greater than this.
+        // TODO: use this
+        // D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData{};
+        // featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
+        // if (FAILED(device->CheckFeatureSupport(D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData)))) {
+        //     featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
+        // }
+
+        auto rootSigBuilder = rootSig.Builder();
+
+        // Allow input layout and deny uneccessary access to certain pipeline stages
+        rootSigBuilder.Flags(D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
+                             D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
+                             D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
+                             D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
+                             D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS);
+
+        // TODO: add D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC flag to CBV range
+        // - requires D3D12_DESCRIPTOR_RANGE1 and D3D12_ROOT_PARAMETER1
+        // - make a builder for version 1.1 root signatures
+        rootSigBuilder.AddDescriptorTable(D3D12_SHADER_VISIBILITY_VERTEX).AddCBVs(1, 0);
+
+        if (FAILED(rootSigBuilder.Build(device))) {
+            SDL_Log("Failed to create root signature");
+            if (!rootSig.GetSerializationError().empty()) {
+                SDL_Log("Root signature serialization error: %s", rootSig.GetSerializationError().data());
+            }
+            return;
+        }
+    }
+
     // Create the pipeline state, which includes compiling and loading shaders
     {
         static constexpr const char *kVertexShaderCode = R"(
+cbuffer SceneConstantBuffer : register(b0) {
+    float4 offset;
+    float aspectRatio;
+    float4 padding[14];
+};
+
 struct PSInput {
     float4 position : SV_POSITION;
     float4 color : COLOR;
@@ -1282,7 +1338,7 @@ struct PSInput {
 PSInput VSMain(float4 position : POSITION, float4 color : COLOR) {
     PSInput result;
 
-    result.position = position;
+    result.position = (position + offset) * float4(1.0f, aspectRatio, 1.0f, 1.0f);
     result.color = color;
 
     return result;
@@ -1388,10 +1444,9 @@ float4 PSMain(PSInput input) : SV_TARGET {
     // Create the vertex buffer
     {
         // Define the geometry for a triangle
-        // TODO: move aspect ratio to constant buffer
-        Vertex triangleVertices[] = {{{0.0f, 0.25f * aspectRatio, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
-                                     {{0.25f, -0.25f * aspectRatio, 0.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
-                                     {{-0.25f, -0.25f * aspectRatio, 0.0f}, {0.0f, 0.0f, 1.0f, 1.0f}}};
+        Vertex triangleVertices[] = {{{0.0f, 0.25f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
+                                     {{0.25f, -0.25f, 0.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
+                                     {{-0.25f, -0.25f, 0.0f}, {0.0f, 0.0f, 1.0f, 1.0f}}};
 
         const UINT vertexBufferSize = sizeof(triangleVertices);
         const D3D12_RESOURCE_DESC vertexBufferDesc{
@@ -1475,6 +1530,45 @@ float4 PSMain(PSInput input) : SV_TARGET {
         vertexBufferView.SizeInBytes = vertexBufferSize;
     }
 
+    // Create the constant buffer
+    {
+        const UINT constantBufferSize = sizeof(SceneConstantBuffer); // CB size is required to be 256-byte aligned.
+
+        const D3D12_RESOURCE_DESC constBufferDesc{
+            .Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
+            .Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT,
+            .Width = constantBufferSize,
+            .Height = 1,
+            .DepthOrArraySize = 1,
+            .MipLevels = 1,
+            .Format = DXGI_FORMAT_UNKNOWN,
+            .SampleDesc = {.Count = 1, .Quality = 0},
+            .Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+            .Flags = D3D12_RESOURCE_FLAG_NONE,
+        };
+        if (FAILED(constBuffer.CreateCommitted(device, {.Type = D3D12_HEAP_TYPE_UPLOAD}, D3D12_HEAP_FLAG_NONE,
+                                               constBufferDesc, D3D12_RESOURCE_STATE_COMMON))) {
+            SDL_Log("Failed to create vertex upload buffer");
+            return;
+        }
+        constBuffer->SetName(L"Constant buffer");
+
+        // Describe and create a constant buffer view.
+        D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc{};
+        cbvDesc.BufferLocation = constBuffer->GetGPUVirtualAddress();
+        cbvDesc.SizeInBytes = constantBufferSize;
+        device->CreateConstantBufferView(&cbvDesc, cbvHeap.GetCPUStart());
+
+        // Map and initialize the constant buffer. We don't unmap this until the app closes. Keeping things mapped for
+        // the lifetime of the resource is okay.
+        D3D12_RANGE readRange(0, 0); // We do not intend to read from this resource on the CPU.
+        if (FAILED(constBuffer->Map(0, &readRange, &constBufferPtr))) {
+            SDL_Log("Failed to map constant buffer");
+            return;
+        }
+        memcpy(constBufferPtr, &constBufferData, sizeof(constBufferData));
+    }
+
     // Wait for commands to execute
     waitForGPU();
 
@@ -1515,13 +1609,24 @@ float4 PSMain(PSInput input) : SV_TARGET {
         }
 
         // Recalculate aspect ratio
-        aspectRatio = static_cast<float>(width) / height;
+        constBufferData.aspectRatio = static_cast<float>(width) / height;
 
         // Update viewport and scissor rects
         viewport.Width = width;
         viewport.Height = height;
         scissorRect.right = width;
         scissorRect.bottom = height;
+    };
+
+    auto update = [&] {
+        const float translationSpeed = 0.005f;
+        const float offsetBounds = 1.25f;
+
+        constBufferData.offset.x += translationSpeed;
+        if (constBufferData.offset.x > offsetBounds) {
+            constBufferData.offset.x = -offsetBounds;
+        }
+        memcpy(constBufferPtr, &constBufferData, sizeof(constBufferData));
     };
 
     auto populateCmdList = [&] {
@@ -1538,6 +1643,11 @@ float4 PSMain(PSInput input) : SV_TARGET {
 
         // Set necessary state
         cmdList->SetGraphicsRootSignature(rootSig.GetPointer());
+
+        ID3D12DescriptorHeap *heaps[] = {cbvHeap.GetPointer()};
+        cmdList->SetDescriptorHeaps(std::size(heaps), heaps);
+
+        cmdList->SetGraphicsRootDescriptorTable(0, cbvHeap.GetGPUStart());
         cmdList->RSSetViewports(1, &viewport);
         cmdList->RSSetScissorRects(1, &scissorRect);
 
@@ -1597,6 +1707,11 @@ float4 PSMain(PSInput input) : SV_TARGET {
                 }
             }
         }
+
+        // ---------------------------------------------------------------------
+        // Update
+
+        update();
 
         // ---------------------------------------------------------------------
         // Render
