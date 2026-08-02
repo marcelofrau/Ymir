@@ -1060,6 +1060,12 @@ static void runGraphics() {
     static constexpr UINT kFrameCount = 3;
 
     // Basic graphics resources
+    struct FrameContext {
+        ymir::gpu::d3d12::D3D12Resource renderTarget{};
+        ymir::gpu::d3d12::D3D12CommandAllocator cmdAlloc{};
+        ymir::gpu::d3d12::FenceCounter fenceCounter{};
+    };
+
     ymir::gpu::d3d12::D3D12CommandQueue cmdQueue{};
     ymir::gpu::d3d12::D3D12CommandAllocator cmdAlloc{};
     ymir::gpu::d3d12::D3D12GraphicsCommandList cmdList{};
@@ -1067,16 +1073,31 @@ static void runGraphics() {
     ymir::gpu::d3d12::D3D12DescriptorHeap rtvHeap{};
     ymir::gpu::d3d12::D3D12Fence fence{};
     ymir::gpu::d3d12::FenceCounter fenceCounter{};
-    std::array<ymir::gpu::d3d12::D3D12Resource, kFrameCount> renderTargets{};
+    std::array<FrameContext, kFrameCount> frames{};
 
     UINT frameIndex = 0;
 
-    auto waitForFrame = [&] {
+    auto waitForGPU = [&] {
+        ymir::gpu::d3d12::FenceCounter &fenceCounter = frames[frameIndex].fenceCounter;
+
+        // Schedule a signal command in the queue and wait for it
+        if (FAILED(fenceCounter.Signal(cmdQueue))) {
+            SDL_Log("Failed to signal fence");
+            return;
+        }
+        fenceCounter.Wait(INFINITE);
+    };
+
+    auto moveToNextFrame = [&] {
+        ymir::gpu::d3d12::FenceCounter &fenceCounter = frames[frameIndex].fenceCounter;
+
+        // Schedule a signal command in the queue
         if (FAILED(fenceCounter.Signal(cmdQueue))) {
             SDL_Log("Failed to signal fence");
             return;
         }
 
+        // If the next frame is not ready to be rendered yet, wait until it is ready
         if (fence.GetCompletedValue() < fenceCounter.GetCounter()) {
             fenceCounter.Wait(INFINITE);
         }
@@ -1134,6 +1155,14 @@ static void runGraphics() {
         return;
     }
 
+    // Create synchronization object
+    if (FAILED(fence.Create(device, 0, D3D12_FENCE_FLAG_NONE))) {
+        SDL_Log("Failed to create fence");
+        return;
+    }
+    fence->SetName(L"Main fence");
+    fenceCounter.Bind(fence);
+
     DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
     swapChainDesc.BufferCount = kFrameCount;
     swapChainDesc.Width = windowWidth;
@@ -1174,16 +1203,21 @@ static void runGraphics() {
                 SDL_Log("Failed to get swapchain buffer %u", n);
                 return;
             }
+            if (FAILED(frames[n].cmdAlloc.Create(device, D3D12_COMMAND_LIST_TYPE_DIRECT))) {
+                SDL_Log("Failed to create command allocator for swapchain frame #%u", n);
+                return;
+            }
             device->CreateRenderTargetView(resource, nullptr, rtvHandle);
             resource->SetName(fmt::format(L"Swapchain buffer #{}", n).c_str());
-            renderTargets[n].Attach(resource);
+            frames[n].renderTarget.Attach(resource);
+            frames[n].fenceCounter.Bind(fence);
             rtvHandle.ptr += rtvHeap.GetDescriptorSize();
         }
     }
 
     // Create command allocator and list
     if (FAILED(cmdAlloc.Create(device, D3D12_COMMAND_LIST_TYPE_DIRECT))) {
-        SDL_Log("Failed to create command allocator");
+        SDL_Log("Failed to create main command allocator");
         return;
     }
     if (FAILED(cmdList.Create(device, cmdAlloc, D3D12_COMMAND_LIST_TYPE_DIRECT, pipelineState.GetPointer()))) {
@@ -1193,14 +1227,6 @@ static void runGraphics() {
     cmdList->Close();
     cmdAlloc->SetName(L"Main command allocator");
     cmdList->SetName(L"Main command list");
-
-    // Create synchronization object
-    if (FAILED(fence.Create(device, 0, D3D12_FENCE_FLAG_NONE))) {
-        SDL_Log("Failed to create fence");
-        return;
-    }
-    fence->SetName(L"Main fence");
-    fenceCounter.Bind(fence);
 
     // ----------
     // Triangle resources
@@ -1450,7 +1476,7 @@ float4 PSMain(PSInput input) : SV_TARGET {
     }
 
     // Wait for commands to execute
-    waitForFrame();
+    waitForGPU();
 
     // -------------------------------------------------------------------------
     // Common operations
@@ -1464,7 +1490,7 @@ float4 PSMain(PSInput input) : SV_TARGET {
 
         // Destroy RTVs
         for (UINT n = 0; n < kFrameCount; n++) {
-            renderTargets[n].Destroy();
+            frames[n].renderTarget.Destroy();
         }
 
         // Resize swapchain buffers
@@ -1484,7 +1510,7 @@ float4 PSMain(PSInput input) : SV_TARGET {
             }
             device->CreateRenderTargetView(resource, nullptr, rtvHandle);
             resource->SetName(fmt::format(L"Swapchain buffer #{}", n).c_str());
-            renderTargets[n].Attach(resource);
+            frames[n].renderTarget.Attach(resource);
             rtvHandle.ptr += rtvHeap.GetDescriptorSize();
         }
 
@@ -1499,6 +1525,8 @@ float4 PSMain(PSInput input) : SV_TARGET {
     };
 
     auto populateCmdList = [&] {
+        ymir::gpu::d3d12::D3D12CommandAllocator &cmdAlloc = frames[frameIndex].cmdAlloc;
+
         if (FAILED(cmdAlloc->Reset())) {
             SDL_Log("Failed to reset command allocator");
             return;
@@ -1519,7 +1547,7 @@ float4 PSMain(PSInput input) : SV_TARGET {
             .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
             .Transition =
                 {
-                    .pResource = renderTargets[frameIndex].GetPointer(),
+                    .pResource = frames[frameIndex].renderTarget.GetPointer(),
                     .Subresource = 0,
                     .StateBefore = D3D12_RESOURCE_STATE_PRESENT,
                     .StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET,
@@ -1581,9 +1609,9 @@ float4 PSMain(PSInput input) : SV_TARGET {
 
         swapchain->Present(1, 0);
 
-        waitForFrame();
+        moveToNextFrame();
     }
-    waitForFrame();
+    waitForGPU();
 }
 
 void runD3D12Sandbox() {
