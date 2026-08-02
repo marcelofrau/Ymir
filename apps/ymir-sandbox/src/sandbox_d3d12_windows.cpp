@@ -150,8 +150,8 @@ static void runFull() {
 
     struct Stuff {
         ~Stuff() {
-            fence.Signal(commandQueue);
-            fence.Wait(INFINITE);
+            fenceCounter.Signal(commandQueue);
+            fenceCounter.Wait(INFINITE);
         }
 
         ymir::gpu::d3d12::D3D12Resource bufUpload;   // CPU->GPU
@@ -165,6 +165,7 @@ static void runFull() {
         ymir::gpu::d3d12::D3D12CommandQueue commandQueue;
         ymir::gpu::d3d12::D3D12GraphicsCommandList commandList;
         ymir::gpu::d3d12::D3D12Fence fence;
+        ymir::gpu::d3d12::FenceCounter fenceCounter;
         std::array<uint8, 256> dataIn;
         std::array<uint8, 256> dataOut;
     } stuff;
@@ -194,6 +195,7 @@ static void runFull() {
         SDL_Log("Failed to create fence for compute shader");
         return;
     }
+    stuff.fenceCounter.Bind(stuff.fence);
 
     // Create upload buffer
     {
@@ -388,10 +390,10 @@ static void runFull() {
     }
 
     // Execute command list and wait for completion
-    stuff.fence.Signal(stuff.commandQueue);
+    stuff.fenceCounter.Signal(stuff.commandQueue);
     stuff.commandList->Close();
     stuff.commandQueue->ExecuteCommandLists(1, stuff.commandList.GetAddressOfBase());
-    stuff.fence.Wait(INFINITE);
+    stuff.fenceCounter.Wait(INFINITE);
 
     // Read back data
     void *pData = nullptr;
@@ -644,8 +646,8 @@ static void runCompute() {
 
     struct Stuff {
         ~Stuff() {
-            fence.Signal(commandQueue);
-            fence.Wait(INFINITE);
+            fenceCounter.Signal(commandQueue);
+            fenceCounter.Wait(INFINITE);
         }
 
         ymir::gpu::d3d12::D3D12Resource bufUpload;   // CPU->GPU
@@ -659,6 +661,7 @@ static void runCompute() {
         ymir::gpu::d3d12::D3D12CommandQueue commandQueue;
         ymir::gpu::d3d12::D3D12GraphicsCommandList commandList;
         ymir::gpu::d3d12::D3D12Fence fence;
+        ymir::gpu::d3d12::FenceCounter fenceCounter;
         std::array<uint8, 256> dataIn;
         std::array<uint8, 256> dataOut;
     } stuff;
@@ -688,6 +691,7 @@ static void runCompute() {
         SDL_Log("Failed to create fence for compute shader");
         return;
     }
+    stuff.fenceCounter.Bind(stuff.fence);
 
     // Create upload buffer
     {
@@ -963,10 +967,10 @@ static void runCompute() {
     }
 
     // Execute command list and wait for completion
-    stuff.fence.Signal(stuff.commandQueue);
+    stuff.fenceCounter.Signal(stuff.commandQueue);
     stuff.commandList->Close();
     stuff.commandQueue->ExecuteCommandLists(1, stuff.commandList.GetAddressOfBase());
-    stuff.fence.Wait(INFINITE);
+    stuff.fenceCounter.Wait(INFINITE);
 
     // Read back data
     void *pData = nullptr;
@@ -1031,6 +1035,8 @@ static void runCompute() {
     }
 }
 
+// https://learn.microsoft.com/en-us/samples/microsoft/directx-graphics-samples/d3d12-hello-world-samples-win32/
+// https://github.com/microsoft/DirectX-Graphics-Samples
 static void runGraphics() {
     ymir::gpu::d3d12::D3D12Device device{};
     ymir::gpu::d3d12::DebugLayer &debugLayer = ymir::gpu::d3d12::DebugLayer::Get();
@@ -1060,18 +1066,19 @@ static void runGraphics() {
     ymir::gpu::d3d12::D3D12SwapChain swapchain{};
     ymir::gpu::d3d12::D3D12DescriptorHeap rtvHeap{};
     ymir::gpu::d3d12::D3D12Fence fence{};
+    ymir::gpu::d3d12::FenceCounter fenceCounter{};
     std::array<ymir::gpu::d3d12::D3D12Resource, kFrameCount> renderTargets{};
 
     UINT frameIndex = 0;
 
     auto waitForFrame = [&] {
-        if (FAILED(fence.Signal(cmdQueue))) {
+        if (FAILED(fenceCounter.Signal(cmdQueue))) {
             SDL_Log("Failed to signal fence");
             return;
         }
 
-        if (fence.GetCompletedValue() < fence.GetLastSignaledValue()) {
-            fence.Wait(INFINITE);
+        if (fence.GetCompletedValue() < fenceCounter.GetCounter()) {
+            fenceCounter.Wait(INFINITE);
         }
 
         frameIndex = swapchain->GetCurrentBackBufferIndex();
@@ -1193,6 +1200,7 @@ static void runGraphics() {
         return;
     }
     fence->SetName(L"Main fence");
+    fenceCounter.Bind(fence);
 
     // ----------
     // Triangle resources
@@ -1448,11 +1456,11 @@ float4 PSMain(PSInput input) : SV_TARGET {
     // Common operations
 
     auto resizeSwapchainBuffers = [&](UINT width, UINT height) {
-        if (FAILED(fence.Signal(cmdQueue))) {
+        if (FAILED(fenceCounter.Signal(cmdQueue))) {
             SDL_Log("Failed to signal fence before resizing swapchain buffers");
             return;
         }
-        fence.Wait(INFINITE);
+        fenceCounter.Wait(INFINITE);
 
         // Destroy RTVs
         for (UINT n = 0; n < kFrameCount; n++) {

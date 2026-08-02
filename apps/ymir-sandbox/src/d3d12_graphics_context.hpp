@@ -70,6 +70,7 @@ struct GraphicsContext {
     D3D12DescriptorHeap rtvHeap = {};
     FrameContext frameContext[kFrameCount] = {};
     D3D12Fence fence = {};
+    FenceCounter fenceCounter = {};
     D3D12CommandQueue commandQueue = {};
     D3D12GraphicsCommandList commandList = {};
     UINT frameIndex = 0;
@@ -97,6 +98,7 @@ struct GraphicsContext {
         if (!fence.IsValid()) {
             return false;
         }
+        fenceCounter.Bind(fence);
 
         // Swap chain
         {
@@ -241,8 +243,8 @@ struct GraphicsContext {
 
         fnPostRender();
 
-        fence.Signal(commandQueue);
-        frameCtx.fenceValue = fence.GetLastSignaledValue();
+        fenceCounter.Signal(commandQueue);
+        frameCtx.fenceValue = fenceCounter.GetCounter();
 
         HRESULT hr;
         if (vsync) {
@@ -256,8 +258,8 @@ struct GraphicsContext {
 
     /// @brief Waits until all pending operations have been executed by the GPU.
     void WaitForPendingOperations() {
-        fence.Signal(commandQueue);
-        fence.Wait(INFINITE);
+        fenceCounter.Signal(commandQueue);
+        fenceCounter.Wait(INFINITE);
     }
 
 private:

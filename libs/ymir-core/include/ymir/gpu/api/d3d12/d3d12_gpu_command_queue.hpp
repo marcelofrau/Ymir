@@ -47,6 +47,7 @@ private:
     D3D12GPUDevice &m_device;
     d3d12::D3D12CommandQueue m_queue;
     d3d12::D3D12Fence m_fence;
+    d3d12::FenceCounter m_fenceCounter;
     D3D12_COMMAND_LIST_TYPE m_d3d12Type;
 };
 

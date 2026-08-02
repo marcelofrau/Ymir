@@ -28,7 +28,6 @@ public:
     /// @param[in] flags fence flags
     /// @return the result of the attempt to create the fence
     HRESULT Create(const D3D12Device &device, UINT64 initialValue, D3D12_FENCE_FLAGS flags) {
-        m_lastSignaledValue = initialValue;
         const HRESULT hr = device->CreateFence(initialValue, flags, IID_PPV_ARGS(m_object.put()));
         if (SUCCEEDED(hr)) {
             QueryUpgrades();
@@ -39,9 +38,10 @@ public:
     /// @brief Enqueues a fence signal into the given command queue.
     /// Requires the fence to be created.
     /// @param[in] commandQueue the command queue to use
+    /// @param[in] value the fence value
     /// @return the result of the attempt to signal the fence
-    HRESULT Signal(const D3D12CommandQueue &commandQueue) {
-        return commandQueue->Signal(m_object.get(), ++m_lastSignaledValue);
+    HRESULT Signal(const D3D12CommandQueue &commandQueue, UINT64 value) {
+        return commandQueue->Signal(m_object.get(), value);
     }
 
     /// @brief Sets up a completion event on the fence using the given value.
@@ -55,25 +55,12 @@ public:
         return hEvent;
     }
 
-    /// @brief Waits for the fence to be signaled using the last signaled value.
-    /// @param[in] timeout maximum time to wait for the signal (in milliseconds)
-    void Wait(DWORD timeout) const {
-        Wait(timeout, m_lastSignaledValue);
-    }
-
     /// @brief Waits for the fence to be signaled using the given value.
     /// @param[in] timeout maximum time to wait for the signal (in milliseconds)
     /// @param[in] value the fence value
     void Wait(DWORD timeout, UINT64 value) const {
         HANDLE hEvent = SetupWait(value);
         ::WaitForSingleObject(hEvent, timeout);
-    }
-
-    /// @brief Returns the last signaled value.
-    /// This is incremented on calls to `Signal(const D3D12CommandQueue &)`.
-    /// @return the last signaled value
-    UINT64 GetLastSignaledValue() const {
-        return m_lastSignaledValue;
     }
 
     /// @brief Get the last completed value.
@@ -88,7 +75,6 @@ public:
 
 private:
     wil::unique_handle m_waitEvent{CreateEvent(nullptr, FALSE, FALSE, nullptr)};
-    UINT64 m_lastSignaledValue = 0;
 
     void QueryUpgrades() {
         m_fence1 = m_object.try_query<ID3D12Fence1>();
@@ -104,6 +90,70 @@ private:
     }
 
     wil::com_ptr_nothrow<ID3D12Fence1> m_fence1;
+};
+
+/// @brief Stores an autoincrementing counter and provides methods for signaling and waiting on a fence with it.
+class FenceCounter {
+public:
+    FenceCounter() = default;
+    FenceCounter(D3D12Fence &fence) {
+        Bind(fence);
+    }
+
+    /// @brief Binds this counter to the specified fence.
+    /// @param[in] fence the fence to bind to
+    void Bind(D3D12Fence &fence) {
+        m_fence = &fence;
+        m_counter = fence.GetCompletedValue();
+    }
+
+    /// @brief Unbinds this counter from a fence.
+    void Unbind() {
+        m_fence = nullptr;
+        m_counter = 0;
+    }
+
+    /// @brief Enqueues a fence signal into the given command queue.
+    /// Requires the fence to be created.
+    /// @param[in] commandQueue the command queue to use
+    /// @return the result of the attempt to signal the fence
+    HRESULT Signal(const D3D12CommandQueue &commandQueue) {
+        if (m_fence != nullptr) {
+            return m_fence->Signal(commandQueue, ++m_counter);
+        }
+        return E_POINTER;
+    }
+
+    /// @brief Waits for the fence to be signaled using the last signaled value.
+    /// @param[in] timeout maximum time to wait for the signal (in milliseconds)
+    void Wait(DWORD timeout) const {
+        if (m_fence != nullptr) {
+            m_fence->Wait(timeout, m_counter);
+        }
+    }
+
+    /// @brief Returns the counter value.
+    /// This is incremented on calls to `FenceCounter::Signal(const D3D12CommandQueue &)`.
+    /// @return the counter
+    UINT64 GetCounter() const {
+        return m_counter;
+    }
+
+    /// @brief Retrieves the referenced fence.
+    /// @return a pointer to the fence
+    D3D12Fence *GetFence() {
+        return m_fence;
+    }
+
+    /// @brief Retrieves the referenced fence.
+    /// @return a pointer to the fence
+    const D3D12Fence *GetFence() const {
+        return m_fence;
+    }
+
+private:
+    D3D12Fence *m_fence = nullptr;
+    UINT64 m_counter = 0;
 };
 
 } // namespace ymir::gpu::d3d12

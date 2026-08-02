@@ -14,6 +14,7 @@ D3D12CommandQueue::D3D12CommandQueue(D3D12GPUDevice &device, d3d12::D3D12Command
     , m_device(device)
     , m_queue(std::move(queue))
     , m_fence(std::move(fence))
+    , m_fenceCounter(m_fence)
     , m_d3d12Type(util::ToD3D12Value(type)) {}
 
 void D3D12CommandQueue::SetName(std::string_view name) {
@@ -75,11 +76,11 @@ void D3D12CommandQueue::CommitCommandList(const IGPUCommandList &list) {
 }
 
 void D3D12CommandQueue::Wait() {
-    const HRESULT hr = m_fence.Signal(m_queue);
+    const HRESULT hr = m_fenceCounter.Signal(m_queue);
     if (FAILED(hr)) {
         return; // TODO: return error
     }
-    m_fence.Wait(INFINITE);
+    m_fenceCounter.Wait(INFINITE);
 }
 
 } // namespace ymir::gpu
