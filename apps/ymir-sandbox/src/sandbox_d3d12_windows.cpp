@@ -1,6 +1,8 @@
 #include <ymir/gpu/api/d3d12/helpers/d3d12_debug.hpp>
 #include <ymir/gpu/api/d3d12/helpers/d3d12_descriptor_heap_allocator.hpp>
 
+#include <ymir/gpu/gpu.hpp>
+
 #include "d3d12_graphics_context.hpp"
 
 #include <ymir/util/scope_guard.hpp>
@@ -1051,6 +1053,7 @@ static void runGraphics() {
 
     static constexpr UINT kFrameCount = 3;
 
+    // Basic graphics resources
     ymir::gpu::d3d12::D3D12CommandQueue cmdQueue{};
     ymir::gpu::d3d12::D3D12CommandAllocator cmdAlloc{};
     ymir::gpu::d3d12::D3D12GraphicsCommandList cmdList{};
@@ -1058,9 +1061,28 @@ static void runGraphics() {
     ymir::gpu::d3d12::D3D12DescriptorHeap rtvHeap{};
     ymir::gpu::d3d12::D3D12Fence fence{};
     std::array<ymir::gpu::d3d12::D3D12Resource, kFrameCount> renderTargets{};
-    ymir::gpu::d3d12::D3D12PipelineState pipelineState{};
 
     UINT frameIndex = 0;
+
+    auto waitForFrame = [&] {
+        if (FAILED(fence.Signal(cmdQueue))) {
+            SDL_Log("Failed to signal fence");
+            return;
+        }
+
+        if (fence.GetCompletedValue() < fence.GetLastSignaledValue()) {
+            fence.Wait(INFINITE);
+        }
+
+        frameIndex = swapchain->GetCurrentBackBufferIndex();
+    };
+
+    // Triangle
+    ymir::gpu::d3d12::D3D12RootSignature rootSig{};
+    ymir::gpu::d3d12::D3D12PipelineState pipelineState{};
+    ymir::gpu::d3d12::D3D12Resource vertexUploadBuffer{};
+    ymir::gpu::d3d12::D3D12Resource vertexBuffer{};
+    D3D12_VERTEX_BUFFER_VIEW vertexBufferView{};
 
     // ---------------------------------
     // Create window
@@ -1131,6 +1153,7 @@ static void runGraphics() {
             SDL_Log("Failed to create RTV descriptor heap");
             return;
         }
+        rtvHeap->SetName(L"RTV heap");
     }
 
     // Create frame resources
@@ -1145,6 +1168,7 @@ static void runGraphics() {
                 return;
             }
             device->CreateRenderTargetView(resource, nullptr, rtvHandle);
+            resource->SetName(fmt::format(L"Swapchain buffer #{}", n).c_str());
             renderTargets[n].Attach(resource);
             rtvHandle.ptr += rtvHeap.GetDescriptorSize();
         }
@@ -1155,55 +1179,253 @@ static void runGraphics() {
         SDL_Log("Failed to create command allocator");
         return;
     }
-    if (FAILED(cmdList.Create(device, cmdAlloc, D3D12_COMMAND_LIST_TYPE_DIRECT))) {
+    if (FAILED(cmdList.Create(device, cmdAlloc, D3D12_COMMAND_LIST_TYPE_DIRECT, pipelineState.GetPointer()))) {
         SDL_Log("Failed to create command list");
         return;
     }
     cmdList->Close();
+    cmdAlloc->SetName(L"Main command allocator");
+    cmdList->SetName(L"Main command list");
 
     // Create synchronization object
     if (FAILED(fence.Create(device, 0, D3D12_FENCE_FLAG_NONE))) {
         SDL_Log("Failed to create fence");
         return;
     }
+    fence->SetName(L"Main fence");
 
-    // -------------------------------------------------------------------------
-    // Common operations
+    // ----------
+    // Triangle resources
 
-    auto populateCmdList = [&] {
+    struct Float3 {
+        float x, y, z;
+    };
+    struct Float4 {
+        float x, y, z, w;
+    };
+    struct Vertex {
+        Float3 position;
+        Float4 color;
+    };
+
+    float aspectRatio = static_cast<float>(windowWidth) / windowHeight;
+
+    D3D12_VIEWPORT viewport{
+        .TopLeftX = 0.0f,
+        .TopLeftY = 0.0f,
+        .Width = static_cast<FLOAT>(windowWidth),
+        .Height = static_cast<FLOAT>(windowHeight),
+    };
+    D3D12_RECT scissorRect{
+        .left = 0,
+        .top = 0,
+        .right = static_cast<LONG>(windowWidth),
+        .bottom = static_cast<LONG>(windowHeight),
+    };
+
+    // Create an empty root signature
+    {
+        auto rootSigBuilder = rootSig.Builder();
+        rootSigBuilder.Flags(D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+        if (FAILED(rootSigBuilder.Build(device))) {
+            SDL_Log("Failed to create root signature");
+            if (!rootSig.GetSerializationError().empty()) {
+                SDL_Log("Root signature serialization error: %s", rootSig.GetSerializationError().data());
+            }
+            return;
+        }
+        rootSig->SetName(L"Main root signature");
+    }
+
+    // Create the pipeline state, which includes compiling and loading shaders
+    {
+        static constexpr const char *kVertexShaderCode = R"(
+struct PSInput {
+    float4 position : SV_POSITION;
+    float4 color : COLOR;
+};
+
+PSInput VSMain(float4 position : POSITION, float4 color : COLOR) {
+    PSInput result;
+
+    result.position = position;
+    result.color = color;
+
+    return result;
+}
+)";
+
+        static constexpr const char *kPixelShaderCode = R"(
+struct PSInput {
+    float4 position : SV_POSITION;
+    float4 color : COLOR;
+};
+
+float4 PSMain(PSInput input) : SV_TARGET {
+    return input.color;
+}
+)";
+
+#ifdef NDEBUG
+        static constexpr bool kShaderDebug = false;
+        static constexpr bool kShaderOptimize = true;
+#else
+        static constexpr bool kShaderDebug = true;
+        static constexpr bool kShaderOptimize = false;
+#endif
+
+        ymir::gpu::VertexShader vertexShader =
+            ymir::gpu::CompileShader(ymir::gpu::VertexShaderCompileSpec{
+                                         .language = ymir::gpu::ShaderLanguage::HLSL,
+                                         .format = ymir::gpu::ShaderBytecodeFormat::DXIL,
+                                         .name = "vs_test",
+                                         .sourceCode = kVertexShaderCode,
+                                         .entrypoint = "VSMain",
+                                         .debug = kShaderDebug,
+                                         .optimize = kShaderOptimize,
+                                     })
+                .Value();
+        ymir::gpu::PixelShader pixelShader =
+            ymir::gpu::CompileShader(ymir::gpu::PixelShaderCompileSpec{
+                                         .language = ymir::gpu::ShaderLanguage::HLSL,
+                                         .format = ymir::gpu::ShaderBytecodeFormat::DXIL,
+                                         .name = "ps_test",
+                                         .sourceCode = kPixelShaderCode,
+                                         .entrypoint = "PSMain",
+                                         .debug = kShaderDebug,
+                                         .optimize = kShaderOptimize,
+                                     })
+                .Value();
+
+        // Define the vertex input layout
+        D3D12_INPUT_ELEMENT_DESC inputElementDescs[] = {
+            {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+            {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
+
+        // Describe and create the graphics pipeline state object (PSO)
+        D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
+        psoDesc.InputLayout = {inputElementDescs, std::size(inputElementDescs)};
+        psoDesc.pRootSignature = rootSig.GetPointer();
+        psoDesc.VS = {.pShaderBytecode = vertexShader.bytecode.data(), .BytecodeLength = vertexShader.bytecode.size()};
+        psoDesc.PS = {.pShaderBytecode = pixelShader.bytecode.data(), .BytecodeLength = pixelShader.bytecode.size()};
+        psoDesc.RasterizerState = {
+            .FillMode = D3D12_FILL_MODE_SOLID,
+            .CullMode = D3D12_CULL_MODE_BACK,
+            .FrontCounterClockwise = FALSE,
+            .DepthBias = D3D12_DEFAULT_DEPTH_BIAS,
+            .DepthBiasClamp = D3D12_DEFAULT_DEPTH_BIAS_CLAMP,
+            .SlopeScaledDepthBias = D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS,
+            .DepthClipEnable = TRUE,
+            .MultisampleEnable = FALSE,
+            .AntialiasedLineEnable = FALSE,
+            .ForcedSampleCount = 0,
+            .ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF,
+        };
+        psoDesc.BlendState = {
+            .AlphaToCoverageEnable = FALSE,
+            .IndependentBlendEnable = FALSE,
+            .RenderTarget = {{
+                .BlendEnable = FALSE,
+                .LogicOpEnable = FALSE,
+                .SrcBlend = D3D12_BLEND_ONE,
+                .DestBlend = D3D12_BLEND_ZERO,
+                .BlendOp = D3D12_BLEND_OP_ADD,
+                .SrcBlendAlpha = D3D12_BLEND_ONE,
+                .DestBlendAlpha = D3D12_BLEND_ZERO,
+                .BlendOpAlpha = D3D12_BLEND_OP_ADD,
+                .LogicOp = D3D12_LOGIC_OP_NOOP,
+                .RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL,
+            }},
+        };
+        psoDesc.DepthStencilState.DepthEnable = FALSE;
+        psoDesc.DepthStencilState.StencilEnable = FALSE;
+        psoDesc.SampleMask = UINT_MAX;
+        psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+        psoDesc.NumRenderTargets = 1;
+        psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+        psoDesc.SampleDesc.Count = 1;
+        if (FAILED(pipelineState.CreateGraphics(device, psoDesc))) {
+            SDL_Log("Failed to create graphics pipeline state object");
+            return;
+        }
+        pipelineState->SetName(L"Main graphics pipeline");
+    }
+
+    // Create the vertex buffer
+    {
+        // Define the geometry for a triangle
+        // TODO: move aspect ratio to constant buffer
+        Vertex triangleVertices[] = {{{0.0f, 0.25f * aspectRatio, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
+                                     {{0.25f, -0.25f * aspectRatio, 0.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
+                                     {{-0.25f, -0.25f * aspectRatio, 0.0f}, {0.0f, 0.0f, 1.0f, 1.0f}}};
+
+        const UINT vertexBufferSize = sizeof(triangleVertices);
+        const D3D12_RESOURCE_DESC vertexBufferDesc{
+            .Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
+            .Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT,
+            .Width = vertexBufferSize,
+            .Height = 1,
+            .DepthOrArraySize = 1,
+            .MipLevels = 1,
+            .Format = DXGI_FORMAT_UNKNOWN,
+            .SampleDesc = {.Count = 1, .Quality = 0},
+            .Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+            .Flags = D3D12_RESOURCE_FLAG_NONE,
+        };
+
+        // Create upload buffer
+        if (FAILED(vertexUploadBuffer.CreateCommitted(device, {.Type = D3D12_HEAP_TYPE_UPLOAD}, D3D12_HEAP_FLAG_NONE,
+                                                      vertexBufferDesc, D3D12_RESOURCE_STATE_COMMON))) {
+            SDL_Log("Failed to create vertex upload buffer");
+            return;
+        }
+        vertexUploadBuffer->SetName(L"Vertex upload buffer");
+
+        // Create vertex buffer
+        if (FAILED(vertexBuffer.CreateCommitted(device, {.Type = D3D12_HEAP_TYPE_DEFAULT}, D3D12_HEAP_FLAG_NONE,
+                                                vertexBufferDesc, D3D12_RESOURCE_STATE_COMMON))) {
+            SDL_Log("Failed to create vertex buffer");
+            return;
+        }
+        vertexBuffer->SetName(L"Vertex buffer");
+
+        // Copy the triangle data to the upload buffer
+        UINT8 *pVertexDataBegin;
+        D3D12_RANGE readRange(0, 0); // We do not intend to read from this resource on the CPU.
+        if (FAILED(vertexUploadBuffer->Map(0, &readRange, reinterpret_cast<void **>(&pVertexDataBegin)))) {
+            SDL_Log("Could not map vertex upload buffer");
+            return;
+        }
+        memcpy(pVertexDataBegin, triangleVertices, sizeof(triangleVertices));
+        vertexUploadBuffer->Unmap(0, nullptr);
+
+        // Copy the vertex data to the vertex buffer
         if (FAILED(cmdAlloc->Reset())) {
             SDL_Log("Failed to reset command allocator");
             return;
         }
-
         if (FAILED(cmdList->Reset(cmdAlloc.GetPointer(), pipelineState.GetPointer()))) {
             SDL_Log("Failed to reset command list");
             return;
         }
 
-        // Indicate that the back buffer will be used as a render target
+        // Indicate that the vertex buffer will be used as copy destination
         D3D12_RESOURCE_BARRIER barrier{
             .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
             .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
             .Transition =
                 {
-                    .pResource = renderTargets[frameIndex].GetPointer(),
+                    .pResource = vertexBuffer.GetPointer(),
                     .Subresource = 0,
-                    .StateBefore = D3D12_RESOURCE_STATE_PRESENT,
-                    .StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET,
+                    .StateBefore = D3D12_RESOURCE_STATE_COMMON,
+                    .StateAfter = D3D12_RESOURCE_STATE_COPY_DEST,
                 },
         };
-
         cmdList->ResourceBarrier(1, &barrier);
 
-        D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle(rtvHeap.GetCPUStart());
-        rtvHandle.ptr += static_cast<SIZE_T>(frameIndex) * rtvHeap.GetDescriptorSize();
+        cmdList->CopyBufferRegion(vertexBuffer.GetPointer(), 0, vertexUploadBuffer.GetPointer(), 0, vertexBufferSize);
 
-        // Record commands
-        const float clearColor[] = {0.0f, 0.2f, 0.4f, 1.0f};
-        cmdList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
-
-        // Indicate that the back buffer will now be used to present.
+        // Indicate that the vertex buffer will be used for generic reads
         std::swap(barrier.Transition.StateBefore, barrier.Transition.StateAfter);
         cmdList->ResourceBarrier(1, &barrier);
 
@@ -1211,20 +1433,19 @@ static void runGraphics() {
             SDL_Log("Failed to close command list");
             return;
         }
-    };
+        cmdQueue->ExecuteCommandLists(1, cmdList.GetAddressOfBase());
 
-    auto waitForFrame = [&] {
-        if (FAILED(fence.Signal(cmdQueue))) {
-            SDL_Log("Failed to signal fence");
-            return;
-        }
+        // Initialize the vertex buffer view
+        vertexBufferView.BufferLocation = vertexBuffer->GetGPUVirtualAddress();
+        vertexBufferView.StrideInBytes = sizeof(Vertex);
+        vertexBufferView.SizeInBytes = vertexBufferSize;
+    }
 
-        if (fence.GetCompletedValue() < fence.GetLastSignaledValue()) {
-            fence.Wait(INFINITE);
-        }
+    // Wait for commands to execute
+    waitForFrame();
 
-        frameIndex = swapchain->GetCurrentBackBufferIndex();
-    };
+    // -------------------------------------------------------------------------
+    // Common operations
 
     auto resizeSwapchainBuffers = [&](UINT width, UINT height) {
         if (FAILED(fence.Signal(cmdQueue))) {
@@ -1254,8 +1475,68 @@ static void runGraphics() {
                 return;
             }
             device->CreateRenderTargetView(resource, nullptr, rtvHandle);
+            resource->SetName(fmt::format(L"Swapchain buffer #{}", n).c_str());
             renderTargets[n].Attach(resource);
             rtvHandle.ptr += rtvHeap.GetDescriptorSize();
+        }
+
+        // Recalculate aspect ratio
+        aspectRatio = static_cast<float>(width) / height;
+
+        // Update viewport and scissor rects
+        viewport.Width = width;
+        viewport.Height = height;
+        scissorRect.right = width;
+        scissorRect.bottom = height;
+    };
+
+    auto populateCmdList = [&] {
+        if (FAILED(cmdAlloc->Reset())) {
+            SDL_Log("Failed to reset command allocator");
+            return;
+        }
+        if (FAILED(cmdList->Reset(cmdAlloc.GetPointer(), pipelineState.GetPointer()))) {
+            SDL_Log("Failed to reset command list");
+            return;
+        }
+
+        // Set necessary state
+        cmdList->SetGraphicsRootSignature(rootSig.GetPointer());
+        cmdList->RSSetViewports(1, &viewport);
+        cmdList->RSSetScissorRects(1, &scissorRect);
+
+        // Indicate that the back buffer will be used as a render target
+        D3D12_RESOURCE_BARRIER barrier{
+            .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+            .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+            .Transition =
+                {
+                    .pResource = renderTargets[frameIndex].GetPointer(),
+                    .Subresource = 0,
+                    .StateBefore = D3D12_RESOURCE_STATE_PRESENT,
+                    .StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET,
+                },
+        };
+        cmdList->ResourceBarrier(1, &barrier);
+
+        D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle(rtvHeap.GetCPUStart());
+        rtvHandle.ptr += static_cast<SIZE_T>(frameIndex) * rtvHeap.GetDescriptorSize();
+        cmdList->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
+
+        // Record commands
+        const float clearColor[] = {0.0f, 0.2f, 0.4f, 1.0f};
+        cmdList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
+        cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        cmdList->IASetVertexBuffers(0, 1, &vertexBufferView);
+        cmdList->DrawInstanced(3, 1, 0, 0);
+
+        // Indicate that the back buffer will now be used to present
+        std::swap(barrier.Transition.StateBefore, barrier.Transition.StateAfter);
+        cmdList->ResourceBarrier(1, &barrier);
+
+        if (FAILED(cmdList->Close())) {
+            SDL_Log("Failed to close command list");
+            return;
         }
     };
 
@@ -1275,7 +1556,7 @@ static void runGraphics() {
                 break;
             case SDL_EVENT_WINDOW_RESIZED:
                 if (evt.window.windowID == SDL_GetWindowID(window)) {
-                    // Release all outstanding references to the swap chain's buffers before resizing.
+                    // Release all outstanding references to the swap chain's buffers before resizing
                     resizeSwapchainBuffers(evt.window.data1, evt.window.data2);
                 }
             }
