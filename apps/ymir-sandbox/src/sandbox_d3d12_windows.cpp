@@ -1029,7 +1029,276 @@ static void runCompute() {
     }
 }
 
+static void runGraphics() {
+    ymir::gpu::d3d12::D3D12Device device{};
+    ymir::gpu::d3d12::DebugLayer &debugLayer = ymir::gpu::d3d12::DebugLayer::Get();
+
+    UINT dxgiFactoryFlags = 0;
+    if (debugLayer.Init() && debugLayer.IsEnabled()) {
+        dxgiFactoryFlags |= DXGI_CREATE_FACTORY_DEBUG;
+    }
+
+    if (FAILED(device.Create(nullptr, D3D_FEATURE_LEVEL_12_0))) {
+        return;
+    }
+    debugLayer.BreakOnWarnings(device.GetPointer(), true);
+
+    // -------------------------------------------------------------------------
+    // Parameters
+
+#define USE_ENHANCED_BARRIERS
+#define BINDLESS
+
+    static constexpr UINT kFrameCount = 3;
+
+    ymir::gpu::d3d12::D3D12CommandQueue cmdQueue{};
+    ymir::gpu::d3d12::D3D12CommandAllocator cmdAlloc{};
+    ymir::gpu::d3d12::D3D12GraphicsCommandList cmdList{};
+    ymir::gpu::d3d12::D3D12SwapChain swapchain{};
+    ymir::gpu::d3d12::D3D12DescriptorHeap rtvHeap{};
+    ymir::gpu::d3d12::D3D12Fence fence{};
+    std::array<ymir::gpu::d3d12::D3D12Resource, kFrameCount> renderTargets{};
+    ymir::gpu::d3d12::D3D12PipelineState pipelineState{};
+
+    UINT frameIndex = 0;
+
+    // ---------------------------------
+    // Create window
+
+    int windowWidth = 1280;
+    int windowHeight = 720;
+
+    SDL_PropertiesID windowProps = SDL_CreateProperties();
+    if (windowProps == 0) {
+        SDL_Log("Unable to create window properties: %s", SDL_GetError());
+        return;
+    }
+    ScopeGuard sgDestroyWindowProps{[&] { SDL_DestroyProperties(windowProps); }};
+
+    // Assume the following calls succeed
+    SDL_SetStringProperty(windowProps, SDL_PROP_WINDOW_CREATE_TITLE_STRING, "D3D12 graphics sandbox");
+    SDL_SetBooleanProperty(windowProps, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, true);
+    SDL_SetNumberProperty(windowProps, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, windowWidth);
+    SDL_SetNumberProperty(windowProps, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, windowHeight);
+    SDL_SetNumberProperty(windowProps, SDL_PROP_WINDOW_CREATE_X_NUMBER, SDL_WINDOWPOS_CENTERED);
+    SDL_SetNumberProperty(windowProps, SDL_PROP_WINDOW_CREATE_Y_NUMBER, SDL_WINDOWPOS_CENTERED);
+
+    SDL_Window *window = SDL_CreateWindowWithProperties(windowProps);
+    if (window == nullptr) {
+        SDL_Log("Unable to create window: %s", SDL_GetError());
+        return;
+    }
+    ScopeGuard sgDestroyWindow{[&] { SDL_DestroyWindow(window); }};
+
+    SDL_PropertiesID createdWindowProps = SDL_GetWindowProperties(window);
+    HWND hwnd = (HWND)SDL_GetPointerProperty(createdWindowProps, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
+    if (!hwnd) {
+        SDL_Log("Failed to get HWND from SDL window");
+        return;
+    }
+
+    // -------------------------------------------------------------------------
+    // Create D3D12 resources
+
+    if (FAILED(cmdQueue.Create(device, D3D12_COMMAND_LIST_TYPE_DIRECT))) {
+        SDL_Log("Failed to create command queue");
+        return;
+    }
+
+    DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
+    swapChainDesc.BufferCount = kFrameCount;
+    swapChainDesc.Width = windowWidth;
+    swapChainDesc.Height = windowHeight;
+    swapChainDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+    swapChainDesc.SampleDesc.Count = 1;
+    swapChainDesc.Scaling = DXGI_SCALING_NONE;
+    swapChainDesc.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+    if (!swapchain.Create(dxgiFactoryFlags, cmdQueue.GetPointer(), swapChainDesc, hwnd, kFrameCount)) {
+        SDL_Log("Failed to create swapchain");
+        return;
+    }
+    frameIndex = swapchain->GetCurrentBackBufferIndex();
+
+    // Create descriptor heap
+    {
+        D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc{};
+        rtvHeapDesc.NumDescriptors = kFrameCount;
+        rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+        rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+        if (FAILED(rtvHeap.Create(device, rtvHeapDesc))) {
+            SDL_Log("Failed to create RTV descriptor heap");
+            return;
+        }
+    }
+
+    // Create frame resources
+    {
+        D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle(rtvHeap.GetCPUStart());
+
+        // Create a RTV for each frame.
+        for (UINT n = 0; n < kFrameCount; n++) {
+            ID3D12Resource *resource;
+            if (FAILED(swapchain->GetBuffer(n, IID_PPV_ARGS(&resource)))) {
+                SDL_Log("Failed to get swapchain buffer %u", n);
+                return;
+            }
+            device->CreateRenderTargetView(resource, nullptr, rtvHandle);
+            renderTargets[n].Attach(resource);
+            rtvHandle.ptr += rtvHeap.GetDescriptorSize();
+        }
+    }
+
+    // Create command allocator and list
+    if (FAILED(cmdAlloc.Create(device, D3D12_COMMAND_LIST_TYPE_DIRECT))) {
+        SDL_Log("Failed to create command allocator");
+        return;
+    }
+    if (FAILED(cmdList.Create(device, cmdAlloc, D3D12_COMMAND_LIST_TYPE_DIRECT))) {
+        SDL_Log("Failed to create command list");
+        return;
+    }
+    cmdList->Close();
+
+    // Create synchronization object
+    if (FAILED(fence.Create(device, 0, D3D12_FENCE_FLAG_NONE))) {
+        SDL_Log("Failed to create fence");
+        return;
+    }
+
+    // -------------------------------------------------------------------------
+    // Common operations
+
+    auto populateCmdList = [&] {
+        if (FAILED(cmdAlloc->Reset())) {
+            SDL_Log("Failed to reset command allocator");
+            return;
+        }
+
+        if (FAILED(cmdList->Reset(cmdAlloc.GetPointer(), pipelineState.GetPointer()))) {
+            SDL_Log("Failed to reset command list");
+            return;
+        }
+
+        // Indicate that the back buffer will be used as a render target
+        D3D12_RESOURCE_BARRIER barrier{
+            .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+            .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+            .Transition =
+                {
+                    .pResource = renderTargets[frameIndex].GetPointer(),
+                    .Subresource = 0,
+                    .StateBefore = D3D12_RESOURCE_STATE_PRESENT,
+                    .StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET,
+                },
+        };
+
+        cmdList->ResourceBarrier(1, &barrier);
+
+        D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle(rtvHeap.GetCPUStart());
+        rtvHandle.ptr += static_cast<SIZE_T>(frameIndex) * rtvHeap.GetDescriptorSize();
+
+        // Record commands
+        const float clearColor[] = {0.0f, 0.2f, 0.4f, 1.0f};
+        cmdList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
+
+        // Indicate that the back buffer will now be used to present.
+        std::swap(barrier.Transition.StateBefore, barrier.Transition.StateAfter);
+        cmdList->ResourceBarrier(1, &barrier);
+
+        if (FAILED(cmdList->Close())) {
+            SDL_Log("Failed to close command list");
+            return;
+        }
+    };
+
+    auto waitForFrame = [&] {
+        if (FAILED(fence.Signal(cmdQueue))) {
+            SDL_Log("Failed to signal fence");
+            return;
+        }
+
+        if (fence.GetCompletedValue() < fence.GetLastSignaledValue()) {
+            fence.Wait(INFINITE);
+        }
+
+        frameIndex = swapchain->GetCurrentBackBufferIndex();
+    };
+
+    auto resizeSwapchainBuffers = [&](UINT width, UINT height) {
+        if (FAILED(fence.Signal(cmdQueue))) {
+            SDL_Log("Failed to signal fence before resizing swapchain buffers");
+            return;
+        }
+        fence.Wait(INFINITE);
+
+        // Destroy RTVs
+        for (UINT n = 0; n < kFrameCount; n++) {
+            renderTargets[n].Destroy();
+        }
+
+        // Resize swapchain buffers
+        if (FAILED(swapchain.ResizeBuffers(width, height))) {
+            SDL_Log("Failed to resize swapchain buffers");
+            return;
+        }
+        frameIndex = swapchain->GetCurrentBackBufferIndex();
+
+        // Recreate RTVs
+        D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle(rtvHeap.GetCPUStart());
+        for (UINT n = 0; n < kFrameCount; n++) {
+            ID3D12Resource *resource;
+            if (FAILED(swapchain->GetBuffer(n, IID_PPV_ARGS(&resource)))) {
+                SDL_Log("Failed to get swapchain buffer %u", n);
+                return;
+            }
+            device->CreateRenderTargetView(resource, nullptr, rtvHandle);
+            renderTargets[n].Attach(resource);
+            rtvHandle.ptr += rtvHeap.GetDescriptorSize();
+        }
+    };
+
+    // -------------------------------------------------------------------------
+    // Main loop
+
+    SDL_Event evt;
+    bool running = true;
+    while (running) {
+        while (SDL_PollEvent(&evt)) {
+            switch (evt.type) {
+            case SDL_EVENT_QUIT: running = false; break;
+            case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+                if (evt.window.windowID == SDL_GetWindowID(window)) {
+                    running = false;
+                }
+                break;
+            case SDL_EVENT_WINDOW_RESIZED:
+                if (evt.window.windowID == SDL_GetWindowID(window)) {
+                    // Release all outstanding references to the swap chain's buffers before resizing.
+                    resizeSwapchainBuffers(evt.window.data1, evt.window.data2);
+                }
+            }
+        }
+
+        // ---------------------------------------------------------------------
+        // Render
+
+        populateCmdList();
+
+        // Execute command list
+        ID3D12CommandList *ppCommandLists[] = {cmdList.GetPointer()};
+        cmdQueue->ExecuteCommandLists(std::size(ppCommandLists), ppCommandLists);
+
+        swapchain->Present(1, 0);
+
+        waitForFrame();
+    }
+    waitForFrame();
+}
+
 void runD3D12Sandbox() {
     // runFull();
-    runCompute();
+    // runCompute();
+    runGraphics();
 }

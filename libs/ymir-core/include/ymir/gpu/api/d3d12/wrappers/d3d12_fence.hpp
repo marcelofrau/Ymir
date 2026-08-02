@@ -5,6 +5,7 @@
 @brief Defines `D3D12Fence`, a wrapper for `ID3D12Fence` objects.
 */
 
+#include "d3d12_commands.hpp"
 #include "d3d12_device.hpp"
 #include "d3d12_object_wrapper.hpp"
 
@@ -73,6 +74,12 @@ public:
     /// @return the last signaled value
     UINT64 GetLastSignaledValue() const {
         return m_lastSignaledValue;
+    }
+
+    /// @brief Get the last completed value.
+    /// @return the last completed value
+    UINT64 GetCompletedValue() const {
+        return m_object->GetCompletedValue();
     }
 
     // clang-format off

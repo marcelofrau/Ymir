@@ -64,11 +64,11 @@ public:
     /// Callers must ensure the render targets are not referenced anywhere before calling this function.
     /// @param[in] width the new framebuffer width
     /// @param[in] height the new framebuffer height
-    void ResizeBuffers(UINT width, UINT height) const {
+    /// @return the result of the operation
+    HRESULT ResizeBuffers(UINT width, UINT height) const {
         DXGI_SWAP_CHAIN_DESC1 desc = {};
         m_object->GetDesc1(&desc);
-        HRESULT result = m_object->ResizeBuffers(0, width, height, desc.Format, desc.Flags);
-        assert(SUCCEEDED(result) && "Failed to resize swapchain.");
+        return m_object->ResizeBuffers(0, width, height, desc.Format, desc.Flags);
     }
 
     /// @brief Presents the next frame.

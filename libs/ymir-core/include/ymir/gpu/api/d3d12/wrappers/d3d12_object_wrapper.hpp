@@ -59,6 +59,12 @@ public:
 
     /// @brief Retrieves the address to the pointer to the resource.
     /// @return a pointer to the resource wrapped by this object
+    T **GetAddressOf() {
+        return m_object.addressof();
+    }
+
+    /// @brief Retrieves the address to the pointer to the resource.
+    /// @return a pointer to the resource wrapped by this object
     T *const *GetAddressOf() const {
         return m_object.addressof();
     }
