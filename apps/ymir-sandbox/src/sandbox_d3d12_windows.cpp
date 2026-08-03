@@ -1059,6 +1059,9 @@ static void runGraphics() {
 
     static constexpr UINT kFrameCount = 3;
 
+    static constexpr UINT kTextureWidth = 256;
+    static constexpr UINT kTextureHeight = 256;
+
     // Basic graphics resources
     struct FrameContext {
         ymir::gpu::d3d12::D3D12Resource renderTarget{};
@@ -1106,12 +1109,14 @@ static void runGraphics() {
     };
 
     // Triangle
-    ymir::gpu::d3d12::D3D12DescriptorHeap cbvHeap{};
+    ymir::gpu::d3d12::D3D12DescriptorHeap resourceHeap{};
     ymir::gpu::d3d12::D3D12RootSignature rootSig{};
     ymir::gpu::d3d12::D3D12PipelineState pipelineState{};
     ymir::gpu::d3d12::D3D12Resource vertexUploadBuffer{};
     ymir::gpu::d3d12::D3D12Resource vertexBuffer{};
     ymir::gpu::d3d12::D3D12Resource constBuffer{};
+    ymir::gpu::d3d12::D3D12Resource texUploadBuffer{};
+    ymir::gpu::d3d12::D3D12Resource texture{};
     D3D12_VERTEX_BUFFER_VIEW vertexBufferView{};
 
     // ---------------------------------
@@ -1193,15 +1198,15 @@ static void runGraphics() {
         }
         rtvHeap->SetName(L"RTV heap");
 
-        D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc{};
-        cbvHeapDesc.NumDescriptors = 1;
-        cbvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-        cbvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-        if (FAILED(cbvHeap.Create(device, cbvHeapDesc))) {
-            SDL_Log("Failed to create CBV heap");
+        D3D12_DESCRIPTOR_HEAP_DESC resourceHeapDesc{};
+        resourceHeapDesc.NumDescriptors = 2;
+        resourceHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+        resourceHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+        if (FAILED(resourceHeap.Create(device, resourceHeapDesc))) {
+            SDL_Log("Failed to create CBV/SRV/UAV heap");
             return;
         }
-        cbvHeap->SetName(L"CBV heap");
+        resourceHeap->SetName(L"CBV/SRV/UAV heap");
     }
 
     // Create frame resources
@@ -1243,6 +1248,9 @@ static void runGraphics() {
     // ----------
     // Triangle resources
 
+    struct Float2 {
+        float x, y;
+    };
     struct Float3 {
         float x, y, z;
     };
@@ -1251,7 +1259,8 @@ static void runGraphics() {
     };
     struct Vertex {
         Float3 position;
-        Float4 color;
+        // Float4 color;
+        Float2 uv;
     };
     struct alignas(256) SceneConstantBuffer {
         Float4 offset = {0.0f, 0.0f, 0.0f, 0.0f};
@@ -1273,7 +1282,7 @@ static void runGraphics() {
         .bottom = static_cast<LONG>(windowHeight),
     };
 
-    // Create a root signature consisting of a descriptor table with a single CBV
+    // Create a root signature consisting of a descriptor table with a single CBV, SRV and sampler
     {
         auto rootSigBuilder = rootSig.Builder();
 
@@ -1281,11 +1290,22 @@ static void runGraphics() {
         rootSigBuilder.Flags(D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
                              D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
                              D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
-                             D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
-                             D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS);
+                             D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS);
 
         rootSigBuilder.AddDescriptorTable(D3D12_SHADER_VISIBILITY_VERTEX)
             .AddCBVs(1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
+        rootSigBuilder.AddDescriptorTable(D3D12_SHADER_VISIBILITY_PIXEL)
+            .AddSRVs(1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
+        rootSigBuilder.AddStaticSampler(0, 0, D3D12_SHADER_VISIBILITY_PIXEL)
+            .Filter(D3D12_FILTER_MIN_MAG_MIP_POINT)
+            .AddressU(D3D12_TEXTURE_ADDRESS_MODE_BORDER)
+            .AddressV(D3D12_TEXTURE_ADDRESS_MODE_BORDER)
+            .AddressW(D3D12_TEXTURE_ADDRESS_MODE_BORDER)
+            .MipLODBias(0)
+            .MaxAnisotropy(0)
+            .ComparisonFunc(D3D12_COMPARISON_FUNC_NEVER)
+            .BorderColor(D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK)
+            .LODRange(0.0f, D3D12_FLOAT32_MAX);
 
         if (FAILED(rootSigBuilder.Build(device))) {
             SDL_Log("Failed to create root signature");
@@ -1307,14 +1327,17 @@ cbuffer SceneConstantBuffer : register(b0) {
 
 struct PSInput {
     float4 position : SV_POSITION;
-    float4 color : COLOR;
+    // float4 color : COLOR;
+    float2 uv : TEXCOORD;
 };
 
-PSInput VSMain(float4 position : POSITION, float4 color : COLOR) {
+//PSInput VSMain(float4 position : POSITION, float4 color : COLOR) {
+PSInput VSMain(float4 position : POSITION, float2 uv : TEXCOORD) {
     PSInput result;
 
     result.position = (position + offset) * float4(1.0f, aspectRatio, 1.0f, 1.0f);
-    result.color = color;
+    // result.color = color;
+    result.uv = uv;
 
     return result;
 }
@@ -1323,11 +1346,16 @@ PSInput VSMain(float4 position : POSITION, float4 color : COLOR) {
         static constexpr const char *kPixelShaderCode = R"(
 struct PSInput {
     float4 position : SV_POSITION;
-    float4 color : COLOR;
+    // float4 color : COLOR;
+    float2 uv : TEXCOORD;
 };
 
+Texture2D g_texture : register(t0);
+SamplerState g_sampler : register(s0);
+
 float4 PSMain(PSInput input) : SV_TARGET {
-    return input.color;
+    // return input.color;
+    return g_texture.Sample(g_sampler, input.uv);
 }
 )";
 
@@ -1365,7 +1393,9 @@ float4 PSMain(PSInput input) : SV_TARGET {
         // Define the vertex input layout
         D3D12_INPUT_ELEMENT_DESC inputElementDescs[] = {
             {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-            {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
+            //{"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+            {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        };
 
         // Describe and create the graphics pipeline state object (PSO)
         D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
@@ -1419,9 +1449,12 @@ float4 PSMain(PSInput input) : SV_TARGET {
     // Create the vertex buffer
     {
         // Define the geometry for a triangle
-        Vertex triangleVertices[] = {{{0.0f, 0.25f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
-                                     {{0.25f, -0.25f, 0.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
-                                     {{-0.25f, -0.25f, 0.0f}, {0.0f, 0.0f, 1.0f, 1.0f}}};
+        // Vertex triangleVertices[] = {{{0.0f, 0.25f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
+        //                              {{0.25f, -0.25f, 0.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
+        //                              {{-0.25f, -0.25f, 0.0f}, {0.0f, 0.0f, 1.0f, 1.0f}}};
+        Vertex triangleVertices[] = {{{0.0f, 0.25f, 0.0f}, {0.5f, 0.0f}},
+                                     {{0.25f, -0.25f, 0.0f}, {1.0f, 1.0f}},
+                                     {{-0.25f, -0.25f, 0.0f}, {0.0f, 1.0f}}};
 
         const UINT vertexBufferSize = sizeof(triangleVertices);
         const D3D12_RESOURCE_DESC vertexBufferDesc{
@@ -1493,12 +1526,6 @@ float4 PSMain(PSInput input) : SV_TARGET {
         std::swap(barrier.Transition.StateBefore, barrier.Transition.StateAfter);
         cmdList->ResourceBarrier(1, &barrier);
 
-        if (FAILED(cmdList->Close())) {
-            SDL_Log("Failed to close command list");
-            return;
-        }
-        cmdQueue->ExecuteCommandLists(1, cmdList.GetAddressOfBase());
-
         // Initialize the vertex buffer view
         vertexBufferView.BufferLocation = vertexBuffer->GetGPUVirtualAddress();
         vertexBufferView.StrideInBytes = sizeof(Vertex);
@@ -1532,7 +1559,7 @@ float4 PSMain(PSInput input) : SV_TARGET {
         D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc{};
         cbvDesc.BufferLocation = constBuffer->GetGPUVirtualAddress();
         cbvDesc.SizeInBytes = constantBufferSize;
-        device->CreateConstantBufferView(&cbvDesc, cbvHeap.GetCPUStart());
+        device->CreateConstantBufferView(&cbvDesc, resourceHeap.GetCPUStart());
 
         // Map and initialize the constant buffer. We don't unmap this until the app closes. Keeping things mapped for
         // the lifetime of the resource is okay.
@@ -1543,6 +1570,142 @@ float4 PSMain(PSInput input) : SV_TARGET {
         }
         memcpy(constBufferPtr, &constBufferData, sizeof(constBufferData));
     }
+
+    // Create the texture
+    {
+        const DXGI_FORMAT textureFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+        auto texBuilder = texture.Texture2DBuilder(kTextureWidth, kTextureHeight)
+                              .Format(textureFormat)
+                              .InitialState(D3D12_RESOURCE_STATE_COPY_DEST);
+
+        if (FAILED(texBuilder.BuildCommitted(device))) {
+            SDL_Log("Failed to create texture");
+            return;
+        }
+        texture->SetName(L"Sample texture");
+
+        D3D12_PLACED_SUBRESOURCE_FOOTPRINT layout;
+        UINT numRows;
+        UINT64 rowSizeBytes;
+        UINT64 uploadBufferSize;
+        D3D12_RESOURCE_DESC desc = texture->GetDesc();
+        device->GetCopyableFootprints(&desc, 0, 1, 0, &layout, &numRows, &rowSizeBytes, &uploadBufferSize);
+
+        // Create the GPU upload buffer
+        auto texUploadBuilder = texUploadBuffer.BufferBuilder(uploadBufferSize)
+                                    .HeapType(D3D12_HEAP_TYPE_UPLOAD)
+                                    .InitialState(D3D12_RESOURCE_STATE_GENERIC_READ);
+        if (FAILED(texUploadBuilder.BuildCommitted(device))) {
+            SDL_Log("Failed to create texture upload buffer");
+            return;
+        }
+        texUploadBuffer->SetName(L"Sample texture upload buffer");
+
+        // Generate a simple black and white checkerboard texture
+        std::vector<UINT8> textureData{};
+        {
+            const UINT rowPitch = kTextureWidth * 4;
+            const UINT cellPitch = rowPitch >> 4;       // The width of a cell in the checkboard texture
+            const UINT cellHeight = kTextureWidth >> 4; // The height of a cell in the checkerboard texture
+            const UINT textureSize = rowPitch * kTextureHeight;
+
+            textureData.resize(textureSize);
+            UINT8 *pData = &textureData[0];
+
+            for (UINT n = 0; n < textureSize; n += 4) {
+                UINT x = n % rowPitch;
+                UINT y = n / rowPitch;
+                UINT i = x / cellPitch;
+                UINT j = y / cellHeight;
+
+                if (i % 2 == j % 2) {
+                    pData[n] = 0x00;     // R
+                    pData[n + 1] = 0x00; // G
+                    pData[n + 2] = 0x00; // B
+                    pData[n + 3] = 0xff; // A
+                } else {
+                    pData[n] = 0xff;     // R
+                    pData[n + 1] = 0xff; // G
+                    pData[n + 2] = 0xff; // B
+                    pData[n + 3] = 0xff; // A
+                }
+            }
+        }
+
+        // Copy data to the intermediate upload heap and then schedule a copy from the upload heap to the Texture2D
+        D3D12_SUBRESOURCE_DATA textureDataRef{};
+        textureDataRef.pData = &textureData[0];
+        textureDataRef.RowPitch = kTextureWidth * 4;
+        textureDataRef.SlicePitch = textureDataRef.RowPitch * kTextureHeight;
+
+        if (rowSizeBytes > SIZE_T(-1)) {
+            SDL_Log("Row size larger that maximum allowed size");
+            return;
+        }
+
+        BYTE *pData;
+        if (FAILED(texUploadBuffer->Map(0, nullptr, reinterpret_cast<void **>(&pData)))) {
+            SDL_Log("Failed to map texture upload buffer");
+            return;
+        }
+
+        D3D12_MEMCPY_DEST destData{
+            .pData = pData + layout.Offset,
+            .RowPitch = layout.Footprint.RowPitch,
+            .SlicePitch = SIZE_T(layout.Footprint.RowPitch) * SIZE_T(numRows),
+        };
+        for (UINT z = 0; z < layout.Footprint.Depth; ++z) {
+            auto pDestSlice = static_cast<BYTE *>(destData.pData) + destData.SlicePitch * z;
+            auto pSrcSlice = static_cast<const BYTE *>(textureDataRef.pData) + textureDataRef.SlicePitch * LONG_PTR(z);
+            for (UINT y = 0; y < numRows; ++y) {
+                memcpy(pDestSlice + destData.RowPitch * y, pSrcSlice + textureDataRef.RowPitch * LONG_PTR(y),
+                       rowSizeBytes);
+            }
+        }
+        texUploadBuffer->Unmap(0, nullptr);
+
+        const D3D12_TEXTURE_COPY_LOCATION src{
+            .pResource = texUploadBuffer.GetPointer(),
+            .Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
+            .PlacedFootprint = layout,
+        };
+        const D3D12_TEXTURE_COPY_LOCATION dst{
+            .pResource = texture.GetPointer(),
+            .Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
+            .SubresourceIndex = 0,
+        };
+        cmdList->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+
+        D3D12_RESOURCE_BARRIER barrier{
+            .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+            .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+            .Transition =
+                {
+                    .pResource = texture.GetPointer(),
+                    .Subresource = 0,
+                    .StateBefore = D3D12_RESOURCE_STATE_COPY_DEST,
+                    .StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+                },
+        };
+        cmdList->ResourceBarrier(1, &barrier);
+
+        // Describe and create a SRV for the texture
+        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        srvDesc.Format = textureFormat;
+        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        srvDesc.Texture2D.MipLevels = 1;
+        D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle = resourceHeap.GetCPUStart();
+        cpuHandle.ptr += resourceHeap.GetDescriptorSize();
+        device->CreateShaderResourceView(texture.GetPointer(), &srvDesc, cpuHandle);
+    }
+
+    // Execute command list
+    if (FAILED(cmdList->Close())) {
+        SDL_Log("Failed to close command list");
+        return;
+    }
+    cmdQueue->ExecuteCommandLists(1, cmdList.GetAddressOfBase());
 
     // Wait for commands to execute
     waitForGPU();
@@ -1619,10 +1782,13 @@ float4 PSMain(PSInput input) : SV_TARGET {
         // Set necessary state
         cmdList->SetGraphicsRootSignature(rootSig.GetPointer());
 
-        ID3D12DescriptorHeap *heaps[] = {cbvHeap.GetPointer()};
+        ID3D12DescriptorHeap *heaps[] = {resourceHeap.GetPointer()};
         cmdList->SetDescriptorHeaps(std::size(heaps), heaps);
 
-        cmdList->SetGraphicsRootDescriptorTable(0, cbvHeap.GetGPUStart());
+        D3D12_GPU_DESCRIPTOR_HANDLE cbvHandle = resourceHeap.GetGPUStart();
+        D3D12_GPU_DESCRIPTOR_HANDLE srvHandle{.ptr = cbvHandle.ptr + resourceHeap.GetDescriptorSize()};
+        cmdList->SetGraphicsRootDescriptorTable(0, cbvHandle);
+        cmdList->SetGraphicsRootDescriptorTable(1, srvHandle);
         cmdList->RSSetViewports(1, &viewport);
         cmdList->RSSetScissorRects(1, &scissorRect);
 

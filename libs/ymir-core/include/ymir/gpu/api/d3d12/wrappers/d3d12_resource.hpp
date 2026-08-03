@@ -95,7 +95,9 @@ private:
 
 class D3D12Resource::D3D12ResourceBuilder {
     D3D12ResourceBuilder(D3D12Resource &parent)
-        : m_parent(parent) {}
+        : m_parent(parent) {
+        m_heapProperties.Type = D3D12_HEAP_TYPE_DEFAULT;
+    }
 
     /// @brief Creates a resource builder for a buffer of the specified size.
     /// @param[in] size the size of the buffer
@@ -178,7 +180,7 @@ class D3D12Resource::D3D12ResourceBuilder {
 
 public:
     /// @brief Sets the number of mip levels.
-    /// @param[in] mipLevels the number of mip levels
+    /// @param[in] mipLevels the number of mip levels. The default is 1.
     /// @return this builder
     D3D12ResourceBuilder &MipLevels(UINT16 mipLevels) {
         m_desc.MipLevels = mipLevels;
@@ -186,7 +188,7 @@ public:
     }
 
     /// @brief Sets the format.
-    /// @param[in] format the format
+    /// @param[in] format the format. The default is `DXGI_FORMAT_UNKNOWN`.
     /// @return this builder
     D3D12ResourceBuilder &Format(DXGI_FORMAT format) {
         m_desc.Format = format;
@@ -194,7 +196,7 @@ public:
     }
 
     /// @brief Sets the layout.
-    /// @param[in] layout the layout
+    /// @param[in] layout the layout. The default is `D3D12_TEXTURE_LAYOUT_UNKNOWN`.
     /// @return this builder
     D3D12ResourceBuilder &Layout(D3D12_TEXTURE_LAYOUT layout) {
         m_desc.Layout = layout;
@@ -202,7 +204,7 @@ public:
     }
 
     /// @brief Sets the sampling descriptor.
-    /// @param[in] count the number of samples
+    /// @param[in] count the number of samples. The default is 1 sample with quality of 0.
     /// @param[in] quality the sampling quality level
     /// @return this builder
     D3D12ResourceBuilder &SampleDesc(UINT count, UINT quality) {
@@ -212,7 +214,7 @@ public:
     }
 
     /// @brief Sets the alignment.
-    /// @param[in] mipLevels the alignment
+    /// @param[in] mipLevels the alignment. The default is 0.
     /// @return this builder
     D3D12ResourceBuilder &Alignment(UINT64 alignment) {
         m_desc.Alignment = alignment;
@@ -220,7 +222,7 @@ public:
     }
 
     /// @brief Sets the resource flags.
-    /// @param[in] flags the resource flags
+    /// @param[in] flags the resource flags. The default is `D3D12_RESOURCE_FLAG_NONE`.
     /// @return this builder
     D3D12ResourceBuilder &Flags(D3D12_RESOURCE_FLAGS flags) {
         m_desc.Flags = flags;
@@ -228,7 +230,7 @@ public:
     }
 
     /// @brief Sets the initial resource state.
-    /// @param[in] state the initial resource state
+    /// @param[in] state the initial resource state. The default is `D3D12_RESOURCE_STATE_COMMON`.
     /// @return this builder
     D3D12ResourceBuilder &InitialState(D3D12_RESOURCE_STATES state) {
         m_initState = state;
@@ -236,7 +238,7 @@ public:
     }
 
     /// @brief Sets the optimized clear value.
-    /// @param[in] clearValue the optimized clear value
+    /// @param[in] clearValue the optimized clear value. The default is no value.
     /// @return this builder
     D3D12ResourceBuilder &OptimizedClearValue(D3D12_CLEAR_VALUE clearValue) {
         m_optimizedClearValue = clearValue;
@@ -252,7 +254,7 @@ public:
     }
 
     /// @brief Sets the heap type.
-    /// @param[in] type the heap type
+    /// @param[in] type the heap type. The default is `D3D12_HEAP_TYPE_DEFAULT`.
     /// @return this builder
     D3D12ResourceBuilder &HeapType(D3D12_HEAP_TYPE type) {
         m_heapProperties.Type = type;
@@ -260,7 +262,7 @@ public:
     }
 
     /// @brief Sets the heap CPU page property
-    /// @param property the CPU page property
+    /// @param property the CPU page property. The default is `D3D12_CPU_PAGE_PROPERTY_UNKNOWN`.
     /// @return this builder
     D3D12ResourceBuilder &HeapCPUPageProperty(D3D12_CPU_PAGE_PROPERTY property) {
         m_heapProperties.CPUPageProperty = property;
@@ -268,7 +270,7 @@ public:
     }
 
     /// @brief Sets the memory pool preference for the heap.
-    /// @param pool the preferred memory pool
+    /// @param pool the preferred memory pool. The default is `D3D12_MEMORY_POOL_UNKNOWN`.
     /// @return this builder
     D3D12ResourceBuilder &HeapMemoryPoolPreference(D3D12_MEMORY_POOL pool) {
         m_heapProperties.MemoryPoolPreference = pool;
@@ -276,8 +278,8 @@ public:
     }
 
     /// @brief Sets the heap creation and visible node masks.
-    /// @param[in] creation the creation node mask
-    /// @param[in] visible the visible node mask
+    /// @param[in] creation the creation node mask. The default is 0.
+    /// @param[in] visible the visible node mask. The default is 0.
     /// @return this builder
     D3D12ResourceBuilder &HeapNodeMasks(UINT creation, UINT visible) {
         m_heapProperties.CreationNodeMask = creation;
@@ -286,7 +288,7 @@ public:
     }
 
     /// @brief Sets the initial heap flags.
-    /// @param[in] flags the initial heap flags
+    /// @param[in] flags the initial heap flags. The default is `D3D12_HEAP_FLAG_NONE`.
     /// @return this builder
     D3D12ResourceBuilder &HeapFlags(D3D12_HEAP_FLAGS flags) {
         m_heapFlags = flags;

@@ -415,7 +415,7 @@ public:
     /// @brief Sets the comparison function for this sampler.
     /// @param[in] comparisonFunc the comparison function
     /// @return this builder
-    StaticSamplerBuilder &MaxAnisotropy(D3D12_COMPARISON_FUNC comparisonFunc) {
+    StaticSamplerBuilder &ComparisonFunc(D3D12_COMPARISON_FUNC comparisonFunc) {
         m_desc.ComparisonFunc = comparisonFunc;
         return *this;
     }
@@ -423,7 +423,7 @@ public:
     /// @brief Sets the border color for this sampler.
     /// @param[in] borderColor the border color
     /// @return this builder
-    StaticSamplerBuilder &MaxAnisotropy(D3D12_STATIC_BORDER_COLOR borderColor) {
+    StaticSamplerBuilder &BorderColor(D3D12_STATIC_BORDER_COLOR borderColor) {
         m_desc.BorderColor = borderColor;
         return *this;
     }
