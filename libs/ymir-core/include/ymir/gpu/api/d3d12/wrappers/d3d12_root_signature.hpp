@@ -35,12 +35,10 @@ public:
     /// @param[in] device the device instance that will own the root signature
     /// @param[in] desc the root signature descriptor
     /// @param[in] nodeMask the node mask. Defaults to 0
-    /// @param[in] version the root signature serialization version. Defaults to `D3D_ROOT_SIGNATURE_VERSION_1`
     /// @return the result of the attempt to create the root signature
-    HRESULT Create(const D3D12Device &device, const D3D12_ROOT_SIGNATURE_DESC &desc, UINT nodeMask = 0,
-                   D3D_ROOT_SIGNATURE_VERSION version = D3D_ROOT_SIGNATURE_VERSION_1) {
+    HRESULT Create(const D3D12Device &device, const D3D12_VERSIONED_ROOT_SIGNATURE_DESC &desc, UINT nodeMask = 0) {
         wil::com_ptr_nothrow<ID3DBlob> signature = nullptr;
-        HRESULT hr = D3D12SerializeRootSignature(&desc, version, &signature, &m_error);
+        HRESULT hr = D3D12SerializeVersionedRootSignature(&desc, &signature, &m_error);
         if (FAILED(hr)) {
             return hr;
         }
@@ -117,13 +115,13 @@ public:
     /// @brief Adds 32-bit constants to the root signature.
     /// @param[in] reg the shader register number (b#)
     /// @param[in] count the number of constants
-    /// @param[in] regSpace the register space index. Defaults to 0
+    /// @param[in] regSpace the register space index. Defaults to 0.
     /// @param[in] visibility the shader visibility for this set of constants. The default is
     /// `D3D12_SHADER_VISIBILITY_ALL`.
     /// @return this builder
     RSBuilder &Add32BitConstants(UINT reg, UINT count, UINT regSpace = 0u,
                                  D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL) {
-        m_rootParams.push_back(D3D12_ROOT_PARAMETER{
+        m_rootParams.push_back(D3D12_ROOT_PARAMETER1{
             .ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
             .Constants = {.ShaderRegister = reg, .RegisterSpace = regSpace, .Num32BitValues = count},
             .ShaderVisibility = visibility,
@@ -133,13 +131,15 @@ public:
 
     /// @brief Adds a Constant Buffer View (CBV) to the root signature.
     /// @param[in] reg the shader register number (c#)
-    /// @param[in] regSpace the register space index. Defaults to 0
+    /// @param[in] regSpace the register space index. Defaults to 0.
+    /// @param[in] flags the descriptor flags. Defaults to `D3D12_ROOT_DESCRIPTOR_FLAG_NONE`.
     /// @param[in] visibility the shader visibility for this CBV. The default is `D3D12_SHADER_VISIBILITY_ALL`.
     /// @return this builder
-    RSBuilder &AddCBV(UINT reg, UINT regSpace = 0u, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL) {
-        m_rootParams.push_back(D3D12_ROOT_PARAMETER{
+    RSBuilder &AddCBV(UINT reg, UINT regSpace = 0u, D3D12_ROOT_DESCRIPTOR_FLAGS flags = D3D12_ROOT_DESCRIPTOR_FLAG_NONE,
+                      D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL) {
+        m_rootParams.push_back(D3D12_ROOT_PARAMETER1{
             .ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV,
-            .Descriptor = {.ShaderRegister = reg, .RegisterSpace = regSpace},
+            .Descriptor = {.ShaderRegister = reg, .RegisterSpace = regSpace, .Flags = flags},
             .ShaderVisibility = visibility,
         });
         return *this;
@@ -147,13 +147,15 @@ public:
 
     /// @brief Adds a Shader Resource View (SRV) to the root signature.
     /// @param[in] reg the shader register number (t#)
-    /// @param[in] regSpace the register space index. Defaults to 0
+    /// @param[in] regSpace the register space index. Defaults to 0.
+    /// @param[in] flags the descriptor flags. Defaults to `D3D12_ROOT_DESCRIPTOR_FLAG_NONE`.
     /// @param[in] visibility the shader visibility for this SRV. The default is `D3D12_SHADER_VISIBILITY_ALL`.
     /// @return this builder
-    RSBuilder &AddSRV(UINT reg, UINT regSpace = 0u, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL) {
-        m_rootParams.push_back(D3D12_ROOT_PARAMETER{
+    RSBuilder &AddSRV(UINT reg, UINT regSpace = 0u, D3D12_ROOT_DESCRIPTOR_FLAGS flags = D3D12_ROOT_DESCRIPTOR_FLAG_NONE,
+                      D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL) {
+        m_rootParams.push_back(D3D12_ROOT_PARAMETER1{
             .ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV,
-            .Descriptor = {.ShaderRegister = reg, .RegisterSpace = regSpace},
+            .Descriptor = {.ShaderRegister = reg, .RegisterSpace = regSpace, .Flags = flags},
             .ShaderVisibility = visibility,
         });
         return *this;
@@ -161,13 +163,15 @@ public:
 
     /// @brief Adds an Unordered Access View (UAV) to the root signature.
     /// @param[in] reg the shader register number (u#)
-    /// @param[in] regSpace the register space index. Defaults to 0
+    /// @param[in] regSpace the register space index. Defaults to 0.
+    /// @param[in] flags the descriptor flags. Defaults to `D3D12_ROOT_DESCRIPTOR_FLAG_NONE`.
     /// @param[in] visibility the shader visibility for this UAV. The default is `D3D12_SHADER_VISIBILITY_ALL`.
     /// @return this builder
-    RSBuilder &AddUAV(UINT reg, UINT regSpace = 0u, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL) {
-        m_rootParams.push_back(D3D12_ROOT_PARAMETER{
+    RSBuilder &AddUAV(UINT reg, UINT regSpace = 0u, D3D12_ROOT_DESCRIPTOR_FLAGS flags = D3D12_ROOT_DESCRIPTOR_FLAG_NONE,
+                      D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL) {
+        m_rootParams.push_back(D3D12_ROOT_PARAMETER1{
             .ParameterType = D3D12_ROOT_PARAMETER_TYPE_UAV,
-            .Descriptor = {.ShaderRegister = reg, .RegisterSpace = regSpace},
+            .Descriptor = {.ShaderRegister = reg, .RegisterSpace = regSpace, .Flags = flags},
             .ShaderVisibility = visibility,
         });
         return *this;
@@ -181,7 +185,7 @@ public:
     /// Changes are committed on calls to `StaticSamplerBuilder`'s mutator methods.
     ///
     /// @param[in] reg the shader register number (s#)
-    /// @param[in] regSpace the register space index. Defaults to 0
+    /// @param[in] regSpace the register space index. Defaults to 0.
     /// @param[in] visibility the shader visibility for this table. The default is `D3D12_SHADER_VISIBILITY_ALL`.
     /// @return the static sampler builder. Use its `Finish()` method to return to this builder.
     StaticSamplerBuilder AddStaticSampler(UINT reg, UINT regSpace = 0u,
@@ -191,25 +195,29 @@ public:
     /// @param[in] device the device instance that will own the root signature
     /// @return the result of the attempt to create the root signature
     HRESULT Build(const D3D12Device &device) const {
-        const D3D12_ROOT_SIGNATURE_DESC desc = {
-            .NumParameters = (UINT)m_rootParams.size(),
-            .pParameters = m_rootParams.empty() ? nullptr : m_rootParams.data(),
-            .NumStaticSamplers = (UINT)m_staticSamplers.size(),
-            .pStaticSamplers = m_staticSamplers.empty() ? nullptr : m_staticSamplers.data(),
-            .Flags = m_flags,
+        const D3D12_VERSIONED_ROOT_SIGNATURE_DESC desc = {
+            .Version = D3D_ROOT_SIGNATURE_VERSION_1_1,
+            .Desc_1_1 =
+                {
+                    .NumParameters = (UINT)m_rootParams.size(),
+                    .pParameters = m_rootParams.empty() ? nullptr : m_rootParams.data(),
+                    .NumStaticSamplers = (UINT)m_staticSamplers.size(),
+                    .pStaticSamplers = m_staticSamplers.empty() ? nullptr : m_staticSamplers.data(),
+                    .Flags = m_flags,
+                },
         };
-        return m_parent.Create(device, desc, m_nodeMask, m_version);
+        return m_parent.Create(device, desc, m_nodeMask);
     }
 
 private:
     D3D12RootSignature &m_parent;
 
     UINT m_nodeMask = 0u;
-    D3D_ROOT_SIGNATURE_VERSION m_version = D3D_ROOT_SIGNATURE_VERSION_1;
+    D3D_ROOT_SIGNATURE_VERSION m_version = D3D_ROOT_SIGNATURE_VERSION_1_1;
     D3D12_ROOT_SIGNATURE_FLAGS m_flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
-    std::vector<D3D12_ROOT_PARAMETER> m_rootParams;
+    std::vector<D3D12_ROOT_PARAMETER1> m_rootParams;
     std::vector<D3D12_STATIC_SAMPLER_DESC> m_staticSamplers;
-    std::vector<std::vector<D3D12_DESCRIPTOR_RANGE>> m_descTableRanges;
+    std::vector<std::vector<D3D12_DESCRIPTOR_RANGE1>> m_descTableRanges;
 };
 
 inline D3D12RootSignature::RSBuilder D3D12RootSignature::Builder() {
@@ -219,8 +227,8 @@ inline D3D12RootSignature::RSBuilder D3D12RootSignature::Builder() {
 // -----------------------------------------------------------------------------
 
 class D3D12RootSignature::RSBuilder::DescTableBuilder {
-    DescTableBuilder(RSBuilder &parent, D3D12_ROOT_DESCRIPTOR_TABLE &descTable,
-                     std::vector<D3D12_DESCRIPTOR_RANGE> &ranges)
+    DescTableBuilder(RSBuilder &parent, D3D12_ROOT_DESCRIPTOR_TABLE1 &descTable,
+                     std::vector<D3D12_DESCRIPTOR_RANGE1> &ranges)
         : m_parent(parent)
         , m_descTable(descTable)
         , m_ranges(ranges) {}
@@ -243,16 +251,19 @@ public:
     /// @brief Adds a Shader Resource View (SRV) descriptor range.
     /// @param[in] numDescs the number of SRVs
     /// @param[in] baseReg first SRV register number (`t#`)
-    /// @param[in] regSpace register space index. Defaults to 0
+    /// @param[in] regSpace register space index. Defaults to 0.
+    /// @param[in] flags the descriptor table flags. Defaults to `D3D12_DESCRIPTOR_RANGE_FLAG_NONE`.
     /// @param[in] offsetFromStart offset in descriptors from the start of the table. Defaults to appending.
     /// @return this builder
     DescTableBuilder &AddSRVs(UINT numDescs, UINT baseReg, UINT regSpace = 0,
+                              D3D12_DESCRIPTOR_RANGE_FLAGS flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
                               UINT offsetFromStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND) {
-        m_ranges.push_back(D3D12_DESCRIPTOR_RANGE{
+        m_ranges.push_back(D3D12_DESCRIPTOR_RANGE1{
             .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
             .NumDescriptors = numDescs,
             .BaseShaderRegister = baseReg,
             .RegisterSpace = regSpace,
+            .Flags = flags,
             .OffsetInDescriptorsFromTableStart = offsetFromStart,
         });
         return *this;
@@ -261,16 +272,19 @@ public:
     /// @brief Adds an Unordered Access View (UAV) descriptor range.
     /// @param[in] numDescs the number of UAVs
     /// @param[in] baseReg first UAV register number (`u#`)
-    /// @param[in] regSpace register space index. Defaults to 0
+    /// @param[in] regSpace register space index. Defaults to 0.
+    /// @param[in] flags the descriptor table flags. Defaults to `D3D12_DESCRIPTOR_RANGE_FLAG_NONE`.
     /// @param[in] offsetFromStart offset in descriptors from the start of the table. Defaults to appending.
     /// @return this builder
     DescTableBuilder &AddUAVs(UINT numDescs, UINT baseReg, UINT regSpace = 0,
+                              D3D12_DESCRIPTOR_RANGE_FLAGS flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
                               UINT offsetFromStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND) {
-        m_ranges.push_back(D3D12_DESCRIPTOR_RANGE{
+        m_ranges.push_back(D3D12_DESCRIPTOR_RANGE1{
             .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV,
             .NumDescriptors = numDescs,
             .BaseShaderRegister = baseReg,
             .RegisterSpace = regSpace,
+            .Flags = flags,
             .OffsetInDescriptorsFromTableStart = offsetFromStart,
         });
         return *this;
@@ -279,16 +293,19 @@ public:
     /// @brief Adds a Constant Buffer View (CBV) descriptor range.
     /// @param[in] numDescs the number of CBVs
     /// @param[in] baseReg first CBV register number (`b#`)
-    /// @param[in] regSpace register space index. Defaults to 0
+    /// @param[in] regSpace register space index. Defaults to 0.
+    /// @param[in] flags the descriptor table flags. Defaults to `D3D12_DESCRIPTOR_RANGE_FLAG_NONE`.
     /// @param[in] offsetFromStart offset in descriptors from the start of the table. Defaults to appending.
     /// @return this builder
     DescTableBuilder &AddCBVs(UINT numDescs, UINT baseReg, UINT regSpace = 0,
+                              D3D12_DESCRIPTOR_RANGE_FLAGS flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
                               UINT offsetFromStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND) {
-        m_ranges.push_back(D3D12_DESCRIPTOR_RANGE{
+        m_ranges.push_back(D3D12_DESCRIPTOR_RANGE1{
             .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV,
             .NumDescriptors = numDescs,
             .BaseShaderRegister = baseReg,
             .RegisterSpace = regSpace,
+            .Flags = flags,
             .OffsetInDescriptorsFromTableStart = offsetFromStart,
         });
         return *this;
@@ -297,16 +314,19 @@ public:
     /// @brief Adds a sampler descriptor range.
     /// @param[in] numDescs the number of samplers
     /// @param[in] baseReg first sampler register number (`s#`)
-    /// @param[in] regSpace register space index. Defaults to 0
+    /// @param[in] regSpace register space index. Defaults to 0.
+    /// @param[in] flags the descriptor table flags. Defaults to `D3D12_DESCRIPTOR_RANGE_FLAG_NONE`.
     /// @param[in] offsetFromStart offset in descriptors from the start of the table. Defaults to appending.
     /// @return this builder
     DescTableBuilder &AddSamplers(UINT numDescs, UINT baseReg, UINT regSpace = 0,
+                                  D3D12_DESCRIPTOR_RANGE_FLAGS flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
                                   UINT offsetFromStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND) {
-        m_ranges.push_back(D3D12_DESCRIPTOR_RANGE{
+        m_ranges.push_back(D3D12_DESCRIPTOR_RANGE1{
             .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER,
             .NumDescriptors = numDescs,
             .BaseShaderRegister = baseReg,
             .RegisterSpace = regSpace,
+            .Flags = flags,
             .OffsetInDescriptorsFromTableStart = offsetFromStart,
         });
         return *this;
@@ -322,13 +342,13 @@ public:
 
 private:
     RSBuilder &m_parent;
-    D3D12_ROOT_DESCRIPTOR_TABLE &m_descTable;
-    std::vector<D3D12_DESCRIPTOR_RANGE> &m_ranges;
+    D3D12_ROOT_DESCRIPTOR_TABLE1 &m_descTable;
+    std::vector<D3D12_DESCRIPTOR_RANGE1> &m_ranges;
 };
 
 inline auto D3D12RootSignature::RSBuilder::AddDescriptorTable(D3D12_SHADER_VISIBILITY visibility) -> DescTableBuilder {
-    D3D12_ROOT_PARAMETER &rootParam = m_rootParams.emplace_back();
-    memset(&rootParam, 0, sizeof(D3D12_ROOT_PARAMETER));
+    D3D12_ROOT_PARAMETER1 &rootParam = m_rootParams.emplace_back();
+    memset(&rootParam, 0, sizeof(D3D12_ROOT_PARAMETER1));
     rootParam.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     rootParam.ShaderVisibility = visibility;
     return DescTableBuilder{*this, rootParam.DescriptorTable, m_descTableRanges.emplace_back()};

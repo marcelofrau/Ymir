@@ -1273,31 +1273,8 @@ static void runGraphics() {
         .bottom = static_cast<LONG>(windowHeight),
     };
 
-    // Create an empty root signature
-    {
-        auto rootSigBuilder = rootSig.Builder();
-        rootSigBuilder.Flags(D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
-        if (FAILED(rootSigBuilder.Build(device))) {
-            SDL_Log("Failed to create root signature");
-            if (!rootSig.GetSerializationError().empty()) {
-                SDL_Log("Root signature serialization error: %s", rootSig.GetSerializationError().data());
-            }
-            return;
-        }
-        rootSig->SetName(L"Main root signature");
-    }
-
     // Create a root signature consisting of a descriptor table with a single CBV
     {
-        // This is the highest version the sample supports. If CheckFeatureSupport succeeds, the HighestVersion returned
-        // will not be greater than this.
-        // TODO: use this
-        // D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData{};
-        // featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
-        // if (FAILED(device->CheckFeatureSupport(D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData)))) {
-        //     featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
-        // }
-
         auto rootSigBuilder = rootSig.Builder();
 
         // Allow input layout and deny uneccessary access to certain pipeline stages
@@ -1307,10 +1284,8 @@ static void runGraphics() {
                              D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
                              D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS);
 
-        // TODO: add D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC flag to CBV range
-        // - requires D3D12_DESCRIPTOR_RANGE1 and D3D12_ROOT_PARAMETER1
-        // - make a builder for version 1.1 root signatures
-        rootSigBuilder.AddDescriptorTable(D3D12_SHADER_VISIBILITY_VERTEX).AddCBVs(1, 0);
+        rootSigBuilder.AddDescriptorTable(D3D12_SHADER_VISIBILITY_VERTEX)
+            .AddCBVs(1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
 
         if (FAILED(rootSigBuilder.Build(device))) {
             SDL_Log("Failed to create root signature");
