@@ -1035,6 +1035,13 @@ static void runCompute() {
     }
 }
 
+#ifdef USE_ENHANCED_BARRIERS
+    #undef USE_ENHANCED_BARRIERS
+#endif
+#ifdef BINDLESS
+    #undef BINDLESS
+#endif
+
 // https://learn.microsoft.com/en-us/samples/microsoft/directx-graphics-samples/d3d12-hello-world-samples-win32/
 // https://github.com/microsoft/DirectX-Graphics-Samples
 static void runGraphics() {
@@ -1506,25 +1513,56 @@ float4 PSMain(PSInput input) : SV_TARGET {
             return;
         }
 
-        // Indicate that the vertex buffer will be used as copy destination
-        D3D12_RESOURCE_BARRIER barrier{
-            .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-            .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
-            .Transition =
-                {
-                    .pResource = vertexBuffer.GetPointer(),
-                    .Subresource = 0,
-                    .StateBefore = D3D12_RESOURCE_STATE_COMMON,
-                    .StateAfter = D3D12_RESOURCE_STATE_COPY_DEST,
-                },
-        };
-        cmdList->ResourceBarrier(1, &barrier);
+#ifdef USE_ENHANCED_BARRIERS
+        if (auto *list7 = cmdList.As7()) {
+            // Indicate that the vertex buffer will be used as copy destination
+            D3D12_BUFFER_BARRIER barrier{
+                .SyncBefore = D3D12_BARRIER_SYNC_VERTEX_SHADING,
+                .SyncAfter = D3D12_BARRIER_SYNC_COPY,
+                .AccessBefore = D3D12_BARRIER_ACCESS_COMMON,
+                .AccessAfter = D3D12_BARRIER_ACCESS_COPY_DEST,
+                .pResource = vertexBuffer.GetPointer(),
+                .Offset = 0,
+                .Size = vertexBufferSize,
+            };
+            const D3D12_BARRIER_GROUP group{
+                .Type = D3D12_BARRIER_TYPE_BUFFER,
+                .NumBarriers = 1,
+                .pBufferBarriers = &barrier,
+            };
+            list7->Barrier(1, &group);
 
-        cmdList->CopyBufferRegion(vertexBuffer.GetPointer(), 0, vertexUploadBuffer.GetPointer(), 0, vertexBufferSize);
+            cmdList->CopyBufferRegion(vertexBuffer.GetPointer(), 0, vertexUploadBuffer.GetPointer(), 0,
+                                      vertexBufferSize);
 
-        // Indicate that the vertex buffer will be used for generic reads
-        std::swap(barrier.Transition.StateBefore, barrier.Transition.StateAfter);
-        cmdList->ResourceBarrier(1, &barrier);
+            // Indicate that the vertex buffer will be used for generic reads
+            std::swap(barrier.SyncBefore, barrier.SyncAfter);
+            std::swap(barrier.AccessBefore, barrier.AccessAfter);
+            list7->Barrier(1, &group);
+        } else
+#endif
+        {
+            // Indicate that the vertex buffer will be used as copy destination
+            D3D12_RESOURCE_BARRIER barrier{
+                .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+                .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+                .Transition =
+                    {
+                        .pResource = vertexBuffer.GetPointer(),
+                        .Subresource = 0,
+                        .StateBefore = D3D12_RESOURCE_STATE_COMMON,
+                        .StateAfter = D3D12_RESOURCE_STATE_COPY_DEST,
+                    },
+            };
+            cmdList->ResourceBarrier(1, &barrier);
+
+            cmdList->CopyBufferRegion(vertexBuffer.GetPointer(), 0, vertexUploadBuffer.GetPointer(), 0,
+                                      vertexBufferSize);
+
+            // Indicate that the vertex buffer will be used for generic reads
+            std::swap(barrier.Transition.StateBefore, barrier.Transition.StateAfter);
+            cmdList->ResourceBarrier(1, &barrier);
+        }
 
         // Initialize the vertex buffer view
         vertexBufferView.BufferLocation = vertexBuffer->GetGPUVirtualAddress();
@@ -1576,7 +1614,7 @@ float4 PSMain(PSInput input) : SV_TARGET {
         const DXGI_FORMAT textureFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
         auto texBuilder = texture.Texture2DBuilder(kTextureWidth, kTextureHeight)
                               .Format(textureFormat)
-                              .InitialState(D3D12_RESOURCE_STATE_COPY_DEST);
+                              .InitialState(D3D12_RESOURCE_STATE_COMMON);
 
         if (FAILED(texBuilder.BuildCommitted(device))) {
             SDL_Log("Failed to create texture");
@@ -1664,6 +1702,49 @@ float4 PSMain(PSInput input) : SV_TARGET {
         }
         texUploadBuffer->Unmap(0, nullptr);
 
+#ifdef USE_ENHANCED_BARRIERS
+        if (auto *list7 = cmdList.As7()) {
+            D3D12_TEXTURE_BARRIER barrier{
+                .SyncBefore = D3D12_BARRIER_SYNC_PIXEL_SHADING,
+                .SyncAfter = D3D12_BARRIER_SYNC_COPY,
+                .AccessBefore = D3D12_BARRIER_ACCESS_COMMON,
+                .AccessAfter = D3D12_BARRIER_ACCESS_COPY_DEST,
+                .LayoutBefore = D3D12_BARRIER_LAYOUT_COMMON,
+                .LayoutAfter = D3D12_BARRIER_LAYOUT_COPY_DEST,
+                .pResource = texture.GetPointer(),
+                .Subresources =
+                    {
+                        .IndexOrFirstMipLevel = 0,
+                        .NumMipLevels = 1,
+                        .FirstArraySlice = 0,
+                        .NumArraySlices = 1,
+                        .FirstPlane = 0,
+                        .NumPlanes = 1,
+                    },
+                .Flags = D3D12_TEXTURE_BARRIER_FLAG_NONE,
+            };
+            const D3D12_BARRIER_GROUP group{
+                .Type = D3D12_BARRIER_TYPE_TEXTURE,
+                .NumBarriers = 1,
+                .pTextureBarriers = &barrier,
+            };
+            list7->Barrier(1, &group);
+        } else
+#endif
+        {
+            D3D12_RESOURCE_BARRIER barrier{
+                .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+                .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+                .Transition =
+                    {
+                        .pResource = texture.GetPointer(),
+                        .Subresource = 0,
+                        .StateBefore = D3D12_RESOURCE_STATE_COPY_DEST,
+                        .StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+                    },
+            };
+            cmdList->ResourceBarrier(1, &barrier);
+        }
         const D3D12_TEXTURE_COPY_LOCATION src{
             .pResource = texUploadBuffer.GetPointer(),
             .Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
@@ -1676,18 +1757,49 @@ float4 PSMain(PSInput input) : SV_TARGET {
         };
         cmdList->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
 
-        D3D12_RESOURCE_BARRIER barrier{
-            .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-            .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
-            .Transition =
-                {
-                    .pResource = texture.GetPointer(),
-                    .Subresource = 0,
-                    .StateBefore = D3D12_RESOURCE_STATE_COPY_DEST,
-                    .StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
-                },
-        };
-        cmdList->ResourceBarrier(1, &barrier);
+#ifdef USE_ENHANCED_BARRIERS
+        if (auto *list7 = cmdList.As7()) {
+            D3D12_TEXTURE_BARRIER barrier{
+                .SyncBefore = D3D12_BARRIER_SYNC_COPY,
+                .SyncAfter = D3D12_BARRIER_SYNC_PIXEL_SHADING,
+                .AccessBefore = D3D12_BARRIER_ACCESS_COPY_DEST,
+                .AccessAfter = D3D12_BARRIER_ACCESS_COMMON,
+                .LayoutBefore = D3D12_BARRIER_LAYOUT_COPY_DEST,
+                .LayoutAfter = D3D12_BARRIER_LAYOUT_COMMON,
+                .pResource = texture.GetPointer(),
+                .Subresources =
+                    {
+                        .IndexOrFirstMipLevel = 0,
+                        .NumMipLevels = 1,
+                        .FirstArraySlice = 0,
+                        .NumArraySlices = 1,
+                        .FirstPlane = 0,
+                        .NumPlanes = 1,
+                    },
+                .Flags = D3D12_TEXTURE_BARRIER_FLAG_NONE,
+            };
+            const D3D12_BARRIER_GROUP group{
+                .Type = D3D12_BARRIER_TYPE_TEXTURE,
+                .NumBarriers = 1,
+                .pTextureBarriers = &barrier,
+            };
+            list7->Barrier(1, &group);
+        } else
+#endif
+        {
+            D3D12_RESOURCE_BARRIER barrier{
+                .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+                .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+                .Transition =
+                    {
+                        .pResource = texture.GetPointer(),
+                        .Subresource = 0,
+                        .StateBefore = D3D12_RESOURCE_STATE_COPY_DEST,
+                        .StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+                    },
+            };
+            cmdList->ResourceBarrier(1, &barrier);
+        }
 
         // Describe and create a SRV for the texture
         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
@@ -1793,18 +1905,49 @@ float4 PSMain(PSInput input) : SV_TARGET {
         cmdList->RSSetScissorRects(1, &scissorRect);
 
         // Indicate that the back buffer will be used as a render target
-        D3D12_RESOURCE_BARRIER barrier{
-            .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-            .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
-            .Transition =
-                {
-                    .pResource = frames[frameIndex].renderTarget.GetPointer(),
-                    .Subresource = 0,
-                    .StateBefore = D3D12_RESOURCE_STATE_PRESENT,
-                    .StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET,
-                },
-        };
-        cmdList->ResourceBarrier(1, &barrier);
+#ifdef USE_ENHANCED_BARRIERS
+        if (auto *list7 = cmdList.As7()) {
+            D3D12_TEXTURE_BARRIER barrier{
+                .SyncBefore = D3D12_BARRIER_SYNC_NONE,
+                .SyncAfter = D3D12_BARRIER_SYNC_RENDER_TARGET,
+                .AccessBefore = D3D12_BARRIER_ACCESS_NO_ACCESS,
+                .AccessAfter = D3D12_BARRIER_ACCESS_RENDER_TARGET,
+                .LayoutBefore = D3D12_BARRIER_LAYOUT_COMMON,
+                .LayoutAfter = D3D12_BARRIER_LAYOUT_RENDER_TARGET,
+                .pResource = frames[frameIndex].renderTarget.GetPointer(),
+                .Subresources =
+                    {
+                        .IndexOrFirstMipLevel = 0,
+                        .NumMipLevels = 1,
+                        .FirstArraySlice = 0,
+                        .NumArraySlices = 1,
+                        .FirstPlane = 0,
+                        .NumPlanes = 1,
+                    },
+                .Flags = D3D12_TEXTURE_BARRIER_FLAG_DISCARD,
+            };
+            const D3D12_BARRIER_GROUP group{
+                .Type = D3D12_BARRIER_TYPE_TEXTURE,
+                .NumBarriers = 1,
+                .pTextureBarriers = &barrier,
+            };
+            list7->Barrier(1, &group);
+        } else
+#endif
+        {
+            D3D12_RESOURCE_BARRIER barrier{
+                .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+                .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+                .Transition =
+                    {
+                        .pResource = frames[frameIndex].renderTarget.GetPointer(),
+                        .Subresource = 0,
+                        .StateBefore = D3D12_RESOURCE_STATE_PRESENT,
+                        .StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET,
+                    },
+            };
+            cmdList->ResourceBarrier(1, &barrier);
+        }
 
         D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle(rtvHeap.GetCPUStart());
         rtvHandle.ptr += static_cast<SIZE_T>(frameIndex) * rtvHeap.GetDescriptorSize();
@@ -1818,8 +1961,49 @@ float4 PSMain(PSInput input) : SV_TARGET {
         cmdList->DrawInstanced(3, 1, 0, 0);
 
         // Indicate that the back buffer will now be used to present
-        std::swap(barrier.Transition.StateBefore, barrier.Transition.StateAfter);
-        cmdList->ResourceBarrier(1, &barrier);
+#ifdef USE_ENHANCED_BARRIERS
+        if (auto *list7 = cmdList.As7()) {
+            D3D12_TEXTURE_BARRIER barrier{
+                .SyncBefore = D3D12_BARRIER_SYNC_RENDER_TARGET,
+                .SyncAfter = D3D12_BARRIER_SYNC_NONE,
+                .AccessBefore = D3D12_BARRIER_ACCESS_RENDER_TARGET,
+                .AccessAfter = D3D12_BARRIER_ACCESS_NO_ACCESS,
+                .LayoutBefore = D3D12_BARRIER_LAYOUT_RENDER_TARGET,
+                .LayoutAfter = D3D12_BARRIER_LAYOUT_COMMON,
+                .pResource = frames[frameIndex].renderTarget.GetPointer(),
+                .Subresources =
+                    {
+                        .IndexOrFirstMipLevel = 0,
+                        .NumMipLevels = 1,
+                        .FirstArraySlice = 0,
+                        .NumArraySlices = 1,
+                        .FirstPlane = 0,
+                        .NumPlanes = 1,
+                    },
+                .Flags = D3D12_TEXTURE_BARRIER_FLAG_NONE,
+            };
+            const D3D12_BARRIER_GROUP group{
+                .Type = D3D12_BARRIER_TYPE_TEXTURE,
+                .NumBarriers = 1,
+                .pTextureBarriers = &barrier,
+            };
+            list7->Barrier(1, &group);
+        } else
+#endif
+        {
+            D3D12_RESOURCE_BARRIER barrier{
+                .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+                .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+                .Transition =
+                    {
+                        .pResource = frames[frameIndex].renderTarget.GetPointer(),
+                        .Subresource = 0,
+                        .StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET,
+                        .StateAfter = D3D12_RESOURCE_STATE_PRESENT,
+                    },
+            };
+            cmdList->ResourceBarrier(1, &barrier);
+        }
 
         if (FAILED(cmdList->Close())) {
             SDL_Log("Failed to close command list");
@@ -1869,6 +2053,13 @@ float4 PSMain(PSInput input) : SV_TARGET {
     }
     waitForGPU();
 }
+
+#ifdef USE_ENHANCED_BARRIERS
+    #undef USE_ENHANCED_BARRIERS
+#endif
+#ifdef BINDLESS
+    #undef BINDLESS
+#endif
 
 void runD3D12Sandbox() {
     // runFull();
