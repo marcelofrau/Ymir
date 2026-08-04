@@ -53,6 +53,7 @@ GPUObjectResult<IGPUGraphicsPipeline> D3D12GraphicsPipeline::Create(d3d12::D3D12
     desc.RasterizerState.FillMode = util::ToD3D12Value(spec.fillMode);
     desc.RasterizerState.CullMode = util::ToD3D12Value(spec.cullMode);
     desc.RasterizerState.FrontCounterClockwise = spec.windingCCW;
+    desc.RasterizerState.DepthClipEnable = TRUE;
     desc.PrimitiveTopologyType = util::ToD3D12Value(spec.topology);
     desc.SampleDesc = {.Count = 1, .Quality = 0};
 

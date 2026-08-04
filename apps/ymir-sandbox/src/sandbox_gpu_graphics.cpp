@@ -83,6 +83,56 @@ float4 PSMain(PSInput input) : SV_Target {
 }
 )";
 
+    /*static constexpr const char *kVertexShaderCode = R"(
+cbuffer Constants {
+    uint g_idxSceneConstants;
+    uint g_idxTexture;
+};
+
+struct SceneConstants {
+    float4 offset;
+    float aspectRatio;
+    float4 padding[14];
+};
+
+struct PSInput {
+    float4 position : SV_POSITION;
+    float4 color : COLOR;
+    float2 uv : TEXCOORD;
+};
+
+PSInput VSMain(float4 position : POSITION, float4 color : COLOR, float2 uv : TEXCOORD) {
+    PSInput result;
+
+    ConstantBuffer<SceneConstants> sceneConsts = ResourceDescriptorHeap[g_idxSceneConstants];
+
+    result.position = (position + sceneConsts.offset) * float4(1.0f, sceneConsts.aspectRatio, 1.0f, 1.0f);
+    result.color = color;
+    result.uv = uv;
+
+    return result;
+}
+)";
+
+    static constexpr const char *kPixelShaderCode = R"(
+struct PSInput {
+    float4 position : SV_POSITION;
+    float4 color : COLOR;
+    float2 uv : TEXCOORD;
+};
+
+cbuffer Constants {
+    uint g_idxSceneConstants;
+    uint g_idxTexture;
+};
+SamplerState g_sampler : register(s0);
+
+float4 PSMain(PSInput input) : SV_TARGET {
+    Texture2D texture = ResourceDescriptorHeap[g_idxTexture];
+    return texture.Sample(g_sampler, input.uv) * input.color;
+}
+)";*/
+
 #ifdef NDEBUG
     static constexpr bool kShaderDebug = false;
     static constexpr bool kShaderOptimize = true;
@@ -119,7 +169,7 @@ float4 PSMain(PSInput input) : SV_Target {
                                      .cullMode = CullMode::None,
                                      .topology = PrimitiveTopology::Triangles,
                                      .windingCCW = true,
-                                     .renderTargets = {RenderTargetSpec{.format = TextureFormat::B8G8R8A8_UNORM}}})
+                                     .renderTargets = {RenderTargetSpec{.format = TextureFormat::R8G8B8A8_UNORM}}})
             .Value();
 
     // -----------------------------------------------------

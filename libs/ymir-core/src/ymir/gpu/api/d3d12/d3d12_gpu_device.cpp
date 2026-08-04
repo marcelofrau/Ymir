@@ -44,18 +44,18 @@ GPUObjectResult<IGPUDevice> D3D12GPUDevice::Create(const D3D12GPUDeviceSpec &spe
             fmt::format("Failed to create Direct3D 12 device heaps: {}", descMgrResult.Error().message)};
     }
 
-    auto &descMgr = *descMgrResult.Value();
+    auto descMgr = std::move(descMgrResult.Value());
     if (!spec.resourceHeap.name.empty()) {
-        descMgr.SetResourceHeapName(spec.resourceHeap.name);
+        descMgr->SetResourceHeapName(spec.resourceHeap.name);
     }
     if (!spec.samplerHeap.name.empty()) {
-        descMgr.SetSamplerHeapName(spec.samplerHeap.name);
+        descMgr->SetSamplerHeapName(spec.samplerHeap.name);
     }
     if (!spec.rtvHeap.name.empty()) {
-        descMgr.SetRTVHeapName(spec.rtvHeap.name);
+        descMgr->SetRTVHeapName(spec.rtvHeap.name);
     }
     if (!spec.dsvHeap.name.empty()) {
-        descMgr.SetDSVHeapName(spec.dsvHeap.name);
+        descMgr->SetDSVHeapName(spec.dsvHeap.name);
     }
 
     auto rootSig = std::make_unique<d3d12::D3D12RootSignature>();
@@ -74,8 +74,7 @@ GPUObjectResult<IGPUDevice> D3D12GPUDevice::Create(const D3D12GPUDeviceSpec &spe
         return GPUOperationError{fmt::format("Failed to create root signature: error code {:X}", hr)};
     }
 
-    return {std::make_unique<D3D12GPUDevice>(std::move(device), std::move(rootSig), std::move(descMgrResult.Value()),
-                                             spec.debug)};
+    return {std::make_unique<D3D12GPUDevice>(std::move(device), std::move(rootSig), std::move(descMgr), spec.debug)};
 }
 
 void D3D12GPUDevice::SetName(std::string_view name) {
@@ -90,7 +89,7 @@ GPUObjectResult<IGPUCommandQueue> D3D12GPUDevice::CreateCommandQueue(CommandQueu
 GPUObjectResult<IGPUSwapchain> D3D12GPUDevice::CreateSwapchain(const WindowParams &windowParams,
                                                                const IGPUCommandQueue &queue, uint32 maxFramesInFlight,
                                                                const util::PropertyBag *props) {
-    return D3D12Swapchain::Create(*m_device, *m_descMgr, windowParams, queue, maxFramesInFlight, m_debug, props);
+    return D3D12Swapchain::Create(*m_device, windowParams, queue, maxFramesInFlight, m_debug, props);
 }
 
 GPUObjectResult<IGPUTexture> D3D12GPUDevice::CreateTexture(const TextureSpec &spec) {

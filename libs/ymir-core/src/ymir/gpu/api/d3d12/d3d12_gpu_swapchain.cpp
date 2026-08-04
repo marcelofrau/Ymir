@@ -1,25 +1,24 @@
 #include <ymir/gpu/api/d3d12/d3d12_gpu_swapchain.hpp>
 
 #include <ymir/gpu/api/d3d12/d3d12_gpu_command_queue.hpp>
-#include <ymir/gpu/api/d3d12/d3d12_gpu_texture.hpp>
-#include <ymir/gpu/api/d3d12/d3d12_gpu_texture_view.hpp>
+#include <ymir/gpu/api/d3d12/d3d12_utils.hpp>
 
 #include <fmt/format.h>
 
-#include <cassert>
-
 namespace ymir::gpu {
 
-D3D12Swapchain::D3D12Swapchain(d3d12::D3D12Device &device, d3d12::D3D12SwapChain swapchain,
-                               std::vector<Surface> &&surfaces)
-    : IGPUSwapchain(kBackend, std::move(surfaces))
+D3D12Swapchain::D3D12Swapchain(d3d12::D3D12Device &device, d3d12::D3D12SwapChain &&swapchain,
+                               d3d12::D3D12DescriptorHeap &&rtvHeap, d3d12::D3D12Fence &&fence,
+                               std::vector<Frame> &&frames)
+    : IGPUSwapchain(kBackend)
     , m_device(device)
-    , m_swapchain(std::move(swapchain)) {}
+    , m_swapchain(std::move(swapchain))
+    , m_rtvHeap(std::move(rtvHeap))
+    , m_frames(std::move(frames)) {}
 
-GPUObjectResult<IGPUSwapchain> D3D12Swapchain::Create(d3d12::D3D12Device &device, D3D12DescriptorManager &descMgr,
-                                                      const WindowParams &windowParams, const IGPUCommandQueue &queue,
-                                                      uint32 maxFramesInFlight, bool debug,
-                                                      const util::PropertyBag *props) {
+GPUObjectResult<IGPUSwapchain> D3D12Swapchain::Create(d3d12::D3D12Device &device, const WindowParams &windowParams,
+                                                      const IGPUCommandQueue &queue, uint32 maxFramesInFlight,
+                                                      bool debug, const util::PropertyBag *props) {
     auto *dx12Queue = queue.As<D3D12CommandQueue>();
     if (dx12Queue == nullptr) {
         return GPUOperationError{"Provided command queue is not a Direct3D 12 object"};
@@ -54,56 +53,48 @@ GPUObjectResult<IGPUSwapchain> D3D12Swapchain::Create(d3d12::D3D12Device &device
         return GPUOperationError{"Failed to create swapchain"};
     }
 
-    std::vector<Surface> surfaces{maxFramesInFlight};
-
-    for (int i = 0; i < maxFramesInFlight; ++i) {
-        ID3D12Resource *backbuffer = nullptr;
-        HRESULT hr = swapchain->GetBuffer(i, IID_PPV_ARGS(&backbuffer));
-        if (FAILED(hr)) {
-            return GPUOperationError{fmt::format("Could not get swapchain backbuffer #{}", i)};
-        }
-
-        const TextureSpec texSpec{
-            .dimensions = TextureDimensions::Tex2D,
-            .format = TextureFormat::R8G8B8A8_UNORM,
-            .usage = TextureUsage::RenderTarget,
-            .width = desc.Width,
-            .height = desc.Height,
-            .depthOrArrayLength = 1,
-            .mipLevels = 1,
-            .swapchain = true,
-        };
-        auto textureResult = D3D12Texture::CreateFromResource(device, texSpec, backbuffer);
-        if (!textureResult) {
-            return GPUOperationError{
-                fmt::format("Could not create D3D12Texture for backbuffer #{}: {}", i, textureResult.Error().message)};
-        }
-        surfaces[i].texture = textureResult.Value();
-
-        const TextureViewSpec viewSpec{
-            .texture = surfaces[i].texture.get(),
-            .type = TextureViewType::RenderTarget,
-        };
-
-        auto viewResult = D3D12TextureView::Create(descMgr, viewSpec);
-        if (!viewResult) {
-            return GPUOperationError{
-                fmt::format("Could not create D3D12TextureView for backbuffer #{}: {}", i, viewResult.Error().message)};
-        }
-        surfaces[i].view = viewResult.Value();
+    d3d12::D3D12DescriptorHeap rtvHeap{};
+    D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc{};
+    rtvHeapDesc.NumDescriptors = maxFramesInFlight;
+    rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+    rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+    if (FAILED(rtvHeap.Create(device, rtvHeapDesc))) {
+        return GPUOperationError("Failed to create swapchain RTV descriptor heap");
     }
 
-    return {std::make_unique<D3D12Swapchain>(device, std::move(swapchain), std::move(surfaces))};
+    d3d12::D3D12Fence fence{};
+    if (FAILED(fence.Create(device, 0, D3D12_FENCE_FLAG_NONE))) {
+        return GPUOperationError("Failed to create swapchain fence");
+    }
+
+    std::vector<Frame> frames{maxFramesInFlight};
+
+    D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle(rtvHeap.GetCPUStart());
+    for (int i = 0; i < maxFramesInFlight; ++i) {
+        Frame &frame = frames[i];
+        ID3D12Resource *backbuffer = nullptr;
+        if (FAILED(swapchain->GetBuffer(i, IID_PPV_ARGS(&backbuffer)))) {
+            return GPUOperationError{fmt::format("Could not get swapchain backbuffer #{}", i)};
+        }
+        if (FAILED(frame.cmdAlloc.Create(device, D3D12_COMMAND_LIST_TYPE_DIRECT))) {
+            return GPUOperationError(fmt::format("Failed to create command allocator for swapchain frame #{}", i));
+        }
+        device->CreateRenderTargetView(backbuffer, nullptr, rtvHandle);
+        frame.renderTarget.Attach(backbuffer);
+        frame.fenceCounter.Bind(fence);
+        rtvHandle.ptr += rtvHeap.GetDescriptorSize();
+    }
+
+    // TODO: figure out how to use the command allocators with command lists
+
+    return {std::unique_ptr<D3D12Swapchain>{
+        new D3D12Swapchain(device, std::move(swapchain), std::move(rtvHeap), std::move(fence), std::move(frames))}};
 }
 
 void D3D12Swapchain::SetName(std::string_view name) {
-    for (uint32 i = 0; i < GetSurfaceCount(); ++i) {
-        const Surface *surface = GetSurface(i);
-        assert(surface != nullptr);
-        assert(surface->texture.get() != nullptr);
-        assert(surface->view.get() != nullptr);
-        surface->texture->SetName(fmt::format("{} texture #{}", name, i));
-        surface->view->SetName(fmt::format("{} texture RTV #{}", name, i));
+    m_rtvHeap->SetName(util::StringToWString(fmt::format("{} RTV heap", name)).c_str());
+    for (size_t i = 0; i < m_frames.size(); ++i) {
+        m_frames[i].renderTarget->SetName(util::StringToWString(fmt::format("{} buffer #{}", name, i)).c_str());
     }
 }
 
