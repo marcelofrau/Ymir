@@ -750,7 +750,7 @@ static void runCompute() {
         auto builder = stuff.rootSig.Builder();
 #ifdef BINDLESS
         builder.Flags(D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED);
-        builder.Add32BitConstants(0, 2);
+        builder.Add32BitConstants(0, 1);
 #else
         builder.AddDescriptorTable().AddSRVs(1, 0);
         builder.AddDescriptorTable().AddUAVs(1, 0);
@@ -1266,7 +1266,7 @@ static void runGraphics() {
     };
     struct Vertex {
         Float3 position;
-        // Float4 color;
+        Float4 color;
         Float2 uv;
     };
     struct alignas(256) SceneConstantBuffer {
@@ -1294,15 +1294,20 @@ static void runGraphics() {
         auto rootSigBuilder = rootSig.Builder();
 
         // Allow input layout and deny uneccessary access to certain pipeline stages
-        rootSigBuilder.Flags(D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
-                             D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
-                             D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
-                             D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS);
+        D3D12_ROOT_SIGNATURE_FLAGS rootSigFlags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
+                                                  D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
+                                                  D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
+                                                  D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
 
+#ifdef BINDLESS
+        rootSigFlags |= D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED;
+        rootSigBuilder.Add32BitConstants(0, 2);
+#else
         rootSigBuilder.AddDescriptorTable(D3D12_SHADER_VISIBILITY_VERTEX)
             .AddCBVs(1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
         rootSigBuilder.AddDescriptorTable(D3D12_SHADER_VISIBILITY_PIXEL)
             .AddSRVs(1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
+#endif
         rootSigBuilder.AddStaticSampler(0, 0, D3D12_SHADER_VISIBILITY_PIXEL)
             .Filter(D3D12_FILTER_MIN_MAG_MIP_POINT)
             .AddressU(D3D12_TEXTURE_ADDRESS_MODE_BORDER)
@@ -1313,6 +1318,7 @@ static void runGraphics() {
             .ComparisonFunc(D3D12_COMPARISON_FUNC_NEVER)
             .BorderColor(D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK)
             .LODRange(0.0f, D3D12_FLOAT32_MAX);
+        rootSigBuilder.Flags(rootSigFlags);
 
         if (FAILED(rootSigBuilder.Build(device))) {
             SDL_Log("Failed to create root signature");
@@ -1325,8 +1331,14 @@ static void runGraphics() {
 
     // Create the pipeline state, which includes compiling and loading shaders
     {
+#ifdef BINDLESS
         static constexpr const char *kVertexShaderCode = R"(
-cbuffer SceneConstantBuffer : register(b0) {
+cbuffer Constants {
+    uint g_idxSceneConstants;
+    uint g_idxTexture;
+};
+
+struct SceneConstants {
     float4 offset;
     float aspectRatio;
     float4 padding[14];
@@ -1334,16 +1346,17 @@ cbuffer SceneConstantBuffer : register(b0) {
 
 struct PSInput {
     float4 position : SV_POSITION;
-    // float4 color : COLOR;
+    float4 color : COLOR;
     float2 uv : TEXCOORD;
 };
 
-//PSInput VSMain(float4 position : POSITION, float4 color : COLOR) {
-PSInput VSMain(float4 position : POSITION, float2 uv : TEXCOORD) {
+PSInput VSMain(float4 position : POSITION, float4 color : COLOR, float2 uv : TEXCOORD) {
     PSInput result;
 
-    result.position = (position + offset) * float4(1.0f, aspectRatio, 1.0f, 1.0f);
-    // result.color = color;
+    ConstantBuffer<SceneConstants> sceneConsts = ResourceDescriptorHeap[g_idxSceneConstants];
+
+    result.position = (position + sceneConsts.offset) * float4(1.0f, sceneConsts.aspectRatio, 1.0f, 1.0f);
+    result.color = color;
     result.uv = uv;
 
     return result;
@@ -1353,7 +1366,50 @@ PSInput VSMain(float4 position : POSITION, float2 uv : TEXCOORD) {
         static constexpr const char *kPixelShaderCode = R"(
 struct PSInput {
     float4 position : SV_POSITION;
-    // float4 color : COLOR;
+    float4 color : COLOR;
+    float2 uv : TEXCOORD;
+};
+
+cbuffer Constants {
+    uint g_idxSceneConstants;
+    uint g_idxTexture;
+};
+SamplerState g_sampler : register(s0);
+
+float4 PSMain(PSInput input) : SV_TARGET {
+    Texture2D texture = ResourceDescriptorHeap[g_idxTexture];
+    return texture.Sample(g_sampler, input.uv) * input.color;
+}
+)";
+#else
+        static constexpr const char *kVertexShaderCode = R"(
+cbuffer SceneConstantBuffer : register(b0) {
+    float4 offset;
+    float aspectRatio;
+    float4 padding[14];
+};
+
+struct PSInput {
+    float4 position : SV_POSITION;
+    float4 color : COLOR;
+    float2 uv : TEXCOORD;
+};
+
+PSInput VSMain(float4 position : POSITION, float4 color : COLOR, float2 uv : TEXCOORD) {
+    PSInput result;
+
+    result.position = (position + offset) * float4(1.0f, aspectRatio, 1.0f, 1.0f);
+    result.color = color;
+    result.uv = uv;
+
+    return result;
+}
+)";
+
+        static constexpr const char *kPixelShaderCode = R"(
+struct PSInput {
+    float4 position : SV_POSITION;
+    float4 color : COLOR;
     float2 uv : TEXCOORD;
 };
 
@@ -1361,10 +1417,10 @@ Texture2D g_texture : register(t0);
 SamplerState g_sampler : register(s0);
 
 float4 PSMain(PSInput input) : SV_TARGET {
-    // return input.color;
-    return g_texture.Sample(g_sampler, input.uv);
+    return g_texture.Sample(g_sampler, input.uv) * input.color;
 }
 )";
+#endif
 
 #ifdef NDEBUG
         static constexpr bool kShaderDebug = false;
@@ -1400,8 +1456,8 @@ float4 PSMain(PSInput input) : SV_TARGET {
         // Define the vertex input layout
         D3D12_INPUT_ELEMENT_DESC inputElementDescs[] = {
             {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-            //{"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-            {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+            {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+            {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 28, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
         };
 
         // Describe and create the graphics pipeline state object (PSO)
@@ -1456,12 +1512,11 @@ float4 PSMain(PSInput input) : SV_TARGET {
     // Create the vertex buffer
     {
         // Define the geometry for a triangle
-        // Vertex triangleVertices[] = {{{0.0f, 0.25f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
-        //                              {{0.25f, -0.25f, 0.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
-        //                              {{-0.25f, -0.25f, 0.0f}, {0.0f, 0.0f, 1.0f, 1.0f}}};
-        Vertex triangleVertices[] = {{{0.0f, 0.25f, 0.0f}, {0.5f, 0.0f}},
-                                     {{0.25f, -0.25f, 0.0f}, {1.0f, 1.0f}},
-                                     {{-0.25f, -0.25f, 0.0f}, {0.0f, 1.0f}}};
+        Vertex triangleVertices[] = {
+            {{0.0f, 0.25f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.5f, 0.0f}},
+            {{0.25f, -0.25f, 0.0f}, {0.0f, 1.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+            {{-0.25f, -0.25f, 0.0f}, {0.0f, 0.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
+        };
 
         const UINT vertexBufferSize = sizeof(triangleVertices);
         const D3D12_RESOURCE_DESC vertexBufferDesc{
@@ -1892,15 +1947,20 @@ float4 PSMain(PSInput input) : SV_TARGET {
         }
 
         // Set necessary state
-        cmdList->SetGraphicsRootSignature(rootSig.GetPointer());
-
         ID3D12DescriptorHeap *heaps[] = {resourceHeap.GetPointer()};
         cmdList->SetDescriptorHeaps(std::size(heaps), heaps);
 
+        cmdList->SetGraphicsRootSignature(rootSig.GetPointer());
+
         D3D12_GPU_DESCRIPTOR_HANDLE cbvHandle = resourceHeap.GetGPUStart();
         D3D12_GPU_DESCRIPTOR_HANDLE srvHandle{.ptr = cbvHandle.ptr + resourceHeap.GetDescriptorSize()};
+#ifdef BINDLESS
+        const uint32 constants[] = {0, 1};
+        cmdList->SetGraphicsRoot32BitConstants(0, std::size(constants), constants, 0);
+#else
         cmdList->SetGraphicsRootDescriptorTable(0, cbvHandle);
         cmdList->SetGraphicsRootDescriptorTable(1, srvHandle);
+#endif
         cmdList->RSSetViewports(1, &viewport);
         cmdList->RSSetScissorRects(1, &scissorRect);
 
