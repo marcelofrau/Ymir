@@ -155,6 +155,16 @@ Confira cada item **antes** do passo 1. Os comandos de verificação devem rodar
   `Dependencies\x64\Microsoft.VCLibs.x64.14.00.appx`.
 - [ ] **Use o Release pro Xbox.** O Debug depende do `Microsoft.VCLibs.140.00.Debug` e é bem mais lento.
 
+### Passo 5.1 (opcional): Abrir no Visual Studio
+- [ ] `pwsh scripts/uwp/open-vs.ps1`
+
+  O Ymir é um projeto CMake: a solution e os `.vcxproj` são **gerados** em `out\build\<preset>\` e não ficam no git,
+  porque têm caminhos absolutos da máquina. O script gera tudo e abre `out\build\UWP-x86-64-AVX2-MSVC\Ymir.slnx`.
+- [ ] No VS: o `ymir-sdl3` já é o projeto de inicialização. Escolha `RelWithDebInfo` ou `Debug`, plataforma `x64`,
+  e aperte **F5**. Isso instala e roda o app UWP no PC e exige o Modo de desenvolvedor do Windows.
+- [ ] **Não** use *File > Open > Folder* para o build UWP. Depois de mudar qualquer `CMakeLists.txt`, rode o script
+  de novo e recarregue a solution quando o VS pedir.
+
 ### Passo 6 (opcional, recomendado antes de mexer em código compartilhado): Regressão desktop
 - [ ] Abra o **x64 Native Tools Command Prompt for VS 2026** e rode:
   ```bat
@@ -261,8 +271,9 @@ Escolha **uma** das opções:
 ### Passo 15: Ativar e validar o CI/CD no GitHub
 - [ ] No GitHub, em `marcelofrau/Ymir` → **Actions**, habilite os workflows do fork (forks começam com Actions
   desligado).
-- [ ] Opcional, para economizar minutos: `gh workflow disable CI -R marcelofrau/Ymir` e
-  `gh workflow disable "PR builds" -R marcelofrau/Ymir`. Confira os nomes com `gh workflow list -R marcelofrau/Ymir`.
+- [ ] Confira que só o `UWP (Xbox)` está ativo: `gh workflow list -R marcelofrau/Ymir --all`. Os workflows do upstream
+  ficam `disabled_manually`, porque este fork é só UWP. Se aparecer algum workflow novo do upstream ativo depois de um
+  rebase, desligue com `gh workflow disable <id> -R marcelofrau/Ymir`.
 - [ ] Dispare um build: `gh workflow run uwp.yml -R marcelofrau/Ymir --ref uwp/main`. Acompanhe com
   `gh run watch -R marcelofrau/Ymir`.
 - [ ] **Esperado:** o job "Build UWP package (x64)" termina verde e o run tem o artifact `ymir-uwp-0.4.2.<run>`.
@@ -502,4 +513,7 @@ Conflitos mais prováveis:
 - `gfx_context_impl_d3d12.cpp` (o upstream mexe muito nele);
 - `libs/ymir-core/CMakeLists.txt` (lista de shaders e fontes).
 
-Depois do rebase, refaça os passos 4, 5 e 6.
+Depois do rebase:
+1. Refaça os passos 4 e 5.
+2. O passo 6 (regressão desktop) é opcional; o desktop é responsabilidade do upstream.
+3. Rode `gh workflow list -R marcelofrau/Ymir --all` e desligue workflows novos do upstream que estejam ativos.

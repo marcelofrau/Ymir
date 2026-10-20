@@ -85,9 +85,12 @@ O workflow `.github/workflows/uwp.yml` roda no runner `windows-2025`:
 - **Cache:** guarda os binários do vcpkg (`.vcpkg-cache`) e o `out/uwp-deps` (SDL3-uwp).
 - **Toolchain:** VS 2026 se o runner tiver (e o CMake suportar), senão VS 2022 com o preset `UWP-x86-64-AVX2-MSVC-VS2022`.
   Quem escolhe é `scripts/uwp/common.ps1`.
-- **Workflows do upstream:** `ci.yaml`, `pr-builds.yaml` e outros **não foram alterados**, para não gerar conflito em
-  rebases. Eles também rodam no fork depois que o Actions é habilitado; para economizar minutos, desabilite com
-  `gh workflow disable CI -R marcelofrau/Ymir` (opcional).
+- **Workflows do upstream** (desktop Windows/Linux/macOS/FreeBSD, nightly, releases, screenshotter): os arquivos
+  **não foram alterados**, para não gerar conflito em rebases, mas estão **desligados no fork** desde 2026-10-20 com
+  `gh workflow disable`. O foco deste fork é só UWP / Xbox Dev Mode; o build desktop fica a cargo do upstream. O único
+  workflow ativo é `UWP (Xbox)`. Para conferir: `gh workflow list -R marcelofrau/Ymir --all`. Para religar um:
+  `gh workflow enable <id> -R marcelofrau/Ymir`. Workflows novos que o upstream adicionar vêm **ativos** depois de um
+  rebase; desligue-os do mesmo jeito.
 
 O conteúdo do zip distribuível (`scripts/uwp/package.ps1`) segue o mesmo formato de dosbox-pure-uwp, scummvm-uwp e
 x-files-uwp:
@@ -209,6 +212,7 @@ ymir-uwp_<ver>_x64_symbols.zip                      → .appxsym (símbolos pra 
 
 ### Scripts e docs
 - `scripts/uwp/common.ps1`: detecta VS 2026/2022 e acha o pacote gerado.
+- `scripts/uwp/open-vs.ps1`: gera e abre a solution (`out/build/<preset>/Ymir.slnx`) no Visual Studio.
 - `scripts/uwp/build-deps.ps1`, `build.ps1` (`-PackageVersion`), `package.ps1` (zip distribuível),
   `deploy-xbox.ps1`, `xbox.env.example`.
 - `.github/workflows/uwp.yml`: CI/CD (seção 3.2).
