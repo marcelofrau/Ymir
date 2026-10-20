@@ -28,6 +28,13 @@
 
 #include <fmt/format.h>
 
+#if YMIR_PLATFORM_UWP
+    // TEMPORARY present-path tracing. Remove once the Xbox startup is stable.
+    #define YMIR_PRESENT_TRACE(...) OutputDebugStringA(fmt::format("[Ymir present] " __VA_ARGS__).c_str())
+#else
+    #define YMIR_PRESENT_TRACE(...)
+#endif
+
 #include <cmrc/cmrc.hpp>
 CMRC_DECLARE(ymir_sdl3_shaders);
 
@@ -995,6 +1002,8 @@ struct Direct3D12GraphicsContext::Impl {
         // involves destroying and recreating the entire swap chain, which doesn't seem to be worth the effort. Instead,
         // we'll treat VSync and Mailbox as the same mode.
 
+        YMIR_PRESENT_TRACE("Present() entered, mode={}\n", (int)presentMode);
+
         HRESULT hr;
         switch (presentMode) {
         default: [[fallthrough]];
@@ -1006,6 +1015,9 @@ struct Direct3D12GraphicsContext::Impl {
         case PresentMode::NoSync: hr = swapchain->Present(0, 0); break;
         }
 
+        // If the log stops here, the swap chain never completed a vsync interval for this CoreWindow
+        YMIR_PRESENT_TRACE("swapchain->Present returned hr={:08X}\n", (uint32)hr);
+
         if (auto result = MoveToNextFrame(); !result) {
             return util::ErrorMessage{fmt::format("Could not advance frame: {}", result.Error().message)};
         }
@@ -1014,11 +1026,14 @@ struct Direct3D12GraphicsContext::Impl {
         }
 
         if (hr == DXGI_STATUS_OCCLUDED) {
+            YMIR_PRESENT_TRACE("Present() -> Occluded\n");
             return PresentResult::Occluded;
         }
         if (FAILED(hr)) {
+            YMIR_PRESENT_TRACE("Present() FAILED hr={:08X}\n", (uint32)hr);
             return util::ErrorMessage{fmt::format("Frame presentation failed, error code {:X}", (uint32)hr)};
         }
+        YMIR_PRESENT_TRACE("Present() -> Ok\n");
         return PresentResult::Ok;
     }
 
@@ -1053,7 +1068,10 @@ struct Direct3D12GraphicsContext::Impl {
         // If the next frame is not ready to be rendered yet, wait until it is ready
         FrameContext &nextFrame = GetCurrentFrameContext();
         if (fenceFrame->GetCompletedValue() < nextFrame.fenceValue) {
+            YMIR_PRESENT_TRACE("MoveToNextFrame: waiting on fence (completed={} wanted={})\n",
+                               fenceFrame->GetCompletedValue(), nextFrame.fenceValue);
             fenceFrame.Wait(INFINITE, nextFrame.fenceValue);
+            YMIR_PRESENT_TRACE("MoveToNextFrame: fence wait done\n");
         }
 
         // Set the fence value for the next frame

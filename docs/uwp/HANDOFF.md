@@ -167,6 +167,236 @@ fazer deploy.
 
 ---
 
+### Entrada do agente OpenCode #2 — 2026-10-20 (máquina de destino, COM Xbox, run real)
+
+**Escopo lido:** as duas entradas acima (OpenCode #1 e Claude), o commit `d76a7eb1` inteiro, e o fluxo de
+`App::Run()` a partir da criação do contexto gráfico.
+
+**A correção do Claude funcionou e mudou o diagnóstico por completo.** Com `_IONBF` + `ShutdownLogRedirect()`, o log
+agora sai inteiro no Output do VS. Isso **derrubou a hipótese da swapchain** e revelou o quadro real:
+
+```
+info  | App  | Direct3D 12 graphics context initialized successfully
+info  | App  | Leaving full screen mode
+```
+
+**O D3D12 inicializa com sucesso. A swapchain não falha.** O T-12 e a suspeita de `DXGI_SCALING_NONE` /
+`ALLOW_TEARING` deste documento estão **descartados** — nenhum log `Failed to create swapchain` apareceu, e a
+instrumentação do `LastCreateHResult()` não foi disparada.
+
+**O novo ponto exato de parada:** o app morre/para **depois de `Leaving full screen mode`** e **não** passa por
+nenhum `ShowStartupFailure`. O próximo passo do código nesse ponto é `CreateTexture("[Ymir] Software framebuffer")`.
+Não há log de erro nem mensagem de falha — ou seja, ou trava dentro da criação da textura (código do driver), ou para
+em algum ponto posterior que ainda não tinha log.
+
+**O que o log também mostra (achados novos):**
+
+1. **O VDP está em software, não em D3D12:** `info | VDP-Config | Switched to Software VDP renderer`. Era esperado
+   como fallback, mas vale confirmar que é o comportamento desejado no Xbox.
+2. **O SDL3-uwp não está vendo o display do Xbox:**
+   - `WinRT: Using display resolution (gaming device unknown): 1920x1080` — num Series X o esperado seria 3840x2160,
+     e `gaming device unknown` sugere que a detecção de device falhou.
+   - `info | App | Display 1 (Windows Simulator / Terminal Services Display) added` — o SDL está reportando um
+     **display de Terminal Services / simulador**, não o display real do console.
+   - `Window DPI scaling: 100.0%`.
+   Isso é coerente com o `The island for this CoreWindow has not been initialized` e provavelmente é a causa raiz de
+   qualquer problema de janela/CoreWindow (T-13 incluído).
+3. **`gaming device unknown` + display errado** também explica o `_com_error` duplo: o caminho de
+   `ApplicationView`/CoreWindow do SDL3-uwp falha e cai no fallback.
+
+**Instrumentação adicionada nesta entrada (temporária, remover quando o boot estiver estável):**
+
+`apps/ymir-sdl3/src/app/app.cpp` ganhou a macro local `YMIR_BOOT_TRACE(...)`, que emite via `OutputDebugStringA`
+(síncrono, **não** depende do pipe nem do buffer do stdout), com 17 pontos cobrindo todo o trecho sem log entre
+`Leaving full screen mode` e o loop principal:
+
+- criação das texturas (software framebuffer, display, logo)
+- init e start do áudio
+- `Reset` do Saturn
+- `StartEmulatorThread`
+- `m_screenshotService.Start`
+- `SDL_ShowWindow`
+- `ReloadSDLGameControllerDatabases`
+- entrada no `while (true)` principal
+
+**Próximo passo (para o próximo agente):**
+
+1. **Compilar com o VS fechado.** Nesta sessão o build falhou com `LNK1201: error writing to program database`
+   porque o `devenv` (VS 2026) estava aberto segurando o `ymir-sdl3.pdb`. Fechar o VS antes de buildar.
+2. **Rodar por F5 e procurar a última linha `[Ymir boot] ...`.** É ela que aponta o passo exato:
+   - para em `creating software framebuffer texture` → o problema é a criação da textura (device/heap);
+   - para em `initializing audio` / `starting audio stream` → é áudio;
+   - para em `entering main loop` sem mais nada → o boot **completou** e o problema é render/present (voltar a olhar
+     swapchain/present, agora com outra lente);
+   - para em `showing window` → é o `SDL_ShowWindow` no CoreWindow.
+3. **Investigar o display errado** (`Windows Simulator / Terminal Services Display` + `gaming device unknown`). Isso é
+   independente do ponto de parada e provavelmente precisa de correção no SDL3-uwp (não no Ymir) — comparar com os
+   projetos de referência `scummvm-uwp` e `x-files-uwp`, que lidam com o mesmo CoreWindow.
+
+### Entrada do agente OpenCode #3 — 2026-10-20 (máquina de destino, COM Xbox, medição decisiva)
+
+**Escopo lido:** as três entradas acima, o commit `d76a7eb1`, o loop principal de `App::Run()` e o caminho de
+`Present()` do `Direct3D12GraphicsContext`.
+
+**Dado crucial obtido com o usuário (muda o diagnóstico):**
+
+> **O processo fica vivo.** A tela para no splash, mas o app **não** sai, **não** crasha e **não** mostra erro. Se o
+> debugger for parado, ele ainda está rodando.
+
+Isso **elimina** a hipótese de saída antecipada da entrada #2 (não é um `return` antecipado — não há
+`ShowStartupFailure` algum). O app está **dentro do loop principal**, com a janela criada, apenas sem apresentar
+frames novos.
+
+**Também descartado:** o `gaming device unknown` / 1920x1080. O usuário confirmou que **o console está configurado em
+1080p**. O `GetGamingDeviceModelInformation()` realmente falha, mas o resultado (1920x1080) coincide com o modo real
+do console, então **isso é ruído e não a causa**. Anotado como item cosmético de baixa prioridade.
+
+**Hipótese principal (medida, ainda não provada): `Present()` bloqueia para sempre.**
+
+O caminho do frame é:
+
+```
+loop  →  m_graphicsService.Present()            (app.cpp:3449)
+         →  Direct3D12GraphicsContext::Present()
+            →  EndFrame(); ExecuteCommandLists()
+            →  swapchain->Present(1, 0)          <- BLOQUEIA até um vblank que nunca chega
+            →  MoveToNextFrame() → fenceFrame.Wait(INFINITE, ...)   <- 2o bloqueio possível
+```
+
+Evidência que sustenta:
+
+1. **Se o `Present()` retornasse falha**, o loop cairia em `ShowFatalErrorDialog` + reset de backend + `goto end_loop`
+   (app.cpp:3450-3459). Nada disso aparece no log. Logo o `Present()` **não retorna** — está bloqueado.
+2. `swapchain->Present(1, 0)` (VSync) **bloqueia até a próxima apresentação vertical**. Em CoreWindow, a apresentação é
+   dirigida pelo compositor; se o CoreWindow não estiver ativo/inicializado, **não há vblank** e a chamada não retorna.
+3. O log tem exatamente o sintoma de CoreWindow não inicializado:
+   `Msg:[The island for this CoreWindow has not been initialized.]` seguido de dois `_com_error` — vindos de
+   `CoreWindow::GetForCurrentThread()` / `ApplicationView::GetForCurrentView()` no caminho de criação da janela do
+   SDL3-uwp (`vendor/SDL3-uwp/src/video/winrt/SDL_winrtvideo.cpp:890` e `:892`).
+4. O splash que fica na tela é coerente: é o último frame que o compositor tem; nada novo chega.
+
+**Instrumentação adicionada nesta entrada (temporária, remover quando o boot estiver estável):**
+
+`apps/ymir-sdl3/src/app/services/gfx/gfx_context_impl_d3d12.cpp` ganhou a macro `YMIR_PRESENT_TRACE(...)`
+(`OutputDebugStringA`, síncrono) com marcas em:
+
+- entrada do `Present()` + modo de apresentação usado;
+- **logo depois de `swapchain->Present(...)`**, imprimindo o `HRESULT` — é esta linha que decide o diagnóstico;
+- antes e depois do `fenceFrame.Wait(INFINITE, ...)` do `MoveToNextFrame()`;
+- cada retorno do `Present()` (`Ok` / `Occluded` / `FAILED hr=...`).
+
+Somadas aos 17 marcadores `[Ymir boot]` da entrada #2, o próximo run responde a pergunta sem ambiguidade.
+
+**Leitura do próximo run:**
+
+| Última linha no Output | Conclusão |
+|---|---|
+| `[Ymir boot] entering main loop` e depois `[Ymir present] Present() entered, mode=...` sem a linha `swapchain->Present returned` | **Confirmado: `Present(1, 0)` bloqueia no vblank.** Ir para "Correção" abaixo |
+| `Present() entered` + `swapchain->Present returned hr=...` + `MoveToNextFrame: waiting on fence` sem `fence wait done` | Bloqueio na espera de fence (frame nunca completado pela GPU) |
+| Várias linhas `Present() -> Ok` | O present funciona; o problema é outro (voltar para render/ImGui) |
+| `Present() FAILED hr=...` | O `HRESULT` diz a causa direta |
+
+**Correção a avaliar se o `Present(1, 0)` bloquear** (não aplicar antes de confirmar):
+
+Em `gfx_context_impl_d3d12.cpp`, `Present()`, tornar o modo de publicação à prova de CoreWindow não inicializado.
+As opções, da mais conservadora para a mais invasiva:
+
+1. **Usar `Present(0, 0)` no UWP** (ou tratar o caso de CoreWindow como `NoSync`), deixando o Ymir controlar o ritmo
+   pelo `screen.nextFrameTarget` que o loop já calcula (app.cpp:1530+). O loop **já** faz pacing próprio com sleep +
+   spin até o deadline, então o VSync do swapchain é redundante e é justamente onde ele trava.
+2. Logar `DXGI_PRESENT_ALLOW_TEARING`/`IsTearingSupported()` no Xbox e, se o flag estiver entrando numa swapchain de
+   CoreWindow, removê-lo sob UWP.
+3. Investigar no SDL3-uwp por que o `CoreWindow::GetForCurrentThread()` não está inicializado — é a causa raiz, mas
+   fica no submódulo de terceiros (AGENTS.md regra 3), então só com justificativa forte.
+
+**Pendências para o próximo agente:**
+
+1. **Compilar e rodar; ler a tabela acima.** O build exige o **VS fechado** (LNK1201 no `.pdb` — aconteceu duas vezes).
+2. Se confirmado o bloqueio do `Present(1, 0)`, implementar a opção 1 (a mais conservadora) sob `#if YMIR_PLATFORM_UWP`
+   e validar no tile (não só no debugger — ver seção "Xbox startup" do AGENTS.md).
+3. Registrar no `docs/uwp/` o resultado, incluindo se a opção 1 resolve — e documentar o caminho que **não** funcionou,
+   conforme a regra de documentação do `AGENTS.md`.
+
+### Entrada do agente OpenCode #4 — 2026-10-20 (máquina de destino, COM Xbox, correção do diagnóstico)
+
+**Escopo lido:** todas as entradas acima, o run 04 registrado em `docs/uwp/evidence/`, o caminho de
+`App::Run()` a partir da criação do contexto gráfico, e `AudioSystem::Init`.
+
+**A hipótese da entrada #3 estava errada, e o run prova.** Com 17 marcadores cobrindo todo o caminho entre o contexto
+gráfico e o loop, a parada é bem antes do `Present()`:
+
+```
+[Ymir boot] creating software framebuffer texture
+info  | App | Direct3D 12 graphics context initialized successfully
+info  | App | Leaving full screen mode
+[Ymir boot] software framebuffer texture OK
+[Ymir boot] creating display texture
+[Ymir boot] display texture OK
+[Ymir boot] display texture OK, stbi logo load next
+[Ymir boot] initializing audio
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\AudioSes.dll'. ...     <-- nada depois
+```
+
+**O loop principal nunca é alcançado.** Nenhuma linha `[Ymir present]` apareceu — as 9 marcas do caminho de
+apresentação, adicionadas especificamente para testar a hipótese do vblank, não produziram saída alguma. Aquela
+hipótese está **morta** e não deve ser retomada.
+
+**Novo ponto de parada, medido:** `AudioSystem::Init()`, que chama
+`SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, ...)`. O marcador seguinte do boot
+(`starting audio stream`, antes de `AudioSystem::Start()`) **nunca aparece**, então a parada é dentro do `Init`.
+`AudioSes.dll` (WASAPI) é carregada exatamente nesse momento, o que é coerente com uma enumeração/abertura do endpoint
+de reprodução padrão que não retorna.
+
+**Ressalva honesta:** o carregamento da `AudioSes.dll` mostra que o caminho do WASAPI foi tocado, mas **não prova** que
+`SDL_OpenAudioDeviceStream` não retorna. Para eliminar a dúvida, `apps/ymir-sdl3/src/app/audio_system.cpp` foi
+instrumentado com marcas `[Ymir audio]` síncronas (`OutputDebugStringA`):
+
+- antes e depois de `SDL_OpenAudioDeviceStream`, incluindo o valor de retorno e o `SDL_GetError()` em caso de falha;
+- em `Start()`, antes e depois de `SDL_ResumeAudioStreamDevice`.
+
+O run 05, com esse build, responde sem ambiguidade. **Build compilado com sucesso (Debug UWP, MSIX gerado) nesta
+entrada.**
+
+**Evidências organizadas para os próximos agentes.** Criado `docs/uwp/evidence/`, com:
+
+- `README.md` — o problema, o índice dos runs, a leitura do run mais recente, as hipóteses ranqueadas, as hipóteses já
+  **eliminadas** com o motivo, e os fatos de ambiente para reproduzir;
+- `run-2026-10-20-03-texture-markers.raw.txt` — log bruto do run que provou que o D3D12 inicializa;
+- `run-2026-10-20-04-audio-hang.raw.txt` — log bruto do run que localizou a parada no áudio.
+
+A partir de agora, **cada run do Xbox deve ter o log bruto guardado nessa pasta** (`run-<data>-<nn>-<resumo>.raw.txt`) e
+o `README.md` atualizado, para que o diagnóstico não dependa de resumo de conversa.
+
+**Hipóteses ainda vivas, em ordem:**
+
+1. `SDL_OpenAudioDeviceStream` bloqueia abrindo o dispositivo de reprodução padrão no Xbox/UWP. **Mais provável**, e é o
+   que o run 05 decide.
+2. A parada é no driver/SO de áudio *depois* de a stream abrir. Menos provável: `starting audio stream` teria aparecido.
+3. Estado corrompido antes, fazendo o áudio travar — por exemplo pelos dois `_com_error` de
+   `CoreWindow::GetForCurrentThread()` / `ApplicationView::GetForCurrentView()`, ligados ao sintoma
+   `The island for this CoreWindow has not been initialized` que aparece em **todos** os runs. Especulativo.
+
+**Direções de correção a avaliar se for o item 1** (não aplicar antes de confirmar com o run 05):
+
+- **Deixar o áudio falhar graciosamente.** `AudioSystem::Init` já retorna `false` quando a stream não abre; verificar se
+  o `App::Run()` trata esse `false` sem bloquear — se não tratar, esse é o bug de robustez, independentemente da causa.
+- Inicializar o subsistema de áudio do SDL em **thread separada com timeout**, para que um endpoint problemático não
+  congele o boot.
+- Comparar com os projetos de referência `scummvm-uwp` e `x-files-uwp`, que abrem áudio no Xbox e podem já ter
+  resolvido isso (querystring de dispositivo, formato, ou uso de um backend específico).
+
+**Pendências para o próximo agente:**
+
+1. Rodar o build atual (run 05) e ler as marcas `[Ymir audio]`. Registrar o log bruto em `docs/uwp/evidence/`.
+2. Conforme o resultado, aplicar a correção correspondente e **validar pelo tile**, não só pelo debugger.
+3. Manter o `docs/uwp/evidence/README.md` atualizado a cada run.
+
+**Nota sobre a instrumentação temporária:** as macros `YMIR_BOOT_TRACE` (app.cpp/main.cpp), `YMIR_PRESENT_TRACE`
+(gfx_context_impl_d3d12.cpp) e `YMIR_AUDIO_TRACE` (audio_system.cpp) são **temporárias** e devem ser removidas quando o
+boot estiver estável. Todas aparecem só sob `YMIR_PLATFORM_UWP`.
+
+---
+
 ## 1. Estado atual (o que já está pronto e validado)
 
 Validado na máquina de origem em 2026-10-20 (VS Build Tools 2026 18.x, MSVC 14.51, Windows SDK 10.0.26100, CMake 4.3.2):
@@ -187,7 +417,7 @@ Validado na máquina de origem em 2026-10-20 (VS Build Tools 2026 18.x, MSVC 14.
 | CI/CD `.github/workflows/uwp.yml` (build, artifact, release por tag `uwp-v*`) | ✅ primeiro run verde em 2026-10-20 (runner `windows-2025` com **Visual Studio Enterprise 2026**, versão 0.4.0.2, artifacts `ymir-uwp-0.4.0.2` e `-symbols`; esse run foi antes do rebase pra 0.4.2). A publicação de release por tag ainda não foi exercitada (passo 15) |
 | Sincronizado com o upstream **0.4.2** (`8cdf0a53`) por rebase em 2026-10-20; build UWP Release limpo (`--fresh`, baseline nova do vcpkg) | ✅ |
 | Fallback VS 2022 (preset `UWP-x86-64-AVX2-MSVC-VS2022`) | ⚠️ configurado, mas **não compilado**: a máquina de origem e o runner do GitHub têm VS 2026 |
-| **Rodar o app** (PC ou Xbox) | ⚠️ **Xbox: roda até o \App::Run()\, mas fica no splash** (ver seção 0.1). PC: não testado |
+| **Rodar o app** (PC ou Xbox) | ⚠️ **Xbox: o boot chega ao `App::Run()` e o D3D12 inicializa, mas o app para no splash logo depois de `Leaving full screen mode`** (ver seção 0.1, entrada OpenCode #2). PC: não testado |
 
 ### 1.1 Resultado da regressão desktop
 ✅ Em 2026-10-20, depois do rebase pro upstream 0.4.2: o preset `Full-x86-64-AVX2-MSVC-Release` (Ninja + MSVC
@@ -515,18 +745,21 @@ Escolha **uma** das opções:
   - ou rode o mesmo pacote no PC (passo 7), onde dá pra usar o Visual Studio pra depurar.
 
 ### T-12: Log mostra "Failed to create swapchain" ou tela preta com o app aberto
-- **Causa provável:** o CoreWindow não aceita `DXGI_SCALING_NONE`.
-- **Correção:** em `apps/ymir-sdl3/src/app/services/gfx/gfx_context_impl_d3d12.cpp`, no `Init()`, troque a linha
-  `swapChainDesc.Scaling = DXGI_SCALING_NONE;` por:
-  ```cpp
-  #if YMIR_PLATFORM_UWP
-          swapChainDesc.Scaling = DXGI_SCALING_STRETCH;
-  #else
-          swapChainDesc.Scaling = DXGI_SCALING_NONE;
-  #endif
-  ```
-- **Outras causas:** o device D3D12 não foi criado (veja T-14), ou o tamanho veio 0x0 de `SDL_GetWindowSizeInPixels`.
-  Nesse caso, logue `windowWidth`/`windowHeight` e, se for 0, use 1920x1080 como fallback.
+
+> **ATENÇÃO — receita antiga removida.** A versão anterior deste item mandava trocar `DXGI_SCALING_NONE` por
+> `DXGI_SCALING_STRETCH` sob UWP, alegando que "o CoreWindow não aceita `DXGI_SCALING_NONE`". **Isso nunca foi
+> verificado e o run real de 2026-10-20 no Xbox desmentiu a premissa:** o log mostra
+> `Direct3D 12 graphics context initialized successfully`, ou seja, a swapchain é criada com sucesso. A doc da
+> Microsoft também **não** proíbe `DXGI_SCALING_NONE` com `CreateSwapChainForCoreWindow` (o exemplo oficial de
+> foreground layer usa `DXGI_SCALING_NONE`). Não aplique aquela troca sem um log que a justifique.
+
+- **Diagnóstico primeiro:** faça o app logar o `HRESULT` da falha, além de `size`, `scaling`, `flags`, `swapEffect` e
+  `bufferCount` (já instrumentado em `gfx_context_impl_d3d12.cpp` pelo commit `35e49d8c`). Sem o `HRESULT` não dá
+  para distinguir device, tamanho e modo de escalonamento.
+- **Causas plausíveis:** o device D3D12 não foi criado (veja T-14); ou o tamanho veio 0x0 de
+  `SDL_GetWindowSizeInPixels` — nesse caso logue `windowWidth`/`windowHeight` e, se for 0, use 1920x1080 como fallback.
+- **Se o app fica no splash sem log de erro:** não é este item. Veja a seção 0.1 — o ponto de parada medido fica
+  **depois** da criação do contexto gráfico.
 
 ### T-13: Bordas pretas em volta da imagem no Xbox (área segura da TV)
 - **Já mitigado:** `main.cpp` chama `platform::uwp::UseFullCoreWindowBounds()`, que faz
@@ -583,7 +816,8 @@ Escolha **uma** das opções:
 | 2026-10-20 | 1–6 | OK (máquina de origem) | `.msix` Debug e Release sem erros; regressão desktop 75/75 |
 | 2026-10-20 | 8 da seção 8 (rebase) | OK | Rebase pro upstream 0.4.2 (285 commits). Conflitos: `CMakeLists.txt` raiz (bloco de versão/feature flags reorganizado), `apps/ymir-sdl3/CMakeLists.txt` (macros) e `video_settings_view.cpp` (o upstream passou a mostrar o toggle de HW sempre; mudança do port removida). Backup pré-rebase em `backup/uwp-main-pre-0.4.2` (só local) |
 | 2026-10-20 | 15 (parcial) | OK | Run 39396157010 do `uwp.yml` verde com VS 2026 no runner; artifact de 5,3 MB |
-| 2026-10-20 | 12 (máquina de destino) | **PARCIAL** | **Primeiro boot real no Xbox.** O crash de `SDL_GetCurrentDirectory()` (`39aa6355`) está resolvido: o app entra no `main()` e chega ao `App::Run()`. **Sintoma atual: fica no splash.** Nenhum crash, desligamento limpo. Detalhes e próximos passos na seção 0.1 |
+| 2026-10-20 | 12 (máquina de destino) | **PARCIAL** | **Primeiro boot real no Xbox.** O crash de `SDL_GetCurrentDirectory()` (`39aa6355`) está resolvido e o mirror de log funciona. O boot chega ao `App::Run()`, inicializa o D3D12 com sucesso e para no splash **dentro de `AudioSystem::Init()`** (`SDL_OpenAudioDeviceStream`) — o loop principal nunca é alcançado. Detalhes nas seções 0.1 (entradas #3 e #4) e em `docs/uwp/evidence/` |
+| 2026-10-20 | 12 (máquina de destino) | aguardando run 05 | Build Debug com marcas `[Ymir audio]` compilado; aguardando o usuário rodar no Xbox para confirmar se a parada é dentro de `SDL_OpenAudioDeviceStream` |
 | | | | |
 
 ---

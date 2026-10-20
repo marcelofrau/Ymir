@@ -1,0 +1,161 @@
+'ymir-sdl3.exe' (Win32): Loaded 'D:\DevelopmentFiles\Ymir.SaturnEmulator.UWPVS.Debug_x64.marcelo\ymir-sdl3.exe'. Symbols loaded.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\ntdll.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\KernelBase.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\combase.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\ucrtbase.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\kernel32legacy.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\rpcrt4.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\oleaut32.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\msvcp_win.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'D:\DevelopmentFiles\Ymir.SaturnEmulator.UWPVS.Debug_x64.marcelo\SDL3.dll'. Module was built without symbols.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\D3D12.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\dxgi.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\win32u.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\D3DCompiler_47.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'S:\Program Files\WindowsApps\Microsoft.VCLibs.140.00.Debug_14.0.33519.0_x64__8wekyb3d8bbwe\msvcp140d_app.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'S:\Program Files\WindowsApps\Microsoft.VCLibs.140.00.Debug_14.0.33519.0_x64__8wekyb3d8bbwe\msvcp140d_atomic_wait_app.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'S:\Program Files\WindowsApps\Microsoft.VCLibs.140.00.Debug_14.0.33519.0_x64__8wekyb3d8bbwe\vcruntime140d_app.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'S:\Program Files\WindowsApps\Microsoft.VCLibs.140.00.Debug_14.0.33519.0_x64__8wekyb3d8bbwe\vcruntime140_1d_app.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'D:\DevelopmentFiles\Ymir.SaturnEmulator.UWPVS.Debug_x64.marcelo\ucrtbased.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'S:\Program Files\WindowsApps\Microsoft.VCLibs.140.00.Debug_14.0.33519.0_x64__8wekyb3d8bbwe\vccorlib140_app.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\d3d11.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\MMDevAPI.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'S:\Program Files\WindowsApps\Microsoft.VCLibs.140.00.Debug_14.0.33519.0_x64__8wekyb3d8bbwe\msvcp140_app.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'S:\Program Files\WindowsApps\Microsoft.VCLibs.140.00.Debug_14.0.33519.0_x64__8wekyb3d8bbwe\vcruntime140_app.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'S:\Program Files\WindowsApps\Microsoft.VCLibs.140.00.Debug_14.0.33519.0_x64__8wekyb3d8bbwe\vcruntime140_1_app.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\powrprof.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\cryptsp.dll'. Symbol loading disabled by Include/Exclude setting.
+The thread 3024 has exited with code 0 (0x0).
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\forwarders\kernel32.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\umpdc.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\gdi32.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\gdi32min.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\MinUser.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\msvcp110_win.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\msvcrt.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\WinTypes.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\SHCore.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\procthreadexthost.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\RemoteWinRT.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\kernel.appcore.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\bcryptprimitives.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\sechost.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\twinapi.appcore.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\dcomp.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\Microsoft.Internal.WarpPal.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\xamapi.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\xpal.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\xboxlivetitleid.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\usermgrcli.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\sspicli.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\EtwPlus.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\CoreUIComponents.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\CoreMessaging.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\procthreadexthostxbox.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\wer.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\xosproxy.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\Windows.StateRepositoryCore.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\Windows.UI.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\OneCoreUAPCommonProxyStub.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\Windows.Gaming.Input.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\bcrypt.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\cfgmgr32.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\UserMgrProxy.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\InputHost.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\advapi32legacy.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\cryptbase.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\deviceaccess.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\MrmCoreR.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\XboxUI.Api.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\Windows.Shell.ServiceHostBuilder.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\execmodelproxy.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\rmclient.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\UiaManager.dll'. Symbol loading disabled by Include/Exclude setting.
+onecoreuap\xbox\devices\api\winrt\pnpdevice.cpp(552)\Windows.Gaming.Input.dll!00007FFFC1D5A962: (caller: 00007FFFC1D5D123) ReturnHr(1) tid(1a5c) 80070057 Parâmetro incorreto.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\WindowManagementAPI.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\Windows.UI.Core.TextInput.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\TextInputFramework.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\edgegdi.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\Windows.Graphics.dll'. Symbol loading disabled by Include/Exclude setting.
+[Ymir boot] main() entered
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\Windows.Storage.ApplicationData.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\windows.storage.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\propsys.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\Windows.System.Launcher.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\shlwapi_onecore.dll'. Symbol loading disabled by Include/Exclude setting.
+[Ymir boot] direct file write OK (before redirect)
+[Ymir boot] RedirectStdioToLogFile: fds read=4 write=5 stdout=1 stderr=2
+[Ymir boot] RedirectStdioToLogFile: _dup2 OK
+[Ymir boot] log redirection done: Q:\Users\UserMgr2\AppData\Local\Packages\Ymir.SaturnEmulator.UWP_d7c8pgvss6ysm\LocalState\StrikerX3\Ymir\ymir-uwp.log
+[Ymir boot] log pump thread started
+[Ymir boot] core window bounds set
+onecoreuap\xbox\devices\api\winrt\gipdevice.cpp(1991)\Windows.Gaming.Input.dll!00007FFFC1D35A71: (caller: 00007FFFC1D3376A) LogHr(1) tid(1a5c) 80070005 Acesso negado.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\Windows.System.UserDeviceAssociation.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\Windows.StateRepositoryPS.dll'. Symbol loading disabled by Include/Exclude setting.
+info  | VDP-Config       | Switched to Software VDP renderer
+debug | SWRender-VDP1    | Enabling threaded VDP1 rendering
+debug | SWRender-VDP2    | Enabling threaded VDP2 rendering
+[Ymir boot] App::Run() entered
+info  | App              | Ymir 0.4.2-dev
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\DXCore.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\ResourcePolicyClient.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Unloaded 'C:\Windows\System32\ResourcePolicyClient.dll'
+info  | App              | DXGI adapters:
+info  | App              |   [00:00.0] SraKmd_arden (mem: 0.50 GiB VRAM, 0.00 GiB sys, 4.00 GiB shared)
+info  | App              | UWP profile path: Q:\Users\UserMgr2\AppData\Local\Packages\Ymir.SaturnEmulator.UWP_d7c8pgvss6ysm\LocalState\StrikerX3\Ymir\
+debug | App              | Profile directory: Q:\Users\UserMgr2\AppData\Local\Packages\Ymir.SaturnEmulator.UWP_d7c8pgvss6ysm\LocalState\StrikerX3\Ymir\
+debug | SMPC             | Setting area code to 4
+info  | App              | Scanning for IPL ROMs in Q:\Users\UserMgr2\AppData\Local\Packages\Ymir.SaturnEmulator.UWP_d7c8pgvss6ysm\LocalState\StrikerX3\Ymir\roms\ipl\...
+info  | App              | Found 0 images - 0 known, 0 unknown
+warn  | App              | No IPL ROM found
+info  | App              | Scanning for CD Block ROMs in Q:\Users\UserMgr2\AppData\Local\Packages\Ymir.SaturnEmulator.UWP_d7c8pgvss6ysm\LocalState\StrikerX3\Ymir\roms\cdb\...
+info  | App              | Found 0 images - 0 known, 0 unknown
+warn  | App              | No CD Block ROM found
+onecoreuap\windows\advcore\winrt\onecoreiwindow\corewindow\common\windowserver.cpp(3524)\Windows.UI.dll!00007FFFB254DB2F: (caller: 00007FFFC21B9D95) ReturnHr(1) tid(178c) 80070490 Elemento não encontrado.
+    Msg:[The island for this CoreWindow has not been initialized.] 
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\DeviceFamilyExt.dll'. Symbol loading disabled by Include/Exclude setting.
+WinRT: Using display resolution (gaming device unknown): 1920x1080
+Exception thrown at 0x00007FFFC88079DA in ymir-sdl3.exe: Microsoft C++ exception: _com_error at memory location 0x000000601FDF49A0.
+Exception thrown at 0x00007FFFC88079DA in ymir-sdl3.exe: Microsoft C++ exception: _com_error at memory location 0x000000601FDF4D70.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\Windows.Gaming.UI.GameBar.dll'. Symbol loading disabled by Include/Exclude setting.
+onecoreuap\multimedia\gameoverlayux\gamepanel\gamepanelapi\common\lib\utils\gamebarsettings.cpp(88)\Windows.Gaming.UI.GameBar.dll!00007FFFB7B6D342: (caller: 00007FFFB7B6B9FC) ReturnHr(1) tid(178c) 80004005 Erro não especificado
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\Windows.Energy.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\Windows.Media.Devices.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\Windows.Devices.Enumeration.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\devobj.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\DevDispItemProvider.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\profapi.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\D3D12Core.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'M:\windows\system32\DXGIDebug.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'M:\windows\system32\d3d12SDKLayers.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'M:\windows\system32\umd12ddi_arden.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'M:\windows\system32\xbsc_xs.dll'. Symbol loading disabled by Include/Exclude setting.
+info  | App              | Window DPI scaling: 100.0%
+info  | App              | UI scaling set to 100.0%
+info  | App              | Display 1 (Windows Simulator / Terminal Services Display) added
+info  | App              | Primary display resolution: 1920x1080
+info  | App              | Window DPI scaling: 100.0%
+info  | App              | UI scaling set to 100.0%
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\userenv.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\xg_xs.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\gamemode.dll'. Symbol loading disabled by Include/Exclude setting.
+---------------------------------------------------------
+Xbox User Mode Driver for Direct3D 12 Stock
+Copyright (C) Microsoft Corporation. All rights reserved.
+---------------------------------------------------------
+Using Direct3D 12 Stock
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\dxilconv.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\D3DSCache.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\profext.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Unloaded 'C:\Windows\System32\dxilconv.dll'
+'ymir-sdl3.exe' (Win32): Loaded 'M:\windows\system32\newbe_xs.dll'. Symbol loading disabled by Include/Exclude setting.
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\MFPalSra.dll'. Symbol loading disabled by Include/Exclude setting.
+[Ymir boot] creating software framebuffer texture
+info  | App              | Direct3D 12 graphics context initialized successfully
+info  | App              | Leaving full screen mode
+[Ymir boot] software framebuffer texture OK
+[Ymir boot] creating display texture
+[Ymir boot] display texture OK
+[Ymir boot] display texture OK, stbi logo load next
+[Ymir boot] initializing audio
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\AudioSes.dll'. Symbol loading disabled by Include/Exclude setting. 

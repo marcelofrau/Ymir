@@ -113,6 +113,13 @@
     #include <windows.h>
 #endif
 
+#if YMIR_PLATFORM_UWP
+    // TEMPORARY boot tracing. Remove once the Xbox startup is stable.
+    #define YMIR_BOOT_TRACE(...) OutputDebugStringA(fmt::format("[Ymir boot] " __VA_ARGS__).c_str())
+#else
+    #define YMIR_BOOT_TRACE(...)
+#endif
+
 #include <util/os_exception_handler.hpp>
 #include <util/os_features.hpp>
 #include <util/std_lib.hpp>
@@ -923,6 +930,7 @@ void App::RunEmulator() {
     // interpolation.
 
     // Software framebuffer texture
+    YMIR_BOOT_TRACE("creating software framebuffer texture\n");
     auto swFbTextureResult = m_graphicsService.CreateTexture(
         {
             .width = vdp::kMaxResH,
@@ -946,8 +954,10 @@ void App::RunEmulator() {
         return;
     };
     const gfx::GUITextureHandle swFbTexture = swFbTextureResult.Value();
+    YMIR_BOOT_TRACE("software framebuffer texture OK\n");
 
     // Display texture, containing the scaled framebuffer to be displayed on the screen
+    YMIR_BOOT_TRACE("creating display texture\n");
     auto dispTextureResult = m_graphicsService.CreateTexture({
         .width = vdp::kMaxResH * screen.fbScale,
         .height = vdp::kMaxResV * screen.fbScale,
@@ -963,6 +973,7 @@ void App::RunEmulator() {
         return;
     }
     const gfx::GUITextureHandle dispTexture = dispTextureResult.Value();
+    YMIR_BOOT_TRACE("display texture OK\n");
 
     auto renderDispTexture = [&](double targetWidth, double targetHeight) {
         auto &videoSettings = settings.video;
@@ -1012,6 +1023,7 @@ void App::RunEmulator() {
         }
     };
 
+    YMIR_BOOT_TRACE("display texture OK, stbi logo load next\n");
     // Logo texture
     stbi_uc *ymirLogoImgData;
     {
@@ -1157,6 +1169,7 @@ void App::RunEmulator() {
     static constexpr int kChannels = 2;
     static constexpr uint32 kBufferSize = 512; // TODO: make this configurable
 
+    YMIR_BOOT_TRACE("initializing audio\n");
     if (!m_context.audioSystem.Init(kSampleRate, kSampleFormat, kChannels, kBufferSize)) {
         ShowStartupFailure("Failed to create audio stream: {}", SDL_GetError());
         return;
@@ -1170,6 +1183,7 @@ void App::RunEmulator() {
     settings.audio.stepGranularity.ObserveAndNotify(
         [&](uint32 granularity) { m_context.EnqueueEvent(events::emu::SetSCSPStepGranularity(granularity)); });
 
+    YMIR_BOOT_TRACE("starting audio stream\n");
     if (m_context.audioSystem.Start()) {
         int sampleRate;
         SDL_AudioFormat audioFormat;
@@ -1335,18 +1349,27 @@ void App::RunEmulator() {
 
     auto t = clk::now();
     m_mouseHideTime = t;
+    YMIR_BOOT_TRACE("saturn reset OK\n");
 
     // Start emulator thread
+    YMIR_BOOT_TRACE("starting emulator thread\n");
     StartEmulatorThread();
+    YMIR_BOOT_TRACE("emulator thread started\n");
     ScopeGuard sgStopEmuThread{[this] { StopEmulatorThread(); }};
 
     // Start screenshot processor thread
+    YMIR_BOOT_TRACE("starting screenshot service\n");
     m_screenshotService.Start(m_context);
+    YMIR_BOOT_TRACE("screenshot service started\n");
     ScopeGuard sgStopScreenshotThread{[&] { m_screenshotService.Stop(); }};
 
+    YMIR_BOOT_TRACE("showing window\n");
     SDL_ShowWindow(screen.window);
+    YMIR_BOOT_TRACE("window shown\n");
 
+    YMIR_BOOT_TRACE("reloading controller databases\n");
     m_romService.ReloadSDLGameControllerDatabases(false);
+    YMIR_BOOT_TRACE("controller databases reloaded\n");
 
     // Maps device IDs to player indices
     struct PlayerIndexMap {
@@ -1410,6 +1433,7 @@ void App::RunEmulator() {
 
     auto prevTime = clk::now();
 
+    YMIR_BOOT_TRACE("entering main loop\n");
     while (true) {
         bool fitWindowToScreenNow = false;
         bool forceScreenScale = false;

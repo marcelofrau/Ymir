@@ -3,6 +3,14 @@
 #include <SDL3/SDL_hints.h>
 #include <SDL3/SDL_log.h>
 
+#if YMIR_PLATFORM_UWP
+    // TEMPORARY boot tracing for the Xbox audio bring-up. Remove once startup is stable.
+    #include <fmt/format.h>
+    #define YMIR_AUDIO_TRACE(...) OutputDebugStringA(fmt::format("[Ymir audio] " __VA_ARGS__).c_str())
+#else
+    #define YMIR_AUDIO_TRACE(...)
+#endif
+
 #include <string>
 
 namespace app {
@@ -17,16 +25,26 @@ bool AudioSystem::Init(int sampleRate, SDL_AudioFormat format, int channels, uin
     audioSpec.freq = sampleRate;
     audioSpec.format = format;
     audioSpec.channels = channels;
+
+    // Xbox/UWP: opening the default playback device can block while WASAPI negotiates the endpoint.
+    // These traces (synchronous, debugger-only) pin down whether the block happens inside SDL or after it.
+    YMIR_AUDIO_TRACE("Init(): opening default playback device (freq={} format={:04X} channels={})\n", sampleRate,
+                     (unsigned)format, channels);
     m_audioStream = SDL_OpenAudioDeviceStream(
         SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &audioSpec,
         [](void *userdata, SDL_AudioStream *stream, int additional_amount, int total_amount) {
             static_cast<AudioSystem *>(userdata)->ProcessAudioCallback(stream, additional_amount, total_amount);
         },
         this);
+    YMIR_AUDIO_TRACE("Init(): SDL_OpenAudioDeviceStream returned {}\n",
+                     m_audioStream != nullptr ? "a stream" : "nullptr");
+
     if (m_audioStream == nullptr) {
+        YMIR_AUDIO_TRACE("Init(): FAILED, SDL error: {}\n", SDL_GetError());
         return false;
     }
     UpdateGain();
+    YMIR_AUDIO_TRACE("Init(): OK\n");
     return true;
 }
 
@@ -38,7 +56,9 @@ void AudioSystem::Deinit() {
 }
 
 bool AudioSystem::Start() {
+    YMIR_AUDIO_TRACE("Start(): resuming stream device\n");
     if (SDL_ResumeAudioStreamDevice(m_audioStream)) {
+        YMIR_AUDIO_TRACE("Start(): OK\n");
         m_running = true;
         return true;
     } else {
