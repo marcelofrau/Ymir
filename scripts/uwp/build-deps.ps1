@@ -4,13 +4,13 @@
 
 .DESCRIPTION
     Currently this is SDL3-uwp (git submodule vendor/SDL3-uwp, SternXD's fork of SDL with the WinRT backend restored).
-    It is built as a DLL with CMake for WindowsStore and installed into out/uwp-deps, which the UWP CMake preset adds
+    It is built as a DLL with CMake for WindowsStore and installed into out/uwp-deps, which the UWP CMake presets add
     to CMAKE_PREFIX_PATH. The DLL is then shipped inside the .msix by apps/ymir-sdl3/uwp/UWPPackaging.cmake.
 
     Run this once after cloning, and again whenever the vendor/SDL3-uwp submodule is updated.
 
-.PARAMETER Generator
-    CMake generator to use. Defaults to Visual Studio 2026 (v145 toolset), which is what the UWP preset uses.
+.PARAMETER VisualStudio
+    auto (default: 2026 if installed, otherwise 2022), 2026 or 2022.
 
 .PARAMETER Clean
     Reconfigure SDL3-uwp from scratch (uses cmake --fresh). Does not delete anything.
@@ -19,27 +19,29 @@
     pwsh scripts/uwp/build-deps.ps1
 #>
 param(
-    [string]$Generator = 'Visual Studio 18 2026',
+    [ValidateSet('auto', '2026', '2022')][string]$VisualStudio = 'auto',
     [switch]$Clean
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'common.ps1')
 
-$root = Resolve-Path (Join-Path $PSScriptRoot '..\..')
-$sdlSource = Join-Path $root 'vendor\SDL3-uwp'
-$sdlBuild = Join-Path $root 'out\uwp-deps-build\SDL3'
-$prefix = Join-Path $root 'out\uwp-deps'
+$toolchain = Resolve-YmirUwpToolchain -VisualStudio $VisualStudio
+$sdlSource = Join-Path $YmirRoot 'vendor\SDL3-uwp'
+$sdlBuild = Join-Path $toolchain.DepsBuildDir 'SDL3'
+$prefix = Join-Path $YmirRoot 'out\uwp-deps'
+Write-Host "Using Visual Studio $($toolchain.VisualStudio) ($($toolchain.Generator))" -ForegroundColor Cyan
 
 if (!(Test-Path (Join-Path $sdlSource 'CMakeLists.txt'))) {
     Write-Host 'vendor/SDL3-uwp is empty; initializing submodules...' -ForegroundColor Yellow
-    git -C $root submodule update --init --recursive
+    git -C $YmirRoot submodule update --init --recursive
     if ($LASTEXITCODE -ne 0) { throw 'git submodule update failed' }
 }
 
 $configureArgs = @(
     '-S', $sdlSource,
     '-B', $sdlBuild,
-    '-G', $Generator,
+    '-G', $toolchain.Generator,
     '-A', 'x64',
     '-DCMAKE_SYSTEM_NAME=WindowsStore',
     '-DCMAKE_SYSTEM_VERSION=10.0',

@@ -15,7 +15,7 @@
     {
       "name": "UWP-x86-64-AVX2-MSVC",
       "displayName": "UWP x86-64 AVX2 MSVC (Xbox Series X|S)",
-      "description": "UWP build for Xbox Series X|S in Dev Mode (Zen 2, AVX2). Multi-config Visual Studio solution; pick Debug or RelWithDebInfo when building.",
+      "description": "UWP build for Xbox Series X|S in Dev Mode (Zen 2, AVX2) with Visual Studio 2026. Multi-config Visual Studio solution; pick Debug or RelWithDebInfo when building.",
       "inherits": [
         "config-platform-uwp",
         "config-build-full",
@@ -25,6 +25,15 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": null
       }
+    },
+    {
+      "name": "UWP-x86-64-AVX2-MSVC-VS2022",
+      "displayName": "UWP x86-64 AVX2 MSVC (Xbox Series X|S, Visual Studio 2022)",
+      "description": "Same as UWP-x86-64-AVX2-MSVC, but generated for Visual Studio 2022 (v143). Fallback for machines and CI runners without Visual Studio 2026.",
+      "inherits": [
+        "UWP-x86-64-AVX2-MSVC"
+      ],
+      "generator": "Visual Studio 17 2022"
     }
   ],
   "buildPresets": [
@@ -38,6 +47,18 @@
       "name": "UWP-x86-64-AVX2-MSVC-Release",
       "displayName": "UWP x86-64 AVX2 MSVC Release",
       "configurePreset": "UWP-x86-64-AVX2-MSVC",
+      "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "UWP-x86-64-AVX2-MSVC-VS2022-Debug",
+      "displayName": "UWP x86-64 AVX2 MSVC Debug (Visual Studio 2022)",
+      "configurePreset": "UWP-x86-64-AVX2-MSVC-VS2022",
+      "configuration": "Debug"
+    },
+    {
+      "name": "UWP-x86-64-AVX2-MSVC-VS2022-Release",
+      "displayName": "UWP x86-64 AVX2 MSVC Release (Visual Studio 2022)",
+      "configurePreset": "UWP-x86-64-AVX2-MSVC-VS2022",
       "configuration": "RelWithDebInfo"
     }
   ]

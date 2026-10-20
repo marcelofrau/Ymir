@@ -12,6 +12,10 @@ que facilita testar antes de ir pro console.
 ## 2. Estratégia de repositório
 
 - **Fork:** `marcelofrau/Ymir`, branch **`uwp/main`**. O upstream é `ymir-emu/Ymir` (remote `upstream`).
+- **Fork do mio:** `marcelofrau/mio`, branch **`uwp`** (submódulo `vendor/mio`). O mio é a biblioteca de *memory-mapped
+  files* que o Ymir usa pra ler imagens de disco e o arquivo de backup RAM. No Windows ela chama `CreateFileW`,
+  `CreateFileMapping` e `MapViewOfFile`, que não existem para apps UWP. O patch (um commit, cerca de 40 linhas) usa as
+  variantes `*FromApp` quando compila na partição APP; o desktop continua igual. É candidato a PR no `StrikerX3/mio`.
 - **Atualização:** `git fetch upstream && git rebase upstream/main` periodicamente. O delta é pequeno e
   concentrado; veja a seção 6.
 - **Por que fork e não wrapper com submódulo:** a mudança toca core, frontend e CMake ao mesmo tempo, e o upstream
@@ -66,7 +70,39 @@ scripts/uwp/build.ps1  (ou: cmake --preset UWP-x86-64-AVX2-MSVC && cmake --build
         └─ Add-AppDevPackage.ps1 / Install.ps1  (instalação no PC)
 ```
 
-### 3.2 Fluxo de runtime no UWP
+### 3.2 CI/CD (GitHub Actions)
+
+O workflow `.github/workflows/uwp.yml` roda no runner `windows-2025`:
+
+| Gatilho | O que faz |
+|---|---|
+| push ou PR em `uwp/**` | build Release; zip como *artifact* do workflow |
+| tag `uwp-vX.Y.Z.R` (ex.: `uwp-v0.4.0.1`) | build com a versão da tag; **GitHub Release** com o zip e os símbolos |
+| manual (`workflow_dispatch`) | build; com `release: true`, publica uma *prerelease* `uwp-v<versão>` |
+
+- **Versão do pacote:** vem da tag, ou de `<versão do Ymir>.<run_number>` nos demais casos.
+- **Prefixo `uwp-`:** separa estas tags das tags `v*` do upstream.
+- **Cache:** guarda os binários do vcpkg (`.vcpkg-cache`) e o `out/uwp-deps` (SDL3-uwp).
+- **Toolchain:** VS 2026 se o runner tiver (e o CMake suportar), senão VS 2022 com o preset `UWP-x86-64-AVX2-MSVC-VS2022`.
+  Quem escolhe é `scripts/uwp/common.ps1`.
+- **Workflows do upstream:** `ci.yaml`, `pr-builds.yaml` e outros **não foram alterados**, para não gerar conflito em
+  rebases. Eles também rodam no fork depois que o Actions é habilitado; para economizar minutos, desabilite com
+  `gh workflow disable CI -R marcelofrau/Ymir` (opcional).
+
+O conteúdo do zip distribuível (`scripts/uwp/package.ps1`) segue o mesmo formato de dosbox-pure-uwp, scummvm-uwp e
+x-files-uwp:
+
+```
+ymir-uwp_<ver>_x64.zip
+├─ ymir-sdl3_<ver>_x64_RelWithDebInfo.msix          → pacote do app (assinado)
+├─ ymir-sdl3_<ver>_x64_RelWithDebInfo.cer           → certificado (o PC precisa confiar nele)
+├─ Dependencies\x64\Microsoft.VCLibs.x64.14.00.appx → dependência de framework (instalar junto no Xbox)
+├─ Install.ps1, Add-AppDevPackage.ps1, Add-AppDevPackage.resources\  → instalador pro PC (gerado pelo VS)
+└─ INSTALL.md                                       → instruções pra Xbox e PC
+ymir-uwp_<ver>_x64_symbols.zip                      → .appxsym (símbolos pra analisar crash dumps)
+```
+
+### 3.3 Fluxo de runtime no UWP
 
 1. O CoreApplication inicia, o SDL3-uwp cria o `IFrameworkView` e chama `SDL_main` na UI thread (ASTA).
 2. `main()` cria um `argv` falso (`"Ymir"`), já que o WinRT não passa argumentos, e redireciona stdout/stderr pro
@@ -112,7 +148,8 @@ scripts/uwp/build.ps1  (ou: cmake --preset UWP-x86-64-AVX2-MSVC && cmake --build
 | `Ymir_ENABLE_UPDATE_CHECKER` | opção CMake / macro privada do `ymir-sdl3` | OFF | Usa `update_checker_null.cpp`, sem curl/OpenSSL |
 | `Ymir_UWP_PACKAGE_NAME` | cache, `UWPPackaging.cmake` | `Ymir.SaturnEmulator.UWP` | Identity Name do pacote |
 | `Ymir_UWP_PUBLISHER` | cache, `UWPPackaging.cmake` | `CN=CMake Test Cert` | Precisa ser igual ao subject do certificado |
-| `Ymir_UWP_CERTIFICATE` | cache, `UWPPackaging.cmake` | vazio | `.pfx` próprio (opcional) |
+| `Ymir_UWP_CERTIFICATE` | cache, `UWPPackaging.cmake` | vazio | `.pfx` próprio (opcional, sem senha) |
+| `Ymir_UWP_PACKAGE_VERSION` | cache, `UWPPackaging.cmake` | vazio = `<versão do Ymir>.0` | Versão do pacote, com 4 números (CI: tag ou run) |
 | `MIO_WINAPI_APP` | `vendor/mio/include/mio/detail/mmap.ipp` | 1 (automático) | APIs `*FromApp` no mio |
 
 ## 6. Mapa das mudanças (o delta do fork)
@@ -122,7 +159,9 @@ scripts/uwp/build.ps1  (ou: cmake --preset UWP-x86-64-AVX2-MSVC && cmake --build
   - pula `find_package(Vulkan)` no UWP;
   - define `Ymir_PLATFORM_UWP`, `Ymir_ENABLE_DISCORD_RPC` e `Ymir_ENABLE_UPDATE_CHECKER`;
   - adiciona `/sdl-`.
-- `CMakePresets.json`: inclui `cmake/presets/uwp-x86_64-AVX2-msvc.json` (novo). A config base é `cmake/config/platform-uwp.json` (novo).
+- `CMakePresets.json`: inclui `cmake/presets/uwp-x86_64-AVX2-msvc.json` (novo), com os presets
+  `UWP-x86-64-AVX2-MSVC` (VS 2026) e `UWP-x86-64-AVX2-MSVC-VS2022` (fallback). A config base é
+  `cmake/config/platform-uwp.json` (novo).
 - `cmake/CompileShaders.cmake`: no UWP usa o DXC do Windows SDK. Também ganhou fallback pro SDK quando o `dxc` não está no PATH.
 - `vcpkg.json`: `curl`, `openssl`, `sdl3` e `catch2` com `"platform": "!uwp"`.
 - `vcpkg-overlay-ports/uwp/{rtmidi,tomlplusplus}` (novos), usados só pelo preset UWP (`VCPKG_OVERLAY_PORTS`).
@@ -170,7 +209,10 @@ scripts/uwp/build.ps1  (ou: cmake --preset UWP-x86-64-AVX2-MSVC && cmake --build
 - `src/util/os_features.cpp`: sem DWM no UWP.
 
 ### Scripts e docs
-- `scripts/uwp/build-deps.ps1`, `build.ps1`, `deploy-xbox.ps1`, `xbox.env.example`.
+- `scripts/uwp/common.ps1`: detecta VS 2026/2022 e acha o pacote gerado.
+- `scripts/uwp/build-deps.ps1`, `build.ps1` (`-PackageVersion`), `package.ps1` (zip distribuível),
+  `deploy-xbox.ps1`, `xbox.env.example`.
+- `.github/workflows/uwp.yml`: CI/CD (seção 3.2).
 - `docs/uwp/README.md` (este arquivo) e `docs/uwp/HANDOFF.md`.
 
 ## 7. Candidatos a PR no upstream (reduzem o delta do fork)

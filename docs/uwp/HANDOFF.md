@@ -44,6 +44,9 @@ Validado na máquina de origem em 2026-10-20 (VS Build Tools 2026 18.x, MSVC 14.
 | Conteúdo do `.msix`: `ymir-sdl3.exe`, `SDL3.dll`, `Assets\*.png`, `resources.pri`, `AppxSignature.p7x` | ✅ conferido |
 | Shaders DXIL assinados (hash do container DXBC diferente de zero) | ✅ conferido |
 | Build desktop (preset `Full-x86-64-AVX2-MSVC-Release`) e testes continuam passando | ✅ 75/75 (seção 1.1) |
+| `scripts/uwp/package.ps1` → `out/dist/ymir-uwp_<ver>_x64.zip` (msix, cer, VCLibs, Install.ps1, INSTALL.md) + zip de símbolos | ✅ gerado e conferido |
+| CI/CD `.github/workflows/uwp.yml` (build, artifact, release por tag `uwp-v*`) | ⚠️ escrito e com os trechos PowerShell simulados localmente; **o primeiro run no GitHub ainda não aconteceu** (passo 15) |
+| Fallback VS 2022 (preset `UWP-x86-64-AVX2-MSVC-VS2022`) | ⚠️ configurado, mas **não compilado** (a máquina de origem só tem VS 2026); o CI valida se o runner não tiver VS 2026 |
 | **Rodar o app** (PC ou Xbox) | ❌ **não testado**: a máquina de origem não tem Xbox e é corporativa |
 
 ### 1.1 Resultado da regressão desktop
@@ -59,7 +62,7 @@ desktop.
 | Publisher | `CN=CMake Test Cert` |
 | **Package Family Name (PFN)** | `Ymir.SaturnEmulator.UWP_d7c8pgvss6ysm` |
 | App Id | `App` (PRAID = `Ymir.SaturnEmulator.UWP_d7c8pgvss6ysm!App`) |
-| Versão | `0.4.0.0` (vem do `project(Ymir VERSION ...)` no CMake) |
+| Versão | `0.4.0.0` local (vem do `project(Ymir VERSION ...)` no CMake); no CI, `0.4.0.<run>` ou a da tag `uwp-v*` |
 | Pasta de dados (PC) | `%LOCALAPPDATA%\Packages\Ymir.SaturnEmulator.UWP_d7c8pgvss6ysm\LocalState\StrikerX3\Ymir\` |
 | Pasta de dados (Xbox, Device Portal → File explorer) | `LocalAppData\Ymir.SaturnEmulator.UWP_d7c8pgvss6ysm\LocalState\StrikerX3\Ymir\` |
 | **Log** | `<pasta de dados>\ymir-uwp.log` (stdout e stderr, com flush por linha) |
@@ -247,7 +250,32 @@ Escolha **uma** das opções:
   repita a verificação.
 - [ ] Faça um commit por correção (`uwp: ...`) e `git push origin uwp/main`.
 
-### Passo 14: Backlog pós-MVP
+### Passo 14: Gerar o distribuível local (mesmo formato do CI)
+- [ ] `pwsh scripts/uwp/package.ps1 -Configuration Release`
+- [ ] **Esperado:** `out\dist\ymir-uwp_<versão>_x64.zip` e `out\dist\ymir-uwp_<versão>_x64_symbols.zip`.
+  O zip tem `.msix`, `.cer`, `Dependencies\x64\Microsoft.VCLibs.x64.14.00.appx`, `Install.ps1` e `INSTALL.md`.
+
+### Passo 15: Ativar e validar o CI/CD no GitHub
+- [ ] No GitHub, em `marcelofrau/Ymir` → **Actions**, habilite os workflows do fork (forks começam com Actions
+  desligado).
+- [ ] Opcional, para economizar minutos: `gh workflow disable CI -R marcelofrau/Ymir` e
+  `gh workflow disable "PR builds" -R marcelofrau/Ymir`. Confira os nomes com `gh workflow list -R marcelofrau/Ymir`.
+- [ ] Dispare um build: `gh workflow run uwp.yml -R marcelofrau/Ymir --ref uwp/main`. Acompanhe com
+  `gh run watch -R marcelofrau/Ymir`.
+- [ ] **Esperado:** o job "Build UWP package (x64)" termina verde e o run tem o artifact `ymir-uwp-0.4.0.<run>`.
+  O passo "Show toolchain" mostra qual VS foi usado.
+- [ ] Se falhar, baixe o log (`gh run view --log-failed -R marcelofrau/Ymir`) e procure na seção 4. Nos erros de
+  compilação com VS 2022, veja T-01.
+- [ ] **Release:** depois do teste no Xbox (passo 12), crie e envie a tag:
+  ```powershell
+  git tag uwp-v0.4.0.1
+  git push origin uwp-v0.4.0.1
+  ```
+  **Esperado:** aparece um GitHub Release "Ymir UWP 0.4.0.1" com `ymir-uwp_0.4.0.1_x64.zip` e o zip de símbolos.
+  Incremente o último número a cada release; ele precisa ser maior que o do release anterior pro Xbox aceitar como
+  atualização.
+
+### Passo 16: Backlog pós-MVP
 - [ ] Só depois de V1 a V9 passarem, siga a seção 6, **em ordem**.
 
 ---
@@ -255,13 +283,13 @@ Escolha **uma** das opções:
 ## 4. Troubleshooting (sintoma → causa → correção)
 
 ### T-01: O gerador "Visual Studio 18 2026" não existe ou não acha a instalação
-- **Causa:** a máquina só tem o VS 2022, ou o CMake é antigo.
-- **Correção preferida:** instalar o VS 2026 ou Build Tools 2026 (seção 2).
-- **Contorno com VS 2022:**
-  1. Crie `CMakeUserPresets.json` na raiz (não commitar) com um preset que herda `UWP-x86-64-AVX2-MSVC` e define
-     `"generator": "Visual Studio 17 2022"`.
-  2. Rode o `build-deps.ps1` com `-Generator "Visual Studio 17 2022"`.
-  3. Rode cmake/build com o preset novo.
+- **Comportamento automático:** os scripts (`common.ps1`) usam o VS 2022 e o preset `UWP-x86-64-AVX2-MSVC-VS2022`
+  quando o VS 2026 não está instalado ou o CMake é antigo. Para forçar, passe `-VisualStudio 2022` (ou `2026`) no
+  `build-deps.ps1`/`build.ps1`, ou defina a variável de ambiente `YMIR_UWP_VS=2022`.
+- **Com VS 2022**, é preciso ter o workload *Universal Windows Platform development* com o componente
+  *C++ (v143) Universal Windows Platform tools*.
+- **Se o build com VS 2022 falhar** e o VS 2026 não puder ser instalado, registre o erro na seção 5. Esse caminho
+  ainda não foi validado.
 
 ### T-02: `vendor/mio` sem o patch UWP (erro `CreateFileW: identifier not found` em `mmap.ipp`)
 - **Causa:** o submódulo aponta pro mio original (StrikerX3), não pro fork com o patch.
@@ -417,9 +445,10 @@ Cada item tem um critério de aceite. Faça um item por vez, com commit próprio
   2. Exporte o `.pfx` (fora do repo).
   3. Passe `-DYmir_UWP_PUBLISHER="CN=YmirUWP" -DYmir_UWP_CERTIFICATE=<caminho>`.
   - **Atenção:** o PFN muda (seção 1.2).
-- **B-06: CI no GitHub Actions** (`windows-2025`, VS 2026). Passos: `build-deps.ps1`, `build.ps1 -Configuration Release`
-  e upload do `.msix` e de `Dependencies`. Referência: `x-files-uwp\.github\workflows\ci.yml`,
-  `XBSX2\.github\workflows\windows_build_uwp.yml`.
+- **B-06: Certificado próprio no CI.** O CI já existe (passo 15) e assina com `CN=CMake Test Cert`. Se o B-05 for
+  feito, guarde o `.pfx` (sem senha) em base64 no secret `UWP_SIGNING_PFX_BASE64`. No `uwp.yml`, decodifique antes do
+  build e passe `-DYmir_UWP_CERTIFICATE=...` e `-DYmir_UWP_PUBLISHER=...` (o `build.ps1` precisa de um parâmetro novo
+  para repassar esses argumentos ao CMake).
 - **B-07: PRs no upstream** com os itens da seção 7 do README.md, para reduzir o delta.
 - **B-08: Xbox One.** Preset SSE2 (`Ymir_AVX2=OFF`), renderer por software e tipo Game obrigatório. Medir desempenho.
 - **B-09: Atualizar o dossiê** `D:\workspace\_non_work_\xbox-uwp-lab\docs\targets\ymir.md` com as respostas (interpretador,

@@ -42,8 +42,7 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
     throw 'This script requires PowerShell 7 or later (run it with pwsh).'
 }
 
-$root = Resolve-Path (Join-Path $PSScriptRoot '..\..')
-$cmakeConfig = if ($Configuration -eq 'Debug') { 'Debug' } else { 'RelWithDebInfo' }
+. (Join-Path $PSScriptRoot 'common.ps1')
 $packageName = 'Ymir.SaturnEmulator.UWP' # must match Ymir_UWP_PACKAGE_NAME in apps/ymir-sdl3/uwp/UWPPackaging.cmake
 
 # ── Load xbox.env ──
@@ -62,12 +61,10 @@ $credential = [pscredential]::new($cfg.XBOX_USER, (ConvertTo-SecureString $cfg.X
 $common = @{ Credential = $credential; Authentication = 'Basic'; SkipCertificateCheck = $true }
 
 # ── Locate the package ──
-$pkgRoot = Join-Path $root 'out\build\UWP-x86-64-AVX2-MSVC\apps\ymir-sdl3\AppPackages\ymir-sdl3'
-$pkgDir = Get-ChildItem $pkgRoot -Directory -Filter "ymir-sdl3_*_x64_${cmakeConfig}_Test" -ErrorAction SilentlyContinue |
-    Sort-Object LastWriteTime -Descending | Select-Object -First 1
-if (!$pkgDir) { throw "No package found under $pkgRoot; run scripts/uwp/build.ps1 -Configuration $Configuration" }
-$msix = Get-ChildItem $pkgDir.FullName -Filter '*.msix' | Select-Object -First 1
-$deps = @(Get-ChildItem (Join-Path $pkgDir.FullName 'Dependencies\x64') -Filter '*.appx' -ErrorAction SilentlyContinue)
+$pkg = Find-YmirUwpPackage -Configuration $Configuration
+if (!$pkg) { throw "No package found; run scripts/uwp/build.ps1 -Configuration $Configuration" }
+$msix = $pkg.Msix
+$deps = $pkg.Dependencies
 Write-Host "Package:    $($msix.FullName)" -ForegroundColor Cyan
 $deps | ForEach-Object { Write-Host "Dependency: $($_.FullName)" -ForegroundColor Cyan }
 

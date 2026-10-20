@@ -1,0 +1,165 @@
+# Builds the Ymir UWP package for Xbox Dev Mode / Windows and publishes the distributable.
+#
+# - Pushes and pull requests on uwp/** branches: build + upload the distributable zip as a workflow artifact.
+# - Tags uwp-vX.Y.Z.R (e.g. uwp-v0.4.0.1): build + GitHub Release with the zip. The package version is taken from
+#   the tag. The uwp- prefix keeps these tags apart from upstream Ymir's v* release tags.
+# - Manual runs (workflow_dispatch): build, optionally publishing a prerelease.
+#
+# The distributable contains the signed .msix, its certificate, the Microsoft.VCLibs dependency, the Visual Studio
+# PC installer (Install.ps1) and INSTALL.md. See scripts/uwp/package.ps1 and docs/uwp/HANDOFF.md.
+name: UWP (Xbox)
+
+on:
+  push:
+    branches: ['uwp/**']
+    tags: ['uwp-v*']
+  pull_request:
+    branches: ['uwp/**']
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'Publish a GitHub prerelease with this build'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: uwp-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  build:
+    name: Build UWP package (x64)
+    runs-on: windows-2025
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\.vcpkg-cache
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Show toolchain
+        shell: pwsh
+        run: |
+          & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -products * -format text `
+            -property displayName
+          cmake --version
+          . ./scripts/uwp/common.ps1
+          $toolchain = Resolve-YmirUwpToolchain
+          Write-Host "Selected: Visual Studio $($toolchain.VisualStudio), preset $($toolchain.Preset)"
+
+      - name: Compute version
+        id: version
+        shell: pwsh
+        run: |
+          $cmake = Get-Content CMakeLists.txt -Raw
+          if ($cmake -notmatch 'project\(Ymir VERSION (\d+)\.(\d+)\.(\d+)\)') { throw 'Could not read the Ymir version' }
+          $base = "$($Matches[1]).$($Matches[2]).$($Matches[3])"
+          if ($env:GITHUB_REF -match '^refs/tags/uwp-v(\d+\.\d+\.\d+\.\d+)$') {
+            $version = $Matches[1]
+          } elseif ($env:GITHUB_REF -like 'refs/tags/*') {
+            throw "Release tags must look like uwp-vX.Y.Z.R (got $env:GITHUB_REF)"
+          } else {
+            # The last version field is limited to 16 bits
+            $version = "$base.$([int]$env:GITHUB_RUN_NUMBER % 65536)"
+          }
+          Write-Host "Package version: $version"
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "vcpkg=$(git rev-parse HEAD:vcpkg)" >> $env:GITHUB_OUTPUT
+          "sdl=$(git rev-parse HEAD:vendor/SDL3-uwp)" >> $env:GITHUB_OUTPUT
+          New-Item -ItemType Directory -Path $env:VCPKG_DEFAULT_BINARY_CACHE -Force | Out-Null
+
+      - name: Cache vcpkg binary packages
+        uses: actions/cache@v4
+        with:
+          path: .vcpkg-cache
+          key: vcpkg-uwp-${{ steps.version.outputs.vcpkg }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'vcpkg-overlay-ports/**', 'vcpkg-triplets/**') }}
+          restore-keys: |
+            vcpkg-uwp-${{ steps.version.outputs.vcpkg }}-
+            vcpkg-uwp-
+
+      - name: Cache SDL3-uwp build
+        uses: actions/cache@v4
+        with:
+          path: out/uwp-deps
+          key: sdl3-uwp-${{ steps.version.outputs.sdl }}-${{ hashFiles('scripts/uwp/build-deps.ps1') }}
+
+      - name: Build dependencies (SDL3-uwp)
+        shell: pwsh
+        run: |
+          if (Test-Path out/uwp-deps/bin/SDL3.dll) { Write-Host 'SDL3-uwp restored from cache'; exit 0 }
+          ./scripts/uwp/build-deps.ps1
+
+      - name: Build UWP package
+        shell: pwsh
+        run: ./scripts/uwp/build.ps1 -Configuration Release -PackageVersion ${{ steps.version.outputs.version }}
+
+      - name: Create distributable
+        id: package
+        shell: pwsh
+        run: ./scripts/uwp/package.ps1 -Configuration Release
+
+      - name: Upload distributable
+        uses: actions/upload-artifact@v4
+        with:
+          name: ymir-uwp-${{ steps.package.outputs.version }}
+          path: ${{ steps.package.outputs.zip }}
+          compression-level: 0
+
+      - name: Upload debug symbols
+        if: steps.package.outputs.symbols != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: ymir-uwp-${{ steps.package.outputs.version }}-symbols
+          path: ${{ steps.package.outputs.symbols }}
+          compression-level: 0
+
+      - name: Write release notes
+        if: startsWith(github.ref, 'refs/tags/uwp-v') || (github.event_name == 'workflow_dispatch' && inputs.release)
+        shell: pwsh
+        run: |
+          $version = '${{ steps.package.outputs.version }}'
+          $previous = git tag --sort=-v:refname --list 'uwp-v*' | Where-Object { $_ -ne "uwp-v$version" } |
+            Select-Object -First 1
+          $commits = if ($previous) {
+            git log "$previous..HEAD" --no-merges --pretty=format:'- `%h` %s'
+          } else {
+            git log --no-merges --pretty=format:'- `%h` %s' --grep '^uwp:' -n 50
+          }
+          $lines = @(
+            "## Ymir UWP $version (x64)",
+            '',
+            'Sega Saturn emulator for **Xbox Series X|S in Dev Mode** and Windows 10/11 (UWP).',
+            '',
+            '### Installation',
+            '',
+            "Download ``ymir-uwp_${version}_x64.zip`` and follow ``INSTALL.md`` inside it. On Xbox, install the ``.msix``",
+            'together with `Dependencies\x64\Microsoft.VCLibs.x64.14.00.appx` through the Device Portal and set',
+            '**App type: Game** in Dev Home.',
+            '',
+            '### Changes',
+            ''
+          )
+          $lines += if ($commits) { $commits } else { '- No changes recorded' }
+          $lines += @('', "Based on upstream [Ymir](https://github.com/ymir-emu/Ymir). Commit: ``$env:GITHUB_SHA``.")
+          $lines -join "`n" | Set-Content -Path release_notes.md -Encoding utf8NoBOM
+          Get-Content release_notes.md
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/uwp-v') || (github.event_name == 'workflow_dispatch' && inputs.release)
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Ymir UWP ${{ steps.package.outputs.version }}
+          tag_name: uwp-v${{ steps.package.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          body_path: release_notes.md
+          files: |
+            ${{ steps.package.outputs.zip }}
+            ${{ steps.package.outputs.symbols }}
+          draft: false
+          prerelease: ${{ !startsWith(github.ref, 'refs/tags/uwp-v') }}
+          make_latest: ${{ startsWith(github.ref, 'refs/tags/uwp-v') }}

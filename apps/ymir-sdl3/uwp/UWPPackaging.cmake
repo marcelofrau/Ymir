@@ -9,6 +9,18 @@ set(Ymir_UWP_PUBLISHER "CN=CMake Test Cert" CACHE STRING
     "UWP package publisher; must match the subject of the signing certificate")
 set(Ymir_UWP_CERTIFICATE "" CACHE FILEPATH
     "Optional .pfx used to sign the UWP package; CMake's test certificate (CN=CMake Test Cert) is used if empty")
+set(Ymir_UWP_PACKAGE_VERSION "" CACHE STRING
+    "UWP package version (four numbers, e.g. 0.4.0.12); defaults to <Ymir version>.0. CI sets it from the tag/run")
+
+if (Ymir_UWP_PACKAGE_VERSION)
+    if (NOT Ymir_UWP_PACKAGE_VERSION MATCHES "^[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$")
+        message(FATAL_ERROR "Ymir_UWP_PACKAGE_VERSION must have four numeric parts: ${Ymir_UWP_PACKAGE_VERSION}")
+    endif ()
+    set(_ymir_uwp_version "${Ymir_UWP_PACKAGE_VERSION}")
+else ()
+    set(_ymir_uwp_version "${Ymir_VERSION_MAJOR}.${Ymir_VERSION_MINOR}.${Ymir_VERSION_PATCH}.0")
+endif ()
+message(STATUS "Ymir UWP: package version ${_ymir_uwp_version}")
 
 set(_ymir_uwp_dir "${CMAKE_CURRENT_SOURCE_DIR}/uwp")
 
@@ -68,3 +80,4 @@ unset(_ymir_uwp_dir)
 unset(_ymir_uwp_assets)
 unset(_ymir_sdl3_dll)
 unset(_ymir_uwp_certificate)
+unset(_ymir_uwp_version)

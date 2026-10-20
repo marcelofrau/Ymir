@@ -16,7 +16,7 @@
   <Identity
     Name="@Ymir_UWP_PACKAGE_NAME@"
     Publisher="@Ymir_UWP_PUBLISHER@"
-    Version="@Ymir_VERSION_MAJOR@.@Ymir_VERSION_MINOR@.@Ymir_VERSION_PATCH@.0" />
+    Version="@_ymir_uwp_version@" />
 
   <Properties>
     <DisplayName>Ymir</DisplayName>
