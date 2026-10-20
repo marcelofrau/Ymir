@@ -23,11 +23,19 @@ const std::filesystem::path kPathSuffixes[] = {
 };
 
 Profile::Profile() {
+#if YMIR_PLATFORM_UWP
+    // The package install folder (the "portable" location) is read-only on UWP
+    UseUserProfilePath();
+#else
     UsePortableProfilePath();
+#endif
 }
 
 std::filesystem::path Profile::GetUserProfilePath() {
     char *cpath = SDL_GetPrefPath(Ymir_ORGANIZATION_NAME, Ymir_APP_NAME);
+    if (cpath == nullptr) {
+        return GetExecutableProfilePath();
+    }
     std::string path = cpath;
     SDL_free(cpath);
     return std::u8string{path.begin(), path.end()};
@@ -38,7 +46,11 @@ std::filesystem::path Profile::GetPortableProfilePath() {
     // SDL_GetCurrentDirectory() returns "/" for some reason
     return GetExecutableProfilePath();
 #else
+    // SDL_GetCurrentDirectory() returns nullptr where there is no current directory (e.g. UWP)
     char *cpath = SDL_GetCurrentDirectory();
+    if (cpath == nullptr) {
+        return GetExecutableProfilePath();
+    }
     std::string path = cpath;
     SDL_free(cpath);
     return std::u8string{path.begin(), path.end()};
