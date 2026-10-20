@@ -378,14 +378,17 @@ if (WIN32)
         PRIVATE
             src/ymir/gpu/d3d12/d3d12_debug.cpp
 
-            src/ymir/gpu/shaders/gpu_shaders_windows.cpp
-
             src/ymir/hw/vdp/renderer/vdp_renderer_hw_d3d12.cpp
 
             src/ymir/hw/vdp/renderer/d3d12/d3d12_barrier_tracker.hpp
             src/ymir/hw/vdp/renderer/d3d12/d3d12_dev_log.hpp
             src/ymir/hw/vdp/renderer/d3d12/d3d12_upload_buffer.hpp
     )
+    if (Ymir_PLATFORM_UWP)
+        target_sources(ymir-core PRIVATE src/ymir/gpu/shaders/gpu_shaders_uwp.cpp)
+    else ()
+        target_sources(ymir-core PRIVATE src/ymir/gpu/shaders/gpu_shaders_windows.cpp)
+    endif ()
 elseif (APPLE)
     target_sources(ymir-core PRIVATE
         src/ymir/gpu/shaders/gpu_shaders_macos.cpp
@@ -514,14 +517,19 @@ target_link_libraries(ymir-core PUBLIC
     dr_libs::dr_libs
 )
 if (WIN32)
+    if (NOT Ymir_PLATFORM_UWP)
+        # UWP apps get WaitOnAddress and WakeByAddressAll from the WindowsApp umbrella library.
+        # UWP builds also skip the DirectX Shader Compiler; see gpu_shaders_uwp.cpp.
+        target_link_libraries(ymir-core PUBLIC
+            synchronization  # for WaitOnAddress and WakeByAddressAll
+            dxcompiler
+        )
+    endif ()
     target_link_libraries(ymir-core PUBLIC
-        synchronization  # for WaitOnAddress and WakeByAddressAll
-
         # Direct3D 11 and 12
         d3d12
         dxgi
         dxguid
-        dxcompiler
 
         WIL::WIL
     )
@@ -627,6 +635,7 @@ target_compile_definitions(ymir-core PUBLIC "Ymir_EXTRA_INLINING=$<BOOL:${Ymir_E
 target_compile_definitions(ymir-core PUBLIC "YMIR_PLATFORM_HAS_DIRECT3D=$<BOOL:${WIN32}>")
 target_compile_definitions(ymir-core PUBLIC "YMIR_PLATFORM_HAS_VULKAN=$<BOOL:${Vulkan_FOUND}>")
 target_compile_definitions(ymir-core PUBLIC "YMIR_PLATFORM_HAS_METAL=$<BOOL:${APPLE}>")
+target_compile_definitions(ymir-core PUBLIC "YMIR_PLATFORM_UWP=$<BOOL:${Ymir_PLATFORM_UWP}>")
 target_compile_definitions(ymir-core PUBLIC "TOML_EXCEPTIONS=0")
 
 ## Define feature flags macros

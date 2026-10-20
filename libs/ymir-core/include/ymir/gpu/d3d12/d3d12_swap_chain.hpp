@@ -30,34 +30,35 @@ public:
     /// @return `true` if the swap chain was created successfully, `false` otherwise (TODO: better errors)
     bool Create(UINT dxgiFactoryFlags, ID3D12CommandQueue *commandQueue, DXGI_SWAP_CHAIN_DESC1 scDesc, HWND hwnd,
                 UINT maxLatency) {
-        wil::com_ptr_nothrow<IDXGIFactory6> factory;
-        wil::com_ptr_nothrow<IDXGISwapChain1> swapChain1;
+        m_windowed = true;
+        return CreateImpl(dxgiFactoryFlags, scDesc, maxLatency,
+                          [&](IDXGIFactory6 *factory, const DXGI_SWAP_CHAIN_DESC1 &desc, IDXGISwapChain1 **swapChain) {
+                              if (FAILED(factory->CreateSwapChainForHwnd(commandQueue, hwnd, &desc, nullptr, nullptr,
+                                                                         swapChain))) {
+                                  return false;
+                              }
+                              if (m_tearingSupport) {
+                                  factory->MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER);
+                              }
+                              return true;
+                          });
+    }
 
-        if (FAILED(CreateDXGIFactory2(dxgiFactoryFlags, IID_PPV_ARGS(factory.put())))) {
-            return false;
-        }
-
-        BOOL allowTearing = FALSE;
-        factory->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &allowTearing, sizeof(allowTearing));
-        m_tearingSupport = allowTearing == TRUE;
-        if (m_tearingSupport) {
-            scDesc.Flags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
-        }
-
-        if (FAILED(factory->CreateSwapChainForHwnd(commandQueue, hwnd, &scDesc, nullptr, nullptr, swapChain1.put()))) {
-            return false;
-        }
-
-        if (FAILED(swapChain1.copy_to(m_object.put()))) {
-            return false;
-        }
-        if (m_tearingSupport) {
-            factory->MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER);
-        }
-        m_object->SetMaximumFrameLatency(maxLatency);
-        m_waitableObject.reset(m_object->GetFrameLatencyWaitableObject());
-
-        return true;
+    /// @brief Creates an `IDXGISwapChain3` bound to a UWP `CoreWindow` with the specified parameters
+    /// @param[in] dxgiFactoryFlags base flags to apply to the `IDXGIFactory6` instance
+    /// @param[in] commandQueue the direct command queue to bind to the swap chain
+    /// @param[in] scDesc the swap chain descriptor
+    /// @param[in] coreWindow the `Windows::UI::Core::CoreWindow` to bind the swap chain to
+    /// @param[in] maxLatency the maximum number of frames of presentation latency
+    /// @return `true` if the swap chain was created successfully, `false` otherwise (TODO: better errors)
+    bool CreateForCoreWindow(UINT dxgiFactoryFlags, ID3D12CommandQueue *commandQueue, DXGI_SWAP_CHAIN_DESC1 scDesc,
+                             IUnknown *coreWindow, UINT maxLatency) {
+        m_windowed = false;
+        return CreateImpl(dxgiFactoryFlags, scDesc, maxLatency,
+                          [&](IDXGIFactory6 *factory, const DXGI_SWAP_CHAIN_DESC1 &desc, IDXGISwapChain1 **swapChain) {
+                              return SUCCEEDED(factory->CreateSwapChainForCoreWindow(commandQueue, coreWindow, &desc,
+                                                                                     nullptr, swapChain));
+                          });
     }
 
     /// @brief Resizes the swap chain buffers to the specified dimensions.
@@ -86,9 +87,41 @@ public:
 private:
     wil::unique_handle m_waitableObject = nullptr;
     bool m_tearingSupport = false;
+    bool m_windowed = true; ///< `true` for HWND swap chains, `false` for CoreWindow swap chains
+
+    template <typename FnCreateSwapChain>
+    bool CreateImpl(UINT dxgiFactoryFlags, DXGI_SWAP_CHAIN_DESC1 scDesc, UINT maxLatency,
+                    FnCreateSwapChain &&fnCreateSwapChain) {
+        wil::com_ptr_nothrow<IDXGIFactory6> factory;
+        wil::com_ptr_nothrow<IDXGISwapChain1> swapChain1;
+
+        if (FAILED(CreateDXGIFactory2(dxgiFactoryFlags, IID_PPV_ARGS(factory.put())))) {
+            return false;
+        }
+
+        BOOL allowTearing = FALSE;
+        factory->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &allowTearing, sizeof(allowTearing));
+        m_tearingSupport = allowTearing == TRUE;
+        if (m_tearingSupport) {
+            scDesc.Flags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
+        }
+
+        if (!fnCreateSwapChain(factory.get(), scDesc, swapChain1.put())) {
+            return false;
+        }
+
+        if (FAILED(swapChain1.copy_to(m_object.put()))) {
+            return false;
+        }
+        m_object->SetMaximumFrameLatency(maxLatency);
+        m_waitableObject.reset(m_object->GetFrameLatencyWaitableObject());
+
+        return true;
+    }
 
     void DestroyExt() {
-        if (m_object) {
+        // Exclusive fullscreen only exists for HWND swap chains
+        if (m_object && m_windowed) {
             m_object->SetFullscreenState(false, nullptr);
         }
         m_waitableObject.reset();

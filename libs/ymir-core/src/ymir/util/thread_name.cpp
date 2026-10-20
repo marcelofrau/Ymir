@@ -10,7 +10,10 @@
     #endif
     #include <Windows.h>
 
+    #if !YMIR_PLATFORM_UWP
+
 // Dynamically link to SetThreadDescription
+// UWP apps cannot use LoadLibrary, but SetThreadDescription is always available to them
 namespace util::detail {
 
 /// @brief Windows-specific dynamic linking helper for the `SetThreadDescription` function.
@@ -18,10 +21,11 @@ static struct ThreadDynamicLink {
     /// @brief Creates the dynamic link to `Kernel32.dll` and attempts to retrieve a pointer to the
     /// `SetThreadDescription` function.
     ThreadDynamicLink() {
-        hKernel32 = LoadLibrary("Kernel32.dll");
+        hKernel32 = LoadLibraryA("Kernel32.dll");
         if (hKernel32 != NULL) {
             fnSetThreadDescription = (FnSetThreadDescription)GetProcAddress(hKernel32, "SetThreadDescription");
-        } else {
+        }
+        if (fnSetThreadDescription == nullptr) {
             fnSetThreadDescription = [](HANDLE, PCWSTR) { return E_NOTIMPL; };
         }
     }
@@ -31,10 +35,12 @@ static struct ThreadDynamicLink {
     /// @brief `SetThreadDescription` function type.
     using FnSetThreadDescription = HRESULT(WINAPI *)(HANDLE hThread, PCWSTR lpThreadDescription);
     /// @brief `SetThreadDescription` function pointer. Will be `nullptr` if not linked.
-    FnSetThreadDescription fnSetThreadDescription;
+    FnSetThreadDescription fnSetThreadDescription = nullptr;
 } g_threadDynamicLink;
 
 } // namespace util::detail
+
+    #endif
 
 #elif defined(__linux__)
 
@@ -62,7 +68,11 @@ void SetCurrentThreadName(const char *threadName) {
         LPWSTR threadNameWstr = new wchar_t[length + 1];
         if (MultiByteToWideChar(CP_UTF8, 0, threadName, strlen(threadName), threadNameWstr, length) == length) {
             threadNameWstr[length] = 0;
+    #if YMIR_PLATFORM_UWP
+            SetThreadDescription(GetCurrentThread(), threadNameWstr);
+    #else
             detail::g_threadDynamicLink.fnSetThreadDescription(GetCurrentThread(), threadNameWstr);
+    #endif
         }
         delete[] threadNameWstr;
     }

@@ -1,6 +1,6 @@
 #include <ymir/util/virtual_memory.hpp>
 
-#ifdef WIN32
+#ifdef _WIN32
 
     #ifndef WIN32_LEAN_AND_MEAN
         #define WIN32_LEAN_AND_MEAN
@@ -18,7 +18,7 @@
 namespace util {
 
 struct VirtualMemory::Internal {
-#ifdef WIN32
+#ifdef _WIN32
     HANDLE hSection;
 #else // POSIX
 #endif
@@ -55,7 +55,11 @@ void VirtualMemory::Free() {
 }
 
 void VirtualMemory::Map(size_t size) {
-#ifdef WIN32
+#if defined(_WIN32) && YMIR_PLATFORM_UWP
+    // UWP apps must use the *FromApp variants of the file mapping APIs
+    m_internal->hSection = CreateFileMappingFromApp(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, size, nullptr);
+    m_mem = MapViewOfFileFromApp(m_internal->hSection, FILE_MAP_ALL_ACCESS, 0, size);
+#elif defined(_WIN32)
     m_internal->hSection = CreateFileMappingA(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, bit::extract<32, 63>(size),
                                               bit::extract<0, 31>(size), nullptr);
     m_mem = MapViewOfFile(m_internal->hSection, FILE_MAP_ALL_ACCESS, 0, 0, size);
@@ -66,7 +70,7 @@ void VirtualMemory::Map(size_t size) {
 }
 
 void VirtualMemory::Unmap() {
-#ifdef WIN32
+#ifdef _WIN32
     UnmapViewOfFile(m_mem);
     CloseHandle(m_internal->hSection);
     m_internal->hSection = INVALID_HANDLE_VALUE;
