@@ -45,8 +45,8 @@ Validado na máquina de origem em 2026-10-20 (VS Build Tools 2026 18.x, MSVC 14.
 | Shaders DXIL assinados (hash do container DXBC diferente de zero) | ✅ conferido |
 | Build desktop (preset `Full-x86-64-AVX2-MSVC-Release`) e testes continuam passando | ✅ 75/75 (seção 1.1) |
 | `scripts/uwp/package.ps1` → `out/dist/ymir-uwp_<ver>_x64.zip` (msix, cer, VCLibs, Install.ps1, INSTALL.md) + zip de símbolos | ✅ gerado e conferido |
-| CI/CD `.github/workflows/uwp.yml` (build, artifact, release por tag `uwp-v*`) | ⚠️ escrito e com os trechos PowerShell simulados localmente; **o primeiro run no GitHub ainda não aconteceu** (passo 15) |
-| Fallback VS 2022 (preset `UWP-x86-64-AVX2-MSVC-VS2022`) | ⚠️ configurado, mas **não compilado** (a máquina de origem só tem VS 2026); o CI valida se o runner não tiver VS 2026 |
+| CI/CD `.github/workflows/uwp.yml` (build, artifact, release por tag `uwp-v*`) | ✅ primeiro run verde em 2026-10-20 (runner `windows-2025` com **Visual Studio Enterprise 2026**, versão 0.4.0.2, artifacts `ymir-uwp-0.4.0.2` e `-symbols`). A publicação de release por tag ainda não foi exercitada (passo 15) |
+| Fallback VS 2022 (preset `UWP-x86-64-AVX2-MSVC-VS2022`) | ⚠️ configurado, mas **não compilado**: a máquina de origem e o runner do GitHub têm VS 2026 |
 | **Rodar o app** (PC ou Xbox) | ❌ **não testado**: a máquina de origem não tem Xbox e é corporativa |
 
 ### 1.1 Resultado da regressão desktop
@@ -419,6 +419,7 @@ Escolha **uma** das opções:
 | Data | Passo | Resultado | Notas / erro / log anexado |
 |---|---|---|---|
 | 2026-10-20 | 1–6 | OK (máquina de origem) | `.msix` Debug e Release sem erros; regressão desktop 75/75 |
+| 2026-10-20 | 15 (parcial) | OK | Run 39396157010 do `uwp.yml` verde com VS 2026 no runner; artifact de 5,3 MB |
 | | | | |
 
 ---
