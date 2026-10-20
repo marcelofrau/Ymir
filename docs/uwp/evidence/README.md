@@ -76,6 +76,46 @@ Run 05 with that build answers the question unambiguously.
    `CoreWindow::GetForCurrentThread()` / `ApplicationView::GetForCurrentView()`. Speculative; owed to the
    "island for this CoreWindow has not been initialized" symptom that appears on every run.
 
+## Root cause analysis of run 04 (source reading, 2026-10-20)
+
+Reading `vendor/SDL3-uwp/src/audio/wasapi/` explains the hang. Opening the default playback device on UWP goes
+through two blocking waits on two threads:
+
+1. `SDL_OpenAudioDeviceStream()` on the **UI thread** (the thread that runs `main()`) reaches `WASAPI_OpenDevice()` →
+   `ActivateWasapiDevice()`, which proxies the work to SDL's WASAPI **management thread** with
+   `WASAPI_ProxyToManagementThread(..., wait_on_result)` and **blocks the UI thread** until it returns
+   (`SDL_wasapi.c`, `mgmtthrtask_ActivateDevice`).
+2. On the management thread, `WASAPI_ActivateDevice()` (`SDL_wasapi_winrt.cpp`) calls `ActivateAudioInterfaceAsync()`
+   and **blocks on a semaphore** until the completion handler fires. SDL itself flags this wait with a `FIXME`
+   ("this can block indefinitely...").
+
+`ActivateAudioInterfaceAsync()` is documented to be called from the UI thread in UWP apps. When it is called from
+another thread, the activation is serviced through the app's UI (ASTA) thread. That thread is blocked in step 1, so
+the completion handler never runs: **a deadlock**. This matches every observation in run 04:
+- the process stays alive;
+- `AudioSes.dll` is the last module loaded;
+- no marker prints after `initializing audio`, including `SDL_OpenAudioDeviceStream returned`.
+
+### Fix (pending run 05 to confirm)
+
+`apps/ymir-sdl3/src/app/audio_system.cpp` → `OpenAudioDeviceStreamWithoutBlockingUIThread()` (UWP only):
+- opens the device from a worker thread;
+- meanwhile the UI thread keeps calling `SDL_PumpEvents()`, which runs `CoreDispatcher::ProcessEvents` on WinRT, so the
+  activation can complete;
+- if the device is still not open after 10 s, `Init()` fails with `Timed out after 10 seconds opening the default
+  audio playback device`, so the app reports a clear startup failure instead of hanging.
+
+`SDL_PumpEvents()` is safe to call while the worker is inside `SDL_OpenAudioDeviceStream()`: the only audio work it
+does is `SDL_UpdateAudio()`, which takes `subsystem_rwlock` briefly and never waits on the device lock held by the
+open path.
+
+The SDL3-uwp submodule is left untouched on purpose (see `AGENTS.md`, rule 3).
+
+**What run 05 must show:** `[Ymir audio] Init(): SDL_OpenAudioDeviceStream returned a stream`, then
+`Start(): OK`, then `Audio stream opened: 48000 Hz, ...` and the main loop. If it shows the timeout message instead,
+the deadlock hypothesis is wrong and the activation never completes for another reason. The next step would then be
+to look at the WinRT device watcher / `GetDefaultAudioRenderId` path, or at the audio capabilities in the manifest.
+
 ## Hypotheses already eliminated
 
 | Hypothesis | Why it is dead |

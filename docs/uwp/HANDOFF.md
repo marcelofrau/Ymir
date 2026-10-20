@@ -395,6 +395,37 @@ o `README.md` atualizado, para que o diagnóstico não dependa de resumo de conv
 (gfx_context_impl_d3d12.cpp) e `YMIR_AUDIO_TRACE` (audio_system.cpp) são **temporárias** e devem ser removidas quando o
 boot estiver estável. Todas aparecem só sob `YMIR_PLATFORM_UWP`.
 
+
+### Entrada do agente Claude — 2026-10-20 (2ª): deadlock na abertura do áudio
+
+**Escopo lido:** commit `def6f691`, `docs/uwp/evidence/README.md`, raw do run 04 e o caminho WASAPI do SDL3-uwp
+(`vendor/SDL3-uwp/src/audio/wasapi/SDL_wasapi.c` e `SDL_wasapi_winrt.cpp`).
+
+**Causa provável (lida no código, falta o run 05 confirmar):**
+- o `SDL_OpenAudioDeviceStream()` na **UI thread** repassa a ativação pra *management thread* do SDL e **bloqueia a
+  UI thread**;
+- a management thread chama `ActivateAudioInterfaceAsync()` e **bloqueia** esperando o callback;
+- no UWP essa ativação é atendida pela UI thread, que está parada.
+
+Resultado: **deadlock**. Isso bate com o run 04: processo vivo, `AudioSes.dll` como último módulo carregado, nenhum
+marcador depois de `initializing audio`. Detalhes em `docs/uwp/evidence/README.md` → "Root cause analysis of run 04".
+
+**Correção (não commitada, aguardando pedido do usuário):** `apps/ymir-sdl3/src/app/audio_system.cpp`, só no UWP:
+- abre o áudio numa thread auxiliar enquanto a UI thread chama `SDL_PumpEvents()` em loop;
+- com timeout de 10 s, depois do qual falha com mensagem clara em vez de travar;
+- o SDL3-uwp não foi alterado.
+
+Compilado aqui: UWP Debug e desktop.
+
+**Próximo passo:** run 05 no Xbox. Esperado no Output:
+1. `[Ymir audio] Init(): SDL_OpenAudioDeviceStream returned a stream`;
+2. `Start(): OK`;
+3. `Audio stream opened: ...`;
+4. a UI do Ymir na tela.
+
+Se aparecer `Timed out after 10 seconds opening the default audio playback device`, a hipótese do deadlock está
+errada; siga o README de evidências.
+
 ---
 
 ## 1. Estado atual (o que já está pronto e validado)
