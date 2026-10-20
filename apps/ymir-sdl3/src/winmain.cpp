@@ -1,5 +1,6 @@
 // Win32 WinMain entrypoint that redirects to int main(int argc, char **argv)
-#if defined(_WIN32)
+// UWP builds use the WinRT entrypoint provided by SDL3-uwp instead (see main.cpp)
+#if defined(_WIN32) && !YMIR_PLATFORM_UWP
 
     #ifndef WIN32_LEAN_AND_MEAN
         #define WIN32_LEAN_AND_MEAN

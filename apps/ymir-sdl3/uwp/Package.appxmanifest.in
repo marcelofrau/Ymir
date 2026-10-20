@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  UWP package manifest for Ymir (Xbox Dev Mode / Windows).
+  Configured by apps/ymir-sdl3/CMakeLists.txt; edit this template, not the generated copy in the build directory.
+
+  Publisher must match the subject of the certificate used to sign the package:
+  - Default: "CN=CMake Test Cert", the fallback key CMake uses when no .pfx is provided.
+  - Custom: set Ymir_UWP_PUBLISHER and Ymir_UWP_CERTIFICATE (see scripts/uwp/new-dev-certificate.ps1).
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap rescap">
+
+  <Identity
+    Name="@Ymir_UWP_PACKAGE_NAME@"
+    Publisher="@Ymir_UWP_PUBLISHER@"
+    Version="@Ymir_VERSION_MAJOR@.@Ymir_VERSION_MINOR@.@Ymir_VERSION_PATCH@.0" />
+
+  <Properties>
+    <DisplayName>Ymir</DisplayName>
+    <PublisherDisplayName>Ymir UWP port</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily
+      Name="Windows.Universal"
+      MinVersion="10.0.17763.0"
+      MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="x-generate" />
+  </Resources>
+
+  <Applications>
+    <Application
+      Id="App"
+      Executable="$targetnametoken$.exe"
+      EntryPoint="Ymir.App">
+
+      <uap:VisualElements
+        DisplayName="Ymir"
+        Description="Ymir - Sega Saturn emulator"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png"
+        BackgroundColor="transparent">
+
+        <uap:DefaultTile
+          ShortName="Ymir"
+          Wide310x150Logo="Assets\Wide310x150Logo.png"
+          Square310x310Logo="Assets\LargeTile.png"
+          Square71x71Logo="Assets\SmallTile.png" />
+
+        <uap:SplashScreen Image="Assets\SplashScreen.png" />
+      </uap:VisualElements>
+
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <!-- No codeGeneration: Ymir's CPU cores are interpreters and never allocate executable memory -->
+    <!-- No network capabilities: update checks and Discord Rich Presence are compiled out on UWP -->
+    <uap:Capability Name="removableStorage" />
+    <rescap:Capability Name="runFullTrust" />
+    <rescap:Capability Name="broadFileSystemAccess" />
+    <rescap:Capability Name="expandedResources" />
+  </Capabilities>
+
+</Package>

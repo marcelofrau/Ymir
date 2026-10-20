@@ -22,16 +22,22 @@ CMRC_DECLARE(Ymir_sdl3_rc);
 
 // Includes for versions only
 #include <SDL3/SDL.h>
-#include <curl/curlver.h>
+#if Ymir_ENABLE_UPDATE_CHECKER
+    #include <curl/curlver.h>
+#endif
 #include <cxxopts.hpp>
 #include <dr_libs/dr_mp3.h>
 #include <fmt/format.h>
 #include <lz4.h>
-#include <nghttp2/nghttp2ver.h>
-#include <nghttp3/version.h>
-#include <ngtcp2/version.h>
+#if Ymir_ENABLE_UPDATE_CHECKER
+    #include <nghttp2/nghttp2ver.h>
+    #include <nghttp3/version.h>
+    #include <ngtcp2/version.h>
+#endif
 #include <nlohmann/json.hpp>
-#include <openssl/opensslv.h>
+#if Ymir_ENABLE_UPDATE_CHECKER
+    #include <openssl/opensslv.h>
+#endif
 #include <rtmidi/RtMidi.h>
 #include <semver.hpp>
 #include <toml++/toml.hpp>
@@ -116,10 +122,14 @@ static const struct {
     const bool repoPrivate = false;
     const char *homeURL = nullptr;
 } depsCode[] = {
+#if Ymir_ENABLE_UPDATE_CHECKER
     {.name = "Brotli",                        .version = BROTLI_VERSION,             .license = licenseMIT,           .repoURL = "https://github.com/google/brotli",               .licenseURL = "https://github.com/google/brotli/blob/master/LICENSE"},
+#endif
     {.name = "cereal",                        .version = CEREAL_VERSION,             .license = licenseBSD3,          .repoURL = "https://github.com/USCiLab/cereal",              .licenseURL = "https://github.com/USCiLab/cereal/blob/master/LICENSE",                  .homeURL = "https://uscilab.github.io/cereal/index.html"},
     {.name = "CMakeRC",                       .version = CMRC_VERSION,               .license = licenseMIT,           .repoURL = "https://github.com/vector-of-bool/cmrc",         .licenseURL = "https://github.com/vector-of-bool/cmrc/blob/master/LICENSE.txt"},
+#if Ymir_ENABLE_UPDATE_CHECKER
     {.name = "curl",                          .version = CURL_VERSION,               .license = licenseMITCurl,       .repoURL = "https://github.com/curl/curl",                   .licenseURL = "https://github.com/curl/curl/blob/master/COPYING",                       .homeURL = "https://curl.se/"},
+#endif
     {.name = "cxxopts",                       .version = CXXOPTS_VERSION,            .license = licenseMIT,           .repoURL = "https://github.com/jarro2783/cxxopts",           .licenseURL = "https://github.com/jarro2783/cxxopts/blob/master/LICENSE"},
     {.name = "date",                          .version = DATE_VERSION,               .license = licenseMIT,           .repoURL = "https://github.com/HowardHinnant/date",          .licenseURL = "https://github.com/HowardHinnant/date/blob/master/LICENSE.txt"},
     {.name = "Dear ImGui",                    .version = IMGUI_VERSION_FULL,         .license = licenseMIT,           .repoURL = "https://github.com/ocornut/imgui",               .licenseURL = "https://github.com/ocornut/imgui/blob/master/LICENSE.txt"},
@@ -133,11 +143,19 @@ static const struct {
     {.name = "miniz",                         .version = MZ_VERSION,                 .license = licenseMIT,           .repoURL = "https://github.com/richgel999/miniz",            .licenseURL = "https://github.com/richgel999/miniz/blob/master/LICENSE"},
     {.name = "moodycamel::\nConcurrentQueue", .version = "\n" MC_CONCQUEUE_VERSION,  .license = licenseBSD2,          .repoURL = "https://github.com/cameron314/concurrentqueue",  .licenseURL = "https://github.com/cameron314/concurrentqueue/blob/master/LICENSE.md"},
     {.name = "Neargye/semver",                .version = SEMVER_VERSION,             .license = licenseMIT,           .repoURL = "https://github.com/Neargye/semver",              .licenseURL = "https://github.com/Neargye/semver/blob/master/LICENSE"},
+#if Ymir_ENABLE_UPDATE_CHECKER
     {.name = "nghttp2",                       .version = NGHTTP2_VERSION,            .license = licenseMIT,           .repoURL = "https://github.com/nghttp2/nghttp2",             .licenseURL = "https://github.com/nghttp2/nghttp2/blob/master/COPYING",                 .homeURL = "https://nghttp2.org/"},
+#endif
+#if Ymir_ENABLE_UPDATE_CHECKER
     {.name = "nghttp3",                       .version = NGHTTP3_VERSION,            .license = licenseMIT,           .repoURL = "https://github.com/ngtcp2/nghttp3",              .licenseURL = "https://github.com/ngtcp2/nghttp3/blob/main/COPYING",                    .homeURL = "https://nghttp2.org/nghttp3/"},
+#endif
+#if Ymir_ENABLE_UPDATE_CHECKER
     {.name = "ngtcp2",                        .version = NGTCP2_VERSION,             .license = licenseMIT,           .repoURL = "https://github.com/ngtcp2/ngtcp2",               .licenseURL = "https://github.com/ngtcp2/ngtcp2/blob/main/COPYING",                     .homeURL = "https://nghttp2.org/ngtcp2/"},
+#endif
     {.name = "nlohmann/json",                 .version = NLOHMANN_JSON_VERSION,      .license = licenseMIT,           .repoURL = "https://github.com/nlohmann/json",               .licenseURL = "https://github.com/nlohmann/json/blob/develop/LICENSE.MIT",              .homeURL = "https://json.nlohmann.me/"},
+#if Ymir_ENABLE_UPDATE_CHECKER
     {.name = "OpenSSL",                       .version = OPENSSL_FULL_VERSION_STR,   .license = licenseApache2_0,     .repoURL = "https://github.com/openssl/openssl",             .licenseURL = "https://github.com/openssl/openssl/blob/master/LICENSE.txt",             .homeURL = "https://www.openssl.org/"},
+#endif
     {.name = "RtMidi",                        .version = RTMIDI_VERSION,             .license = licenseMITRtMidi,     .repoURL = "https://github.com/thestk/rtmidi",               .licenseURL = "https://github.com/thestk/rtmidi/blob/master/LICENSE"},
     {.name = "SDL3",                          .version = SDL_VERSION_STR,            .license = licenseZlib,          .repoURL = "https://github.com/libsdl-org/SDL",              .licenseURL = "https://github.com/libsdl-org/SDL/blob/main/LICENSE.txt"},
     {.name = "SDL_GameControllerDB",                                                 .license = licenseZlib,          .repoURL = "https://github.com/mdqinc/SDL_GameControllerDB", .licenseURL = "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/LICENSE"},

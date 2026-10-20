@@ -10,9 +10,32 @@
     #include <objc/message.h>
 #endif
 
+#if YMIR_PLATFORM_UWP
+    #include <platform/uwp/uwp_platform.hpp>
+
+    // SDL3-uwp provides the WinRT entrypoint, which initializes CoreApplication and calls main() (renamed to SDL_main)
+    #include <SDL3/SDL_main.h>
+#endif
+
 #include <memory>
 
 int main(int argc, char **argv) {
+#if YMIR_PLATFORM_UWP
+    // The WinRT entrypoint does not pass any command line arguments
+    static char uwpProgramName[] = "Ymir";
+    static char *uwpArgv[] = {uwpProgramName, nullptr};
+    if (argc < 1 || argv == nullptr) {
+        argc = 1;
+        argv = uwpArgv;
+    }
+
+    // There is no console on UWP; send the development log to LocalState\StrikerX3\Ymir\ymir-uwp.log
+    platform::uwp::RedirectStdioToLogFile();
+
+    // Draw to the whole screen instead of the TV-safe area on Xbox
+    platform::uwp::UseFullCoreWindowBounds();
+#endif
+
 #if defined(_WIN32)
     // NOTE: Setting the main thread name on Linux and macOS replaces the process name displayed on tools like `top`.
     util::SetCurrentThreadName("Main thread");

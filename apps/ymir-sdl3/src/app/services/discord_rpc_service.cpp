@@ -3,7 +3,9 @@
 #include <ymir/media/cd_interface.hpp>
 #include <ymir/util/string.hpp>
 
-#include <discord_rpc.h>
+#if Ymir_ENABLE_DISCORD_RPC
+    #include <discord_rpc.h>
+#endif
 
 #include <fmt/format.h>
 
@@ -30,6 +32,9 @@ DiscordRPCService::~DiscordRPCService() {
 }
 
 void DiscordRPCService::Poll() {
+#if !Ymir_ENABLE_DISCORD_RPC
+    return;
+#endif
     if (!m_settings.general.enableDiscordPresence) {
         Stop();
         return;
@@ -39,7 +44,9 @@ void DiscordRPCService::Poll() {
         Start();
     }
 
+#if Ymir_ENABLE_DISCORD_RPC
     Discord_RunCallbacks();
+#endif
     Update();
 }
 
@@ -47,14 +54,18 @@ void DiscordRPCService::Stop() {
     if (!m_ready) {
         return;
     }
+#if Ymir_ENABLE_DISCORD_RPC
     Discord_ClearPresence();
     Discord_Shutdown();
+#endif
     m_ready = false;
 }
 
 void DiscordRPCService::Start() {
+#if Ymir_ENABLE_DISCORD_RPC
     DiscordEventHandlers handlers{};
     Discord_Initialize(kAppId, &handlers, 1, nullptr);
+#endif
     m_startedAt = 0;
     m_ready = true;
     m_details.clear();
@@ -118,11 +129,13 @@ void DiscordRPCService::Update() {
     m_details = std::move(details);
     m_state = std::move(state);
 
+#if Ymir_ENABLE_DISCORD_RPC
     DiscordRichPresence rp{};
     rp.details = m_details.c_str();
     rp.state = m_state.c_str();
     rp.startTimestamp = m_startedAt;
     Discord_UpdatePresence(&rp);
+#endif
 }
 
 } // namespace app::services

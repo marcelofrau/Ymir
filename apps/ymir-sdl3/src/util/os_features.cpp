@@ -1,7 +1,9 @@
 #include "os_features.hpp"
 
 #if defined(_WIN32)
-    #include <dwmapi.h>
+    #if !YMIR_PLATFORM_UWP
+        #include <dwmapi.h>
+    #endif
     #include <fileapi.h>
 #endif
 
@@ -10,7 +12,7 @@
 namespace util::os {
 
 void ConfigureWindowDecorations(SDL_Window *window) {
-#if defined(_WIN32)
+#if defined(_WIN32) && !YMIR_PLATFORM_UWP
     SDL_PropertiesID props = SDL_GetWindowProperties(window);
     auto hwnd =
         static_cast<HWND>(SDL_GetPointerProperty(props, SDL_PROP_WINDOW_WIN32_HWND_POINTER, INVALID_HANDLE_VALUE));

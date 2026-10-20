@@ -113,6 +113,10 @@
 #include <util/os_features.hpp>
 #include <util/std_lib.hpp>
 
+#if YMIR_PLATFORM_UWP
+    #include <platform/uwp/uwp_platform.hpp>
+#endif
+
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_messagebox.h>
@@ -353,6 +357,18 @@ int App::Run(const CommandLineOptions &options) {
     } else if (options.forceUserProfile) {
         // -u option
         m_context.profile.UseUserProfilePath();
+#if YMIR_PLATFORM_UWP
+    } else {
+        // UWP: the package install folder is read-only and the first-run dialog makes no sense on a console.
+        // Use a writable <drive>:\Ymir folder if the user created one (e.g. on a USB drive), otherwise LocalState.
+        if (auto externalPath = platform::uwp::FindExternalProfilePath(); !externalPath.empty()) {
+            m_context.profile.UseProfilePath(externalPath);
+        } else {
+            m_context.profile.UseUserProfilePath();
+        }
+        devlog::info<grp::base>("UWP profile path: {}", m_context.profile.GetPath(ProfilePath::Root));
+    }
+#else
     } else {
         bool hasSettingsFile = false;
 
@@ -433,6 +449,7 @@ int App::Run(const CommandLineOptions &options) {
             }
         }
     }
+#endif
 
     // TODO: allow overriding configuration from CommandLineOptions without modifying the underlying values
 
@@ -594,6 +611,11 @@ void App::RunEmulator() {
 
     // ---------------------------------
     // Initialize SDL subsystems
+
+#if YMIR_PLATFORM_UWP
+    // Mark the Xbox B button / system back requests as handled so that the app is not sent to the background
+    SDL_SetHint(SDL_HINT_WINRT_HANDLE_BACK_BUTTON, "1");
+#endif
 
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD | SDL_INIT_EVENTS)) {
         ShowStartupFailure("Failed to initialize SDL: {}", SDL_GetError());

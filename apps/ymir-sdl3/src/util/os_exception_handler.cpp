@@ -43,9 +43,17 @@ static void ShowExceptionDialog(const char *msg) {
 }
 
 // -----------------------------------------------------------------------------
+// UWP implementation
+// Vectored exception handlers are not available to UWP apps
+
+#if YMIR_PLATFORM_UWP
+
+void RegisterExceptionHandler(bool allExceptions) {}
+
+// -----------------------------------------------------------------------------
 // Windows implementation
 
-#ifdef _WIN32
+#elif defined(_WIN32)
 
 static PVOID g_vehPtr = nullptr;
 bool g_allExcpt = false;

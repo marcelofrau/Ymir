@@ -22,7 +22,6 @@ add_executable(ymir-sdl3
     src/app/shared_context.cpp
     src/app/shared_context.hpp
     src/app/toml_implementation.cpp
-    src/app/update_checker.cpp
     src/app/update_checker.hpp
 
     src/app/debug/cdblock_tracer.cpp
@@ -421,6 +420,21 @@ add_executable(ymir-sdl3
 )
 add_executable(ymir::ymir-sdl3 ALIAS ymir-sdl3)
 
+## Add UWP platform integration
+if (Ymir_PLATFORM_UWP)
+    target_sources(ymir-sdl3 PRIVATE
+        src/platform/uwp/uwp_platform.cpp
+        src/platform/uwp/uwp_platform.hpp
+    )
+endif ()
+
+## Add the update checker implementation (requires libcurl)
+if (Ymir_ENABLE_UPDATE_CHECKER)
+    target_sources(ymir-sdl3 PRIVATE src/app/update_checker.cpp)
+else ()
+    target_sources(ymir-sdl3 PRIVATE src/app/update_checker_null.cpp)
+endif ()
+
 ## Add platform-specific graphics context implementations
 if (WIN32)
     target_sources(ymir-sdl3 PRIVATE
@@ -528,8 +542,10 @@ endif()
 find_package(cereal CONFIG REQUIRED)
 find_package(cxxopts CONFIG REQUIRED)
 find_package(date CONFIG REQUIRED)
-find_package(OpenSSL CONFIG REQUIRED)
-find_package(CURL REQUIRED)
+if (Ymir_ENABLE_UPDATE_CHECKER)
+    find_package(OpenSSL CONFIG REQUIRED)
+    find_package(CURL REQUIRED)
+endif ()
 find_package(rtmidi CONFIG REQUIRED)
 find_package(SDL3 CONFIG REQUIRED)
 find_package(tomlplusplus CONFIG REQUIRED)
@@ -552,18 +568,25 @@ target_link_libraries(ymir-sdl3 PRIVATE
     tomlplusplus::tomlplusplus
     cereal::cereal
     lz4::lz4
-    discord-rpc
     RtMidi::rtmidi
-    CURL::libcurl_static
     stb::stb
     dr_libs::dr_libs
 )
+if (Ymir_ENABLE_DISCORD_RPC)
+    target_link_libraries(ymir-sdl3 PRIVATE discord-rpc)
+endif ()
+if (Ymir_ENABLE_UPDATE_CHECKER)
+    target_link_libraries(ymir-sdl3 PRIVATE CURL::libcurl_static)
+endif ()
 if (WIN32)
     target_link_libraries(ymir-sdl3 PRIVATE
-        Dwmapi
-
         WIL::WIL
     )
+    if (NOT Ymir_PLATFORM_UWP)
+        target_link_libraries(ymir-sdl3 PRIVATE
+            Dwmapi
+        )
+    endif ()
 endif ()
 target_compile_features(ymir-sdl3 PUBLIC cxx_std_20)
 
@@ -621,13 +644,18 @@ if (APPLE)
 endif()
 
 ## Add icon
-if (WIN32)
+if (WIN32 AND NOT Ymir_PLATFORM_UWP)
     target_sources(ymir-sdl3 PRIVATE res/ymir.rc)
 endif ()
 
 ## Make it a Win32 executable (without a console window) on Windows
-if (WIN32 AND NOT Ymir_ENABLE_DEVLOG)
+if (WIN32 AND NOT Ymir_PLATFORM_UWP AND NOT Ymir_ENABLE_DEVLOG)
     set_target_properties(ymir-sdl3 PROPERTIES WIN32_EXECUTABLE ON)
+endif ()
+
+## Package as a UWP app (Xbox Dev Mode / Windows)
+if (Ymir_PLATFORM_UWP)
+    include(uwp/UWPPackaging.cmake)
 endif ()
 
 if (IPO_SUPPORTED AND Ymir_ENABLE_IPO)
@@ -638,6 +666,8 @@ endif()
 ## Define additional macros
 target_compile_definitions(ymir-sdl3 PUBLIC Ymir_ENABLE_IMGUI_DEMO=$<BOOL:${Ymir_ENABLE_IMGUI_DEMO}>)
 target_compile_definitions(ymir-sdl3 PUBLIC Ymir_ENABLE_UPDATE_CHECKS=$<BOOL:${Ymir_ENABLE_UPDATE_CHECKS}>)
+target_compile_definitions(ymir-sdl3 PRIVATE Ymir_ENABLE_DISCORD_RPC=$<BOOL:${Ymir_ENABLE_DISCORD_RPC}>)
+target_compile_definitions(ymir-sdl3 PRIVATE Ymir_ENABLE_UPDATE_CHECKER=$<BOOL:${Ymir_ENABLE_UPDATE_CHECKER}>)
 target_compile_definitions(ymir-sdl3 PUBLIC Ymir_ORGANIZATION_NAME="StrikerX3")
 target_compile_definitions(ymir-sdl3 PUBLIC Ymir_APP_NAME="${PROJECT_NAME}")
 if (Ymir_FF_ENABLE_UNIMPL_GFX_BACKENDS)

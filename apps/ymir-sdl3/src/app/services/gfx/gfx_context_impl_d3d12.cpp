@@ -230,6 +230,21 @@ struct Direct3D12GraphicsContext::Impl {
         }
 
         SDL_PropertiesID windowProps = SDL_GetWindowProperties(spec.window);
+#if YMIR_PLATFORM_UWP
+        // SDL3-uwp exposes the CoreWindow instead of an HWND
+        auto coreWindow =
+            static_cast<IUnknown *>(SDL_GetPointerProperty(windowProps, SDL_PROP_WINDOW_WINRT_WINDOW_POINTER, nullptr));
+        if (coreWindow == nullptr) {
+            return util::ErrorMessage{"Could not get CoreWindow"};
+        }
+
+        int windowWidth = 0;
+        int windowHeight = 0;
+        if (!SDL_GetWindowSizeInPixels(spec.window, &windowWidth, &windowHeight)) {
+            return util::ErrorMessage{"Could not get window client area size"};
+        }
+        RECT windowRect{.left = 0, .top = 0, .right = windowWidth, .bottom = windowHeight};
+#else
         auto hwnd = static_cast<HWND>(SDL_GetPointerProperty(windowProps, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
         if (hwnd == nullptr) {
             return util::ErrorMessage{"Could not get window handle"};
@@ -239,6 +254,7 @@ struct Direct3D12GraphicsContext::Impl {
         if (!GetClientRect(hwnd, &windowRect)) {
             return util::ErrorMessage{"Could not get window client area size"};
         }
+#endif
 
         viewport.TopLeftX = 0.0f;
         viewport.TopLeftY = 0.0f;
@@ -300,9 +316,16 @@ struct Direct3D12GraphicsContext::Impl {
         swapChainDesc.SampleDesc.Count = 1;
         swapChainDesc.Scaling = DXGI_SCALING_NONE;
         swapChainDesc.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+#if YMIR_PLATFORM_UWP
+        if (!swapchain.CreateForCoreWindow(dxgiFactoryFlags, cmdQueue.GetPointer(), swapChainDesc, coreWindow,
+                                           kFrameCount)) {
+            return util::ErrorMessage{"Failed to create swapchain"};
+        }
+#else
         if (!swapchain.Create(dxgiFactoryFlags, cmdQueue.GetPointer(), swapChainDesc, hwnd, kFrameCount)) {
             return util::ErrorMessage{"Failed to create swapchain"};
         }
+#endif
         frameIndex = swapchain->GetCurrentBackBufferIndex();
 
         // Create descriptor heaps

@@ -8,6 +8,10 @@
 #include <fmt/format.h>
 #include <fmt/std.h>
 
+#if YMIR_PLATFORM_UWP
+    #include <platform/uwp/uwp_platform.hpp>
+#endif
+
 namespace app::services {
 
 static const char *StrNullIfEmpty(const std::string &str) {
@@ -58,6 +62,14 @@ void FileDialogService::InvokeSelectFolderDialog(const FolderDialogParams &param
 void FileDialogService::InvokeFileDialog(SDL_FileDialogType type, const char *title, void *filters, int numFilters,
                                          bool allowMany, const char *location, void *userdata,
                                          SDL_DialogFileCallback callback) const {
+#if YMIR_PLATFORM_UWP
+    // SDL3-uwp has no file dialog implementation in its CMake build; use WinRT pickers instead.
+    // UWP apps are always fullscreen, so there is no exclusive fullscreen mode to work around.
+    platform::uwp::ShowFileDialog(type, callback, userdata, static_cast<const SDL_DialogFileFilter *>(filters),
+                                  numFilters, allowMany);
+    return;
+#endif
+
     SDL_PropertiesID props = m_fileDialogProps;
 
     SDL_SetStringProperty(props, SDL_PROP_FILE_DIALOG_TITLE_STRING, title);

@@ -1,6 +1,8 @@
 #pragma once
 
-#include <curl/curl.h>
+#if Ymir_ENABLE_UPDATE_CHECKER
+    #include <curl/curl.h>
+#endif
 #include <semver.hpp>
 
 #include <filesystem>
@@ -43,10 +45,12 @@ struct UpdateChecker {
     UpdateResult Check(ReleaseChannel channel, std::filesystem::path cacheRoot, UpdateCheckMode mode);
 
 private:
+#if Ymir_ENABLE_UPDATE_CHECKER
     CURL *m_curl = nullptr;
     curl_slist *m_headerList = nullptr;
 
     CURLcode DoRequest(std::string &out, const char *url);
+#endif
 };
 
 } // namespace app

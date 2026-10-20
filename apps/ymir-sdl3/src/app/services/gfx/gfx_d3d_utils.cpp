@@ -4,7 +4,9 @@
 
 #include <wil/com.h>
 
-#include <d3dkmthk.h> // must come after wil/com.h for NTSTATUS
+#if !YMIR_PLATFORM_UWP
+    #include <d3dkmthk.h> // must come after wil/com.h for NTSTATUS
+#endif
 
 #include <cassert>
 
@@ -40,6 +42,15 @@ void EnumerateDXGIGraphicsAdapters() {
             continue;
         }
 
+#if YMIR_PLATFORM_UWP
+        // D3DKMT is not available to UWP apps, so the PCIe address of the adapter cannot be queried.
+        // Use the enumeration order as the identifier instead; Xbox consoles only have one adapter.
+        struct {
+            UINT BusNumber;
+            UINT DeviceNumber;
+            UINT FunctionNumber;
+        } address{.BusNumber = static_cast<UINT>(g_adapters.size()), .DeviceNumber = 0, .FunctionNumber = 0};
+#else
         D3DKMT_OPENADAPTERFROMLUID openAdapter{};
         openAdapter.AdapterLuid = desc.AdapterLuid;
         NTSTATUS status = D3DKMTOpenAdapterFromLuid(&openAdapter);
@@ -57,6 +68,7 @@ void EnumerateDXGIGraphicsAdapters() {
         if (status != STATUS_SUCCESS) {
             continue;
         }
+#endif
 
         DXGIGraphicsAdapter &adapter = g_adapters.emplace_back();
         adapter.luid = (static_cast<uint64>(desc.AdapterLuid.HighPart) << 32ull) | desc.AdapterLuid.LowPart;
