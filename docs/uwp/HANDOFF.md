@@ -25,6 +25,95 @@
    `cmake --fresh` (os scripts aceitam `-Reconfigure`/`-Clean`).
 7. **Não faça commit de** `scripts/uwp/xbox.env`, `*.pfx`, nem nada dentro de `out/`.
 8. Commits pequenos, um por correção, mensagem no formato `uwp: <o que mudou>`.
+9. **Nunca faça deploy nem inicie o app** (PC ou Xbox). Nada de `deploy-xbox.ps1`, `Add-AppxPackage`, `Install.ps1`
+   nem anexar debugger. O agente **edita e compila**; **o usuário** roda o F5 no Visual Studio 2026 direto no Xbox e
+   devolve o log. Espere o relatório dele antes de continuar.
+10. **Nunca faça `git commit` nem `git push` sem pedido explícito** do usuário.
+11. **Tudo é escrito em inglês** — comentários, Doxygen, mensagens de commit e documentação. Só a conversa com o
+    usuário é em português. Comente a lógica não óbvia; não deixe nada implícito.
+
+---
+
+## 0.1 Registro de passagem entre agentes (leia antes de tudo)
+
+> Este handoff é o **canal de comunicação entre agentes**. Cada agente que trabalha no port registra aqui o que leu,
+> o que fez, o que provou e o que deixou pendente para o próximo. **Não apague entradas antigas** — anexe as novas.
+
+### Entrada do agente OpenCode — 2026-10-20 (sessão da máquina de destino, com Xbox)
+
+**Escopo lido:** seções 0, 1, 4 (T-01..T-18), 5, 6. Branch `uwp/main`, HEAD `39aa6355`.
+
+**Contexto:** esta sessão roda na **máquina de destino**, com Xbox em Dev Mode e VS 2026. O usuário compila pelo agente
+e testa por F5 no VS 2026 direto no console.
+
+**O que foi validado empiricamente nesta sessão:**
+
+1. **O crash de `SDL_GetCurrentDirectory()` está resolvido.** O commit `39aa6355` (fix já existente no branch, alinhado
+   ao diagnóstico do agente anterior) fez o app **sair do splash-crash e entrar no `main()`** no Xbox. Provado com
+   marcadores de boot no Output do VS.
+2. **A ordem de boot no Xbox está confirmada até o `App::Run()`:**
+
+   ```
+   [Ymir boot] main() entered
+   [Ymir boot] log redirection done: Q:\Users\UserMgr2\AppData\Local\Packages\Ymir.SaturnEmulator.UWP_d7c8pgvss6ysm\LocalState\StrikerX3\Ymir\ymir-uwp.log
+   [Ymir boot] core window bounds set
+   [Ymir boot] App::Run() entered
+   ```
+
+   Ou seja: `main()`, `RedirectStdioToLogFile()`, `UseFullCoreWindowBounds()` e a **entrada** do `App::Run()` todos
+   executam. **O novo sintoma é: a tela fica no splash e o app não sai do `App::Run()` inicial** (não trava, não
+   crasha — o log do VS mostra desligamento limpo com `thread exited with code 0`).
+
+**Suspeitas levantadas (NÃO confirmadas — precisam de dado):**
+
+- **T-12 tem a receita errada ou incompleta.** O documento manda trocar `DXGI_SCALING_NONE` por `DXGI_SCALING_STRETCH`
+  sob UWP. Duas correções ao documento:
+  1. O `#if YMIR_PLATFORM_UWP` que existe em `gfx_context_impl_d3d12.cpp` (~linha 319) é do `CreateForCoreWindow`,
+     **não** do `Scaling` — a linha do `Scaling` continua incondicional. Então a receita **nunca foi aplicada**.
+  2. A doc da Microsoft **não proíbe** `DXGI_SCALING_NONE` com `CreateSwapChainForCoreWindow` (o exemplo oficial de
+     foreground layer usa `SCALING_NONE`). Então "o CoreWindow não aceita `SCALING_NONE`" **não está provado** — pode
+     ser outra causa (ex.: tamanho 0x0).
+- **Hipótese adicional em `d3d12_swap_chain.hpp` (~linha 102):** o código adiciona `DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING`
+  quando `CheckFeatureSupport` diz que há suporte. Tearing é descrito como coisa de janela HWND; se o Xbox reportar
+  suporte, o flag entra numa swapchain de CoreWindow. **Não há proibição explícita na doc** — é hipótese, não fato.
+
+**Instrumentação adicionada (para o próximo run revelar a causa exata):**
+
+- `libs/ymir-core/include/ymir/gpu/d3d12/d3d12_swap_chain.hpp`: `Create`/`CreateForCoreWindow` guardam o `HRESULT` do
+  DXGI e expõem `LastCreateHResult()`. **Comportamento idêntico** ao anterior (diff +3/-2 no `Create`, o
+  `MakeWindowAssociation` continua lá).
+- `apps/ymir-sdl3/src/app/services/gfx/gfx_context_impl_d3d12.cpp`: ao falhar a swapchain, agora loga `HRESULT`,
+  `size WxH`, `scaling`, `flags`, `swapEffect`, `bufferCount`.
+- `apps/ymir-sdl3/src/main.cpp` e `app.cpp`: marcadores de boot crus via `OutputDebugStringA`. **São temporários** —
+  remover quando o boot estiver estável.
+- `apps/ymir-sdl3/src/platform/uwp/uwp_platform.cpp`: o log agora espelha para o Output do VS via
+  `OutputDebugStringA` (pipe + thread pump) e tem diagnóstico passo a passo do próprio redirect.
+
+**Pendências / próximo passo (para o próximo agente):**
+
+1. **Coletar o Output de um run com a instrumentação atual.** Em especial: a linha
+   `error | GfxContext | Failed to create swapchain (CoreWindow): HRESULT ...` — ela sozinha decide qual dos
+   candidatos é o culpado. Se ela **não** aparecer, o boot para antes do gfx e a investigação muda de lugar.
+2. **Verificar se o espelhamento do log funciona.** Nesta sessão os marcadores de boot apareceram no Output, mas as
+   linhas `info | Group ...` do devlog **não**. Isso precisa ser resolvido antes que qualquer diagnóstico por log seja
+   confiável — possivelmente a thread pump não está agendando ou o `_dup2` não está capturando o `stdout` do fmt.
+3. **`UseFullCoreWindowBounds()` está engolindo uma exceção** (`catch (...)`), o que explica os dois `_com_error` no
+   log e significa que o `SetDesiredBoundsMode(UseCoreWindow)` **não está sendo aplicado** → o app roda na TV-safe area
+   (relacionado ao T-13). Confirmar com o usuário se há bordas pretas.
+4. **`WinRT: Using display resolution (gaming device unknown): 1920x1080`** num Xbox Series X — o esperado seria
+   3840x2160. Reforça a hipótese de que o SDL3-uwp está entregando um tamanho errado de CoreWindow (T-13/T-12).
+
+**Arquivos modificados nesta sessão (não commitados):**
+
+| Arquivo | Mudança |
+|---|---|
+| `apps/ymir-sdl3/src/platform/uwp/uwp_platform.cpp` | tee do log para o debugger + diagnóstico do redirect |
+| `apps/ymir-sdl3/src/platform/uwp/uwp_platform.hpp` | `RedirectStdioToLogFile()` agora devolve o caminho |
+| `apps/ymir-sdl3/src/main.cpp` | marcadores de boot (temporário) |
+| `apps/ymir-sdl3/src/app/app.cpp` | marcador de boot no `Run()` (temporário) |
+| `apps/ymir-sdl3/src/app/services/gfx/gfx_context_impl_d3d12.cpp` | log detalhado da falha de swapchain |
+| `libs/ymir-core/include/ymir/gpu/d3d12/d3d12_swap_chain.hpp` | `LastCreateHResult()` para diagnóstico |
+| `AGENTS.md` (novo, na raiz) | instruções para agentes, incl. regras de deploy/commit/idioma |
 
 ---
 
@@ -48,7 +137,7 @@ Validado na máquina de origem em 2026-10-20 (VS Build Tools 2026 18.x, MSVC 14.
 | CI/CD `.github/workflows/uwp.yml` (build, artifact, release por tag `uwp-v*`) | ✅ primeiro run verde em 2026-10-20 (runner `windows-2025` com **Visual Studio Enterprise 2026**, versão 0.4.0.2, artifacts `ymir-uwp-0.4.0.2` e `-symbols`; esse run foi antes do rebase pra 0.4.2). A publicação de release por tag ainda não foi exercitada (passo 15) |
 | Sincronizado com o upstream **0.4.2** (`8cdf0a53`) por rebase em 2026-10-20; build UWP Release limpo (`--fresh`, baseline nova do vcpkg) | ✅ |
 | Fallback VS 2022 (preset `UWP-x86-64-AVX2-MSVC-VS2022`) | ⚠️ configurado, mas **não compilado**: a máquina de origem e o runner do GitHub têm VS 2026 |
-| **Rodar o app** (PC ou Xbox) | ❌ **não testado**: a máquina de origem não tem Xbox e é corporativa |
+| **Rodar o app** (PC ou Xbox) | ⚠️ **Xbox: roda até o \App::Run()\, mas fica no splash** (ver seção 0.1). PC: não testado |
 
 ### 1.1 Resultado da regressão desktop
 ✅ Em 2026-10-20, depois do rebase pro upstream 0.4.2: o preset `Full-x86-64-AVX2-MSVC-Release` (Ninja + MSVC
@@ -444,6 +533,7 @@ Escolha **uma** das opções:
 | 2026-10-20 | 1–6 | OK (máquina de origem) | `.msix` Debug e Release sem erros; regressão desktop 75/75 |
 | 2026-10-20 | 8 da seção 8 (rebase) | OK | Rebase pro upstream 0.4.2 (285 commits). Conflitos: `CMakeLists.txt` raiz (bloco de versão/feature flags reorganizado), `apps/ymir-sdl3/CMakeLists.txt` (macros) e `video_settings_view.cpp` (o upstream passou a mostrar o toggle de HW sempre; mudança do port removida). Backup pré-rebase em `backup/uwp-main-pre-0.4.2` (só local) |
 | 2026-10-20 | 15 (parcial) | OK | Run 39396157010 do `uwp.yml` verde com VS 2026 no runner; artifact de 5,3 MB |
+| 2026-10-20 | 12 (máquina de destino) | **PARCIAL** | **Primeiro boot real no Xbox.** O crash de `SDL_GetCurrentDirectory()` (`39aa6355`) está resolvido: o app entra no `main()` e chega ao `App::Run()`. **Sintoma atual: fica no splash.** Nenhum crash, desligamento limpo. Detalhes e próximos passos na seção 0.1 |
 | | | | |
 
 ---

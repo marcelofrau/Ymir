@@ -51,3 +51,6 @@ apps/ymir-sdl3/src/util/mig/x64
 # UWP port: Xbox Device Portal credentials and local signing certificates
 scripts/uwp/xbox.env
 *.pfx
+
+# Local tooling caches
+.cortexkit/
