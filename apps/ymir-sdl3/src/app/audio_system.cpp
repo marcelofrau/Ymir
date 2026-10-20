@@ -1,177 +1,126 @@
 #include "audio_system.hpp"
 
-#include <SDL3/SDL_hints.h>
+#include "sdl_audio_backend.hpp"
+
+#if YMIR_PLATFORM_UWP
+    #include "xaudio2_backend.hpp"
+#endif
+
 #include <SDL3/SDL_log.h>
 
-#if YMIR_PLATFORM_UWP
-    // TEMPORARY boot tracing for the Xbox audio bring-up. Remove once startup is stable.
-    #include <fmt/format.h>
-    #define YMIR_AUDIO_TRACE(...) OutputDebugStringA(fmt::format("[Ymir audio] " __VA_ARGS__).c_str())
-#else
-    #define YMIR_AUDIO_TRACE(...)
-#endif
-
-#include <string>
-
-#if YMIR_PLATFORM_UWP
-    #include <SDL3/SDL_error.h>
-    #include <SDL3/SDL_events.h>
-    #include <SDL3/SDL_timer.h>
-
-    #include <atomic>
-    #include <chrono>
-    #include <memory>
-    #include <thread>
-#endif
+#include <cstring>
 
 namespace app {
 
-#if YMIR_PLATFORM_UWP
 namespace {
 
-/// @brief How long to wait for the audio device to open before giving up on UWP.
-constexpr std::chrono::seconds kUWPAudioOpenTimeout{10};
-
-/// @brief Opens the default playback device without blocking the UI thread.
+/// @brief Copies frames out of the ring buffer, implementing the crude stretching used when the emulator runs
+/// slower than real time.
 ///
-/// On UWP, SDL_OpenAudioDeviceStream() blocks the calling thread while SDL's WASAPI management thread calls
-/// ActivateAudioInterfaceAsync() and waits for its completion handler. Audio activation must be serviced by the app's
-/// UI (ASTA) thread, which is the thread that runs main() and normally opens the device. With that thread blocked
-/// waiting for SDL, the activation never completes and the app hangs on the splash screen.
-///
-/// The device is opened from a worker thread instead, while the UI thread keeps dispatching CoreWindow events through
-/// SDL_PumpEvents() so that the activation can complete. If it still does not complete within the timeout, this gives
-/// up with an error instead of hanging forever.
-SDL_AudioStream *OpenAudioDeviceStreamWithoutBlockingUIThread(const SDL_AudioSpec &audioSpec,
-                                                              SDL_AudioStreamCallback callback, void *userdata) {
-    // Shared with the worker thread, which may outlive this function if the open times out
-    struct OpenState {
-        std::atomic<bool> done{false};
-        SDL_AudioStream *stream = nullptr;
-        std::string error;
-    };
-    auto state = std::make_shared<OpenState>();
-
-    YMIR_AUDIO_TRACE("open-on-worker: starting worker thread\n");
-    std::thread opener{[state, audioSpec, callback, userdata] {
-        YMIR_AUDIO_TRACE("open-on-worker: worker calling SDL_OpenAudioDeviceStream\n");
-        state->stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &audioSpec, callback, userdata);
-        YMIR_AUDIO_TRACE("open-on-worker: worker returned {}\n", state->stream != nullptr ? "a stream" : "nullptr");
-        if (state->stream == nullptr) {
-            // SDL errors are per-thread; copy it so the caller's thread can report it
-            state->error = SDL_GetError();
-        }
-        state->done.store(true, std::memory_order_release);
-    }};
-
-    const auto deadline = std::chrono::steady_clock::now() + kUWPAudioOpenTimeout;
-    int pumpIterations = 0;
-    while (!state->done.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline) {
-        SDL_PumpEvents(); // dispatches CoreWindow events, which lets the audio activation complete
-        SDL_Delay(1);
-        ++pumpIterations;
+/// This is the callback both backends use to pull audio. It always writes exactly the requested number of frames,
+/// repeating whatever is available if the buffer has run dry, which keeps the device fed without introducing
+/// clicks from silence.
+int RequestFrames(void *userdata, Sample *out, int frameCount) {
+    auto *self = static_cast<AudioSystem *>(userdata);
+    if (self == nullptr || out == nullptr || frameCount <= 0) {
+        return 0;
     }
-    YMIR_AUDIO_TRACE("open-on-worker: wait loop ended after {} pump iterations, done={}\n", pumpIterations,
-                     state->done.load(std::memory_order_acquire));
-
-    if (!state->done.load(std::memory_order_acquire)) {
-        // The worker is stuck inside SDL; leave it be; it only touches the shared state it owns a reference to
-        YMIR_AUDIO_TRACE("open-on-worker: TIMED OUT, detaching the worker thread\n");
-        opener.detach();
-        SDL_SetError("Timed out after %d seconds opening the default audio playback device",
-                     static_cast<int>(kUWPAudioOpenTimeout.count()));
-        return nullptr;
-    }
-
-    opener.join();
-    if (state->stream == nullptr) {
-        SDL_SetError("%s", state->error.c_str());
-    }
-    return state->stream;
+    return self->FillFrames(out, frameCount);
 }
 
 } // namespace
-#endif
+
+AudioSystem::AudioSystem() = default;
+
+AudioSystem::~AudioSystem() {
+    Deinit();
+}
 
 bool AudioSystem::Init(int sampleRate, SDL_AudioFormat format, int channels, uint32 bufferSize) {
-    {
-        std::string bufferSizeStr = std::to_string(bufferSize);
-        SDL_SetHint(SDL_HINT_AUDIO_DEVICE_SAMPLE_FRAMES, bufferSizeStr.c_str());
-    }
+    (void)format; // The emulator always produces signed 16-bit PCM.
 
-    SDL_AudioSpec audioSpec{};
-    audioSpec.freq = sampleRate;
-    audioSpec.format = format;
-    audioSpec.channels = channels;
+    Deinit();
 
-    // Xbox/UWP: opening the default playback device can block while WASAPI negotiates the endpoint.
-    // These traces (synchronous, debugger-only) pin down whether the block happens inside SDL or after it.
-    YMIR_AUDIO_TRACE("Init(): opening default playback device (freq={} format={:04X} channels={})\n", sampleRate,
-                     (unsigned)format, channels);
-    const SDL_AudioStreamCallback callback = [](void *userdata, SDL_AudioStream *stream, int additional_amount,
-                                                int total_amount) {
-        static_cast<AudioSystem *>(userdata)->ProcessAudioCallback(stream, additional_amount, total_amount);
-    };
 #if YMIR_PLATFORM_UWP
-    m_audioStream = OpenAudioDeviceStreamWithoutBlockingUIThread(audioSpec, callback, this);
+    m_backend = std::make_unique<XAudio2Backend>();
 #else
-    m_audioStream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &audioSpec, callback, this);
+    m_backend = std::make_unique<SDLAudioBackend>();
 #endif
-    YMIR_AUDIO_TRACE("Init(): SDL_OpenAudioDeviceStream returned {}\n",
-                     m_audioStream != nullptr ? "a stream" : "nullptr");
 
-    if (m_audioStream == nullptr) {
-        YMIR_AUDIO_TRACE("Init(): FAILED, SDL error: {}\n", SDL_GetError());
+    if (!m_backend->Init(sampleRate, channels, bufferSize, &RequestFrames, this)) {
+        // The backend reports the reason through SDL_GetError(), which the caller displays.
+        SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "Failed to initialize the audio backend: %s", SDL_GetError());
+        m_backend.reset();
         return false;
     }
-    UpdateGain();
-    YMIR_AUDIO_TRACE("Init(): OK\n");
+
+    m_backend->SetGain(m_gain);
+    m_backend->SetMute(m_mute);
     return true;
 }
 
 void AudioSystem::Deinit() {
     m_bufferNotFullEvent.Set();
-    if (m_audioStream != nullptr) {
-        SDL_DestroyAudioStream(m_audioStream);
+    if (m_backend != nullptr) {
+        m_backend->Deinit();
+        m_backend.reset();
     }
 }
 
 bool AudioSystem::Start() {
-    YMIR_AUDIO_TRACE("Start(): resuming stream device\n");
-    if (SDL_ResumeAudioStreamDevice(m_audioStream)) {
-        YMIR_AUDIO_TRACE("Start(): OK\n");
-        m_running = true;
-        return true;
-    } else {
+    if (m_backend == nullptr) {
         return false;
     }
+    return m_backend->Start();
 }
 
 bool AudioSystem::Stop() {
-    if (SDL_PauseAudioStreamDevice(m_audioStream)) {
-        m_running = false;
-        m_bufferNotFullEvent.Set();
-        return true;
-    } else {
+    if (m_backend == nullptr) {
         return false;
     }
+    const bool result = m_backend->Stop();
+    m_bufferNotFullEvent.Set();
+    return result;
 }
 
 bool AudioSystem::IsRunning() const {
-    return m_running;
+    return m_backend != nullptr && m_backend->IsRunning();
 }
 
 bool AudioSystem::GetAudioStreamFormat(int *sampleRate, SDL_AudioFormat *format, int *channels) {
-    SDL_AudioSpec srcSpec{};
-    SDL_AudioSpec dstSpec{};
-    if (SDL_GetAudioStreamFormat(m_audioStream, &srcSpec, &dstSpec)) {
-        *sampleRate = srcSpec.freq;
-        *format = srcSpec.format;
-        *channels = srcSpec.channels;
-        return true;
-    } else {
+    if (m_backend == nullptr) {
         return false;
     }
+    // Both backends play signed 16-bit PCM at the requested rate, so report the configured format directly
+    // instead of asking the device.
+    *sampleRate = m_sampleRate;
+    *format = SDL_AUDIO_S16LE;
+    *channels = m_channels;
+    return true;
+}
+
+int AudioSystem::FillFrames(Sample *out, int frameCount) {
+    if (m_silent) {
+        std::memset(out, 0, static_cast<size_t>(frameCount) * sizeof(Sample));
+        return frameCount;
+    }
+
+    const uint32 readPos = m_readPos.load(std::memory_order_acquire);
+    const int len1 = std::min<int>(frameCount, m_buffer.size() - readPos);
+    const int len2 = std::min<int>(frameCount - len1, readPos);
+    std::copy(m_buffer.begin() + readPos, m_buffer.begin() + readPos + len1, out);
+    std::copy(m_buffer.begin(), m_buffer.begin() + len2, out + len1);
+
+    // Repeat from the start when the buffer did not hold enough frames. This is the crude stretching that sounds
+    // acceptable when the emulator is not running at full speed.
+    const int written = len1 + len2;
+    for (int i = written; i < frameCount; ++i) {
+        out[i] = out[i % (written > 0 ? written : 1)];
+    }
+
+    m_readPos.store((readPos + len1 + len2) % m_buffer.size(), std::memory_order_release);
+    m_bufferNotFullEvent.Set();
+    return frameCount;
 }
 
 void AudioSystem::ReceiveSample(sint16 left, sint16 right) {
@@ -204,28 +153,9 @@ void AudioSystem::ReceiveSample(sint16 left, sint16 right) {
 }
 
 void AudioSystem::UpdateGain() {
-    SDL_SetAudioStreamGain(m_audioStream, m_mute ? 0.0f : m_gain);
-}
-
-void AudioSystem::ProcessAudioCallback(SDL_AudioStream *stream, int additional_amount, int total_amount) {
-    const int sampleCount = additional_amount / sizeof(Sample);
-    if (m_silent) {
-        const sint16 zero = 0;
-        for (int i = 0; i < sampleCount; i++) {
-            SDL_PutAudioStreamData(stream, &zero, sizeof(zero));
-        }
-    } else {
-        // Copy the requested amount of samples into the buffer, even if there aren't that many samples available.
-        // This effectively implements a crude form of audio stretching that sounds acceptable when the emulator is not
-        // running at 100% speed.
-        const uint32 readPos = m_readPos.load(std::memory_order_acquire);
-        const int len1 = std::min<int>(sampleCount, m_buffer.size() - readPos);
-        const int len2 = std::min<int>(sampleCount - len1, readPos);
-        SDL_PutAudioStreamData(stream, &m_buffer[readPos], len1 * sizeof(Sample));
-        SDL_PutAudioStreamData(stream, &m_buffer[0], len2 * sizeof(Sample));
-
-        m_readPos.store((readPos + len1 + len2) % m_buffer.size(), std::memory_order_release);
-        m_bufferNotFullEvent.Set();
+    if (m_backend != nullptr) {
+        m_backend->SetGain(m_gain);
+        m_backend->SetMute(m_mute);
     }
 }
 

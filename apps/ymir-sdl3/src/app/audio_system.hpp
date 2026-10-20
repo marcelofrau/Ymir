@@ -1,5 +1,7 @@
 #pragma once
 
+#include "audio_backend.hpp"
+
 #include <ymir/core/types.hpp>
 
 #include <ymir/util/event.hpp>
@@ -8,16 +10,19 @@
 
 #include <array>
 #include <atomic>
+#include <memory>
 #include <span>
 
 namespace app {
 
-struct Sample {
-    sint16 left, right;
-};
-
 class AudioSystem {
 public:
+    AudioSystem();
+    ~AudioSystem();
+
+    AudioSystem(const AudioSystem &) = delete;
+    AudioSystem &operator=(const AudioSystem &) = delete;
+
     bool Init(int sampleRate, SDL_AudioFormat format, int channels, uint32 bufferSize);
     void Deinit();
 
@@ -85,9 +90,17 @@ public:
         return m_buffer.size();
     }
 
+    /// @brief Copies frames out of the ring buffer for the active backend.
+    ///
+    /// Always returns exactly `frameCount` frames, repeating whatever is available when the buffer has run dry.
+    /// This is the crude form of audio stretching used when the emulator runs slower than real time.
+    int FillFrames(Sample *out, int frameCount);
+
 private:
-    SDL_AudioStream *m_audioStream = nullptr;
-    bool m_running = false;
+    std::unique_ptr<AudioBackend> m_backend;
+
+    int m_sampleRate = 44100;
+    int m_channels = 2;
 
     std::array<Sample, 2048> m_buffer{};
     std::atomic_uint32_t m_readPos = 0;
@@ -101,8 +114,6 @@ private:
     bool m_mute = false;
 
     void UpdateGain();
-
-    void ProcessAudioCallback(SDL_AudioStream *stream, int additional_amount, int total_amount);
 };
 
 } // namespace app

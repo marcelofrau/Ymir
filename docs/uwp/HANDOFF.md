@@ -511,6 +511,82 @@ ou timeout com a worker presa.
    debugger.
 3. Se ainda travar: ir para a rota XAudio2 descrita acima.
 
+
+
+### Entrada do agente OpenCode #6 — 2026-10-20 (máquina de destino, COM Xbox, backend XAudio2)
+
+**Run 06 derrubou a hipótese da worker thread.** O build com as marcas `open-on-worker:` produziu:
+
+```
+[Ymir audio] open-on-worker: starting worker thread
+[Ymir audio] open-on-worker: worker calling SDL_OpenAudioDeviceStream
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\AudioSes.dll'. ...
+[Ymir audio] open-on-worker: wait loop ended after 4994 pump iterations, done=false
+[Ymir audio] open-on-worker: TIMED OUT, detaching the worker thread
+[Ymir audio] Init(): SDL_OpenAudioDeviceStream returned nullptr
+[Ymir audio] Init(): FAILED, SDL error: Timed out after 10 seconds opening the default audio playback device
+[Ymir] Startup failure: Failed to create audio stream: Timed out after 10 seconds opening the default audio playback device
+```
+
+Cerca de **5000 chamadas de `SDL_PumpEvents()` em 10 segundos não destravaram a ativação**. A cadeia do pump
+(`SDL_PumpEvents` → `WINRT_PumpEvents` → `SDL_WinRTApp::PumpEvents` →
+`CoreWindow::Dispatcher->ProcessEvents(ProcessAllIfPresent)`) estava correta — o mecanismo existe e é alcançado —
+mas bombear o dispatcher do CoreWindow **não** completa a ativação assíncrona do endpoint de áudio. A suposição
+compartilhada por ambos os agentes, de que a ASTA seria o serviço daquele callback, é **falsa**.
+
+Efeitos colaterais confirmados: o timeout produziu uma falha limpa (comportamento correto), a linha
+`[Ymir] Startup failure: ...` apareceu no Output (o espelhamento do log está 100% funcional) e as threads
+`VDP1/VDP2/deinterlace render thread` saíram enquanto a worker do áudio **detachada** seguia viva dentro do SDL —
+exatamente o risco registrado na entrada #5.
+
+**Decisão: parar de contornar o WASAPI do SDL.** A causa é estrutural (o SDL usa
+`ActivateAudioInterfaceAsync` + espera sem timeout no caminho UWP/WinRT, e o `vendor/SDL3-uwp` não pode ser
+alterado), então o contorno no lado do Ymir tem que trocar a API de áudio, não o timing da chamada.
+
+**Implementado: backend de áudio XAudio2 para UWP/Xbox.** XAudio2 é a API de áudio nativa do Xbox e é totalmente
+síncrona — `XAudio2Create`, `CreateMasteringVoice` e `CreateSourceVoice` retornam inline. Não há
+`ActivateAudioInterfaceAsync`, não há semáforo, não há dependência de message pump, portanto não existe o modo de
+falha observado.
+
+Arquitetura (SOLID; nenhum `#if` fora de um único ponto de escolha):
+
+| Arquivo | Papel |
+| --- | --- |
+| `src/app/audio_backend.hpp` | Interface `AudioBackend`, **pull**: o dispositivo pede frames; `Sample` também vive aqui |
+| `src/app/sdl_audio_backend.{hpp,cpp}` | Backend de desktop, via stream SDL |
+| `src/app/xaudio2_backend.{hpp,cpp}` | Backend UWP/Xbox, via XAudio2 (pool de 4 buffers, callback de reciclagem) |
+| `src/app/audio_system.cpp` | Escolhe o backend (único `#if`), mantém ring buffer, ganho, mute, sync/silent |
+
+O `AudioSystem` manteve a API pública inteira e agora só delega o I/O. `Start`/`Stop`/`ReceiveSample`/
+`GetAudioStreamFormat` mantêm a semântica anterior, e `GetAudioStreamFormat` passou a devolver o formato
+configurado (S16LE na taxa pedida) em vez de consultar o dispositivo, porque os dois backends o garantem.
+
+**O contorno anterior foi removido.** `OpenAudioDeviceStreamWithoutBlockingUIThread` e a worker thread com
+`detach()` não existem mais — inclusive isso elimina o risco da thread órfã durante o teardown observado no run 06.
+
+**Verificação de viabilidade (feita antes de escrever o backend, não presumida):** `xaudio2.h` e `xaudio2.lib`
+estão presentes em `10.0.28000.0`, que é o `WindowsTargetPlatformVersion` deste build. O `xaudio2.lib` importa
+diretamente de `XAudio2_9.dll` (presente em `System32`, 602 KB), sem camada de apiset. O target `ymir-sdl3` passou a
+linkar `xaudio2` sob `if (Ymir_PLATFORM_UWP)`. **Build Debug compila e linka, MSIX gerado.**
+
+Armadilha do SDK encontrada no caminho: nesta versão o `IXAudio2::CreateMasteringVoice` tem **7 parâmetros**
+(`ppMasteringVoice, InputChannels, InputSampleRate, Flags, DeviceId, pEffectChain, StreamCategory`) — não existe o
+parâmetro `ChannelMask` que aparece em exemplos mais antigos. O `AudioCategory_GameEffects` é o último argumento.
+
+**Instrumentação adicionada:** o backend emite por `SDL_LogInfo`/`SDL_LogError`
+`[Ymir audio] XAudio2 engine created`, `XAudio2 mastering voice created (N ch, M Hz)`, `XAudio2 source voice created`,
+`XAudio2 playback started`, e o erro específico de cada etapa em caso de falha. O run 07 com este build indica
+exatamente em qual das três criações o XAudio2 pararia, se parar.
+
+**Pendências para o próximo agente:**
+
+1. Rodar o build atual (run 07) no Xbox e registrar o log bruto em `docs/uwp/evidence/`. O esperado é o app passar
+   do splash e entrar no loop principal.
+2. **Validar pelo tile, não só pelo debugger** — o comportamento de ativação e o teto de memória/GPU diferem.
+3. Se o XAudio2 funcionar: o áudio volta a ser real (não mutado) e o `AudioSystem` mantém o comportamento de sync.
+4. Se o XAudio2 também falhar: checar em qual das três criações parou (as marcas dizem), e considerar
+   `XAudio2CreateWithSharedContexts` ou revisar a categoria de stream.
+
 ---
 
 ## 1. Estado atual (o que já está pronto e validado)

@@ -17,6 +17,28 @@ same symptom is expected but is not the current focus.
 | 03 | `run-2026-10-20-03-texture-markers.raw.txt` | The log mirror works end to end. The D3D12 context initializes **successfully**. The boot reaches the framebuffer/display texture creation. Last marker: `[Ymir boot] display texture OK, stbi logo load next`. |
 | 04 | `run-2026-10-20-04-audio-hang.raw.txt` | Adds markers down the whole path between the graphics context and the main loop. **The boot stops right after `[Ymir boot] initializing audio`, when `AudioSes.dll` (WASAPI) loads.** No marker after that, and the loop is never reached. |
 | 05 | (see the quote below) | Audio-path markers prove the block is **inside** the `SDL_OpenAudioDeviceStream` call: the marker before it prints, the one after it never does. Root cause confirmed as the WASAPI activation deadlock. |
+| 06 | `run-2026-10-20-06-worker-thread-pump-refuted.raw.txt` | The worker-thread + dispatcher-pump workaround. **Refuted:** ~5000 `SDL_PumpEvents()` calls over 10 seconds do not unblock the activation. The timeout produces a clean failure, and the detached worker outlives the VDP render threads (the orphan-thread risk). |
+
+## Run 06 — the pump workaround is refuted
+
+```
+[Ymir audio] open-on-worker: starting worker thread
+[Ymir audio] open-on-worker: worker calling SDL_OpenAudioDeviceStream
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\AudioSes.dll'. ...
+[Ymir audio] open-on-worker: wait loop ended after 4994 pump iterations, done=false
+[Ymir audio] open-on-worker: TIMED OUT, detaching the worker thread
+```
+
+The pump chain was traced in the vendored sources and does reach
+`CoreWindow::GetForCurrentThread()->Dispatcher->ProcessEvents(CoreProcessEventsOption::ProcessAllIfPresent)` at
+`src/core/winrt/SDL_winrtapp_direct3d.cpp:426` — so the mechanism exists and is reached — but pumping it does not
+complete the audio endpoint activation. **The assumption that the CoreWindow dispatcher services that callback is
+false.**
+
+Side effects visible in the same run: the timeout turns the hang into a clean
+`[Ymir] Startup failure: Failed to create audio stream: ...` and the message reaches the VS Output window (the log
+tee works end to end); the `VDP1`/`VDP2`/`deinterlace render thread` threads exit while the **detached** audio worker
+is still alive inside SDL, which is the orphan-thread risk recorded in the entry above.
 
 ## Run 05 — the decisive measurement
 
@@ -110,22 +132,25 @@ Run 05 with that build answers the question unambiguously.
 
 ## Workarounds under evaluation
 
-1. **Open the device from a worker thread while the main thread pumps the CoreWindow dispatcher** (`SDL_PumpEvents()`),
-   with a timeout. The pump path reaches
-   `CoreWindow::GetForCurrentThread()->Dispatcher->ProcessEvents(ProcessAllIfPresent)` at
-   `src/core/winrt/SDL_winrtapp_direct3d.cpp:426`, which is exactly the ASTA pump the activation needs. Implemented in
-   `audio_system.cpp`; run 06 verifies it.
-   - Known risk: `SDL_winrtapp_direct3d.cpp:669-672` warns that `ProcessEvents` does not return after delivering a
-     *suspend* event, and the `ProcessOneAndAllPending` variant (`:435`) blocks when no events are pending. A suspend
-     during the boot window can therefore turn the timeout into a hang.
-   - Known risk: detaching the stuck worker on timeout leaves a thread inside SDL, which is unsafe if the app later
-     calls `SDL_Quit()`.
-2. **Route audio through XAudio2 instead of SDL/WASAPI** (plan B). A sibling project in the user's workspace,
-   `F:\workspace\ymir-xbox-with-real-audio`, already runs real audio on the Xbox this way
-   (`src/audio/XAudio2Output.cpp`): `XAudio2Create` → `CreateMasteringVoice` → `CreateSourceVoice`, fully synchronous,
-   no `ActivateAudioInterfaceAsync`, no semaphore, no message-pump dependency. `xaudio2.lib` / `xaudio2.h` are present
-   in SDK 10.0.28000.0 — the exact `WindowsTargetPlatformVersion` this UWP build uses — so no new external dependency
-   is needed.
+1. **Open the device from a worker thread while the main thread pumps the CoreWindow dispatcher** — **REFUTED by
+   run 06.** ~5000 pumps in 10 seconds did not unblock the activation. The implementation was removed.
+2. **Route audio through XAudio2 instead of SDL/WASAPI** — **IMPLEMENTED.** XAudio2 is the native Xbox audio API and
+   is fully synchronous: `XAudio2Create` → `CreateMasteringVoice` → `CreateSourceVoice`, none of which involve
+   `ActivateAudioInterfaceAsync`, a semaphore or a message pump, so the observed failure mode does not exist.
+
+   Feasibility was verified rather than assumed: `xaudio2.h` / `xaudio2.lib` ship in SDK 10.0.28000.0 — the
+   `WindowsTargetPlatformVersion` this build targets — and `xaudio2.lib` imports directly from `XAudio2_9.dll`
+   (present in `System32`), with no apiset layer. The UWP build compiles and links it; the MSIX is produced.
+
+   Layout: `audio_backend.hpp` (pull-based interface, owns `Sample`), `sdl_audio_backend.{hpp,cpp}` (desktop),
+   `xaudio2_backend.{hpp,cpp}` (UWP/Xbox), and `audio_system.cpp` picks between them behind a single `#if`.
+
+   SDK pitfall found on the way: in this SDK version `IXAudio2::CreateMasteringVoice` takes **7** parameters
+   (`ppMasteringVoice, InputChannels, InputSampleRate, Flags, DeviceId, pEffectChain, StreamCategory`); there is no
+   `ChannelMask` parameter, which older examples show.
+
+A sibling project in the user's workspace, `F:\workspace\ymir-xbox-with-real-audio`, already runs real audio on the
+Xbox through this same API (`src/audio/XAudio2Output.cpp`), which is what pointed at this route.
 
 Local changes to `vendor/SDL3-uwp` are not an option: repo `AGENTS.md` rule 3 and the vendored SDL's own `AGENTS.md`
 both forbid AI-authored contributions there.

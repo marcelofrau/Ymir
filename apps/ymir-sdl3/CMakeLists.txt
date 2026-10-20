@@ -5,8 +5,11 @@ add_executable(ymir-sdl3
 
     src/app/app.cpp
     src/app/app.hpp
+    src/app/audio_backend.hpp
     src/app/audio_system.cpp
     src/app/audio_system.hpp
+    src/app/sdl_audio_backend.cpp
+    src/app/sdl_audio_backend.hpp
     src/app/cmdline_opts.hpp
     src/app/display.hpp
     src/app/message.hpp
@@ -425,6 +428,8 @@ if (Ymir_PLATFORM_UWP)
     target_sources(ymir-sdl3 PRIVATE
         src/platform/uwp/uwp_platform.cpp
         src/platform/uwp/uwp_platform.hpp
+        src/app/xaudio2_backend.cpp
+        src/app/xaudio2_backend.hpp
     )
 endif ()
 
@@ -587,6 +592,14 @@ if (WIN32)
             Dwmapi
         )
     endif ()
+endif ()
+if (Ymir_PLATFORM_UWP)
+    # UWP/Xbox: audio goes through XAudio2. SDL3's WASAPI path deadlocks on the Xbox because
+    # ActivateAudioInterfaceAsync() is serviced by the app's ASTA dispatcher, which is the thread blocked
+    # inside SDL_OpenAudioDeviceStream(). XAudio2 has no such activation step.
+    target_link_libraries(ymir-sdl3 PRIVATE
+        xaudio2
+    )
 endif ()
 target_compile_features(ymir-sdl3 PUBLIC cxx_std_20)
 
