@@ -15,12 +15,20 @@
 
     // SDL3-uwp provides the WinRT entrypoint, which initializes CoreApplication and calls main() (renamed to SDL_main)
     #include <SDL3/SDL_main.h>
+
+    #include <windows.h>
+
+    #include <filesystem>
 #endif
 
 #include <memory>
 
 int main(int argc, char **argv) {
 #if YMIR_PLATFORM_UWP
+    // Temporary boot tracing: OutputDebugStringA does not depend on the stdio redirect, so these markers show up in
+    // the Visual Studio Output window even if the log redirection fails or the app dies before the first devlog.
+    OutputDebugStringA("[Ymir boot] main() entered\n");
+
     // The WinRT entrypoint does not pass any command line arguments
     static char uwpProgramName[] = "Ymir";
     static char *uwpArgv[] = {uwpProgramName, nullptr};
@@ -30,10 +38,12 @@ int main(int argc, char **argv) {
     }
 
     // There is no console on UWP; send the development log to LocalState\StrikerX3\Ymir\ymir-uwp.log
-    platform::uwp::RedirectStdioToLogFile();
+    const std::filesystem::path logPath = platform::uwp::RedirectStdioToLogFile();
+    OutputDebugStringA(fmt::format("[Ymir boot] log redirection done: {}\n", logPath.string()).c_str());
 
     // Draw to the whole screen instead of the TV-safe area on Xbox
     platform::uwp::UseFullCoreWindowBounds();
+    OutputDebugStringA("[Ymir boot] core window bounds set\n");
 #endif
 
 #if defined(_WIN32)

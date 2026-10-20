@@ -19,7 +19,15 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <thread>
 #include <vector>
+
+#include <fmt/format.h>
+
+#include <fcntl.h>
+#include <io.h>
+#include <process.h>
+#include <windows.h>
 
 namespace platform::uwp {
 
@@ -27,6 +35,17 @@ using namespace winrt;
 using namespace winrt::Windows::Foundation;
 using namespace winrt::Windows::Storage;
 using namespace winrt::Windows::Storage::Pickers;
+
+// -----------------------------------------------------------------------------
+// Logging
+
+namespace {
+
+/// @brief Size of the pipe that carries the redirected stdout/stderr to the log pump thread.
+/// Large enough to absorb a burst of log lines while the pump thread is writing to the file.
+constexpr int kPipeBufferSize = 64 * 1024;
+
+} // namespace
 
 // -----------------------------------------------------------------------------
 // Storage
@@ -74,16 +93,111 @@ std::filesystem::path RedirectStdioToLogFile() {
     const std::filesystem::path logPath = std::filesystem::path{std::u8string{prefPathStr.begin(), prefPathStr.end()}} /
                                           "ymir-uwp.log";
 
-    FILE *file = nullptr;
-    if (_wfreopen_s(&file, logPath.c_str(), L"w", stdout) != 0) {
+    FILE *logFile = nullptr;
+    if (_wfopen_s(&logFile, logPath.c_str(), L"w") != 0 || logFile == nullptr) {
+        OutputDebugStringA("[Ymir boot] RedirectStdioToLogFile: _wfopen_s FAILED\n");
         return {};
     }
-    if (_wfreopen_s(&file, logPath.c_str(), L"a", stderr) != 0) {
+
+    // Temporary diagnostics: prove each step of the redirection independently, so a failure is never silent again.
+    std::fputs("[Ymir boot] direct file write OK (before redirect)\n", logFile);
+    std::fflush(logFile);
+    OutputDebugStringA("[Ymir boot] direct file write OK (before redirect)\n");
+
+    // Redirect stdout and stderr into a pipe instead of straight into the file so that a pump thread can mirror
+    // every line to the debugger, which is the only way to read the log from the Visual Studio Output window on
+    // UWP. Without this, everything written after the redirection is visible only in the log file.
+    //
+    // The CRT's _pipe is not available to UWP apps, so the pipe comes from the Win32 API and its ends are
+    // wrapped in file descriptors for use with the CRT.
+    SECURITY_ATTRIBUTES securityAttributes{.nLength = sizeof(SECURITY_ATTRIBUTES), .lpSecurityDescriptor = nullptr,
+                                           .bInheritHandle = FALSE};
+    HANDLE pipeReadHandle = nullptr;
+    HANDLE pipeWriteHandle = nullptr;
+    if (!CreatePipe(&pipeReadHandle, &pipeWriteHandle, &securityAttributes, kPipeBufferSize)) {
+        OutputDebugStringA("[Ymir boot] RedirectStdioToLogFile: CreatePipe FAILED\n");
+        std::fclose(logFile);
         return {};
     }
+
+    const int pipeRead = _open_osfhandle(reinterpret_cast<intptr_t>(pipeReadHandle), _O_RDONLY | _O_BINARY);
+    const int pipeWrite = _open_osfhandle(reinterpret_cast<intptr_t>(pipeWriteHandle), _O_WRONLY | _O_BINARY);
+    if (pipeRead == -1 || pipeWrite == -1) {
+        OutputDebugStringA("[Ymir boot] RedirectStdioToLogFile: _open_osfhandle FAILED\n");
+        if (pipeRead != -1) {
+            _close(pipeRead);
+        } else {
+            CloseHandle(pipeReadHandle);
+        }
+        if (pipeWrite != -1) {
+            _close(pipeWrite);
+        } else {
+            CloseHandle(pipeWriteHandle);
+        }
+        std::fclose(logFile);
+        return {};
+    }
+
+    OutputDebugStringA(fmt::format("[Ymir boot] RedirectStdioToLogFile: fds read={} write={} stdout={} stderr={}\n",
+                                   pipeRead, pipeWrite, _fileno(stdout), _fileno(stderr))
+                           .c_str());
+
+    if (_dup2(pipeWrite, _fileno(stdout)) != 0 || _dup2(pipeWrite, _fileno(stderr)) != 0) {
+        OutputDebugStringA("[Ymir boot] RedirectStdioToLogFile: _dup2 FAILED\n");
+        _close(pipeRead);
+        _close(pipeWrite);
+        std::fclose(logFile);
+        return {};
+    }
+
+    OutputDebugStringA("[Ymir boot] RedirectStdioToLogFile: _dup2 OK\n");
+
+    // The pipe handles are inherited by the redirect; the originals are no longer needed by this process
+    _close(pipeWrite);
+
     // Flush every line so the log survives crashes and can be read while the app is running
     setvbuf(stdout, nullptr, _IOLBF, 4096);
     setvbuf(stderr, nullptr, _IONBF, 0);
+
+    // The pump thread outlives this function on purpose: it must keep running until the process exits, because
+    // shutting the C runtime down on UWP does not run static destructors reliably enough to stop it cleanly.
+    // It is detached and only ever touches the log file, so it cannot interfere with app shutdown.
+    std::thread{[pipeRead, logFile] {
+        bool debugging = IsDebuggerPresent();
+        OutputDebugStringA("[Ymir boot] log pump thread started\n");
+
+        std::string line{};
+        line.reserve(512);
+
+        char buffer[1024];
+        int count = 0;
+        while ((count = _read(pipeRead, buffer, sizeof(buffer))) > 0) {
+            for (int i = 0; i < count; ++i) {
+                const char ch = buffer[i];
+                line.push_back(ch);
+
+                // Mirror the message once a full line is available so that the debugger sees it promptly.
+                // Very long lines are flushed in chunks to keep memory bounded.
+                if (ch == '\n' || ch == '\r' || line.size() >= 4096) {
+                    std::fwrite(line.data(), 1, line.size(), logFile);
+                    std::fflush(logFile);
+                    if (debugging) {
+                        OutputDebugStringA(line.c_str());
+                    }
+                    line.clear();
+                }
+            }
+        }
+
+        if (!line.empty()) {
+            std::fwrite(line.data(), 1, line.size(), logFile);
+            std::fflush(logFile);
+            if (debugging) {
+                OutputDebugStringA(line.c_str());
+            }
+        }
+    }}.detach();
+
     return logPath;
 }
 

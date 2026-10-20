@@ -19,6 +19,7 @@
 #include <ymir/hw/vdp/vdp_defs.hpp>
 
 #include <ymir/util/string.hpp>
+#include <ymir/util/dev_log.hpp>
 
 #include <backends/imgui_impl_dx12.h>
 #include <backends/imgui_impl_sdl3.h>
@@ -39,6 +40,23 @@ using namespace ymir::gpu;
 using namespace ymir::gpu::d3d12;
 
 namespace app::gfx {
+
+namespace grp {
+
+    // -----------------------------------------------------------------------------
+    // Dev log groups
+
+    // Hierarchy:
+    //
+    // base
+
+    struct base {
+        static constexpr bool enabled = true;
+        static constexpr devlog::Level level = devlog::level::debug;
+        static constexpr std::string_view name = "GfxContext";
+    };
+
+} // namespace grp
 
 static DXGI_FORMAT ToD3D12Value(PixelFormat format) {
     switch (format) {
@@ -319,10 +337,18 @@ struct Direct3D12GraphicsContext::Impl {
 #if YMIR_PLATFORM_UWP
         if (!swapchain.CreateForCoreWindow(dxgiFactoryFlags, cmdQueue.GetPointer(), swapChainDesc, coreWindow,
                                            kFrameCount)) {
+            devlog::error<grp::base>("Failed to create swapchain (CoreWindow): HRESULT {:08X}, size {}x{}, "
+                                     "scaling {}, flags {:08X}, swapEffect {}, bufferCount {}",
+                                     static_cast<uint32>(swapchain.LastCreateHResult()), swapChainDesc.Width,
+                                     swapChainDesc.Height, static_cast<int>(swapChainDesc.Scaling), swapChainDesc.Flags,
+                                     static_cast<int>(swapChainDesc.SwapEffect), swapChainDesc.BufferCount);
             return util::ErrorMessage{"Failed to create swapchain"};
         }
 #else
         if (!swapchain.Create(dxgiFactoryFlags, cmdQueue.GetPointer(), swapChainDesc, hwnd, kFrameCount)) {
+            devlog::error<grp::base>("Failed to create swapchain (HWND): HRESULT {:08X}, size {}x{}",
+                                     static_cast<uint32>(swapchain.LastCreateHResult()), swapChainDesc.Width,
+                                     swapChainDesc.Height);
             return util::ErrorMessage{"Failed to create swapchain"};
         }
 #endif

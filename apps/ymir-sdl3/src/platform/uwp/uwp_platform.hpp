@@ -23,6 +23,11 @@ std::filesystem::path FindExternalProfilePath();
 
 /// @brief Redirects stdout and stderr (where Ymir's development log is printed) to `ymir-uwp.log` in the
 /// app's LocalState folder, since UWP apps have no console.
+///
+/// The output is also mirrored to the debugger through `OutputDebugStringA`, so that the log shows up in the
+/// Visual Studio Output window while debugging and can be copied straight out of there. Mirroring is skipped
+/// when no debugger is attached, in which case the writes only go to the file.
+///
 /// @return the path to the log file, or an empty path if the redirection failed
 std::filesystem::path RedirectStdioToLogFile();
 

@@ -109,6 +109,10 @@
 #include <app/ui/widgets/settings_widgets.hpp>
 #include <app/ui/widgets/system_widgets.hpp>
 
+#if YMIR_PLATFORM_UWP
+    #include <windows.h>
+#endif
+
 #include <util/os_exception_handler.hpp>
 #include <util/os_features.hpp>
 #include <util/std_lib.hpp>
@@ -206,6 +210,10 @@ App::~App() {
 }
 
 int App::Run(const CommandLineOptions &options) {
+#if YMIR_PLATFORM_UWP
+    // Temporary boot tracing alongside the devlog, because the stdio redirect may not be active yet
+    OutputDebugStringA("[Ymir boot] App::Run() entered\n");
+#endif
     devlog::info<grp::base>("{} {}", Ymir_APP_NAME, ymir::version::string);
 
     // Use UTF-8 locale by default on all C runtime functions

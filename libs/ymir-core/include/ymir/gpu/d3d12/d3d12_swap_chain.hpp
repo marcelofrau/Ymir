@@ -33,8 +33,9 @@ public:
         m_windowed = true;
         return CreateImpl(dxgiFactoryFlags, scDesc, maxLatency,
                           [&](IDXGIFactory6 *factory, const DXGI_SWAP_CHAIN_DESC1 &desc, IDXGISwapChain1 **swapChain) {
-                              if (FAILED(factory->CreateSwapChainForHwnd(commandQueue, hwnd, &desc, nullptr, nullptr,
-                                                                         swapChain))) {
+                              m_lastCreateHResult = factory->CreateSwapChainForHwnd(commandQueue, hwnd, &desc, nullptr,
+                                                                                   nullptr, swapChain);
+                              if (FAILED(m_lastCreateHResult)) {
                                   return false;
                               }
                               if (m_tearingSupport) {
@@ -56,9 +57,17 @@ public:
         m_windowed = false;
         return CreateImpl(dxgiFactoryFlags, scDesc, maxLatency,
                           [&](IDXGIFactory6 *factory, const DXGI_SWAP_CHAIN_DESC1 &desc, IDXGISwapChain1 **swapChain) {
-                              return SUCCEEDED(factory->CreateSwapChainForCoreWindow(commandQueue, coreWindow, &desc,
-                                                                                     nullptr, swapChain));
+                              m_lastCreateHResult = factory->CreateSwapChainForCoreWindow(commandQueue, coreWindow, &desc,
+                                                                                          nullptr, swapChain);
+                              return SUCCEEDED(m_lastCreateHResult);
                           });
+    }
+
+    /// @brief Retrieves the `HRESULT` of the last swap chain creation attempt, for diagnostics.
+    /// @return the `HRESULT` returned by DXGI on the last `Create`/`CreateForCoreWindow` call, or `S_OK` if it
+    /// succeeded or was never called
+    HRESULT LastCreateHResult() const {
+        return m_lastCreateHResult;
     }
 
     /// @brief Resizes the swap chain buffers to the specified dimensions.
@@ -88,6 +97,7 @@ private:
     wil::unique_handle m_waitableObject = nullptr;
     bool m_tearingSupport = false;
     bool m_windowed = true; ///< `true` for HWND swap chains, `false` for CoreWindow swap chains
+    HRESULT m_lastCreateHResult = S_OK; ///< result of the last DXGI swap chain creation attempt, for diagnostics
 
     template <typename FnCreateSwapChain>
     bool CreateImpl(UINT dxgiFactoryFlags, DXGI_SWAP_CHAIN_DESC1 scDesc, UINT maxLatency,
