@@ -154,6 +154,10 @@ template <typename... TArgs>
 static void ShowStartupFailure(fmt::format_string<TArgs...> fmt, TArgs &&...args) {
     std::string message = fmt::format(fmt, static_cast<TArgs &&>(args)...);
     devlog::error<grp::base>("{}", message);
+#if YMIR_PLATFORM_UWP
+    // The message box may not be visible on Xbox; make sure the reason for the early exit reaches the debugger
+    OutputDebugStringA(fmt::format("[Ymir] Startup failure: {}\n", message).c_str());
+#endif
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Ymir startup error", message.c_str(), nullptr);
 }
 

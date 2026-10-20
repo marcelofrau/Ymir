@@ -115,6 +115,56 @@ e testa por F5 no VS 2026 direto no console.
 | `libs/ymir-core/include/ymir/gpu/d3d12/d3d12_swap_chain.hpp` | `LastCreateHResult()` para diagnóstico |
 | `AGENTS.md` (novo, na raiz) | instruções para agentes, incl. regras de deploy/commit/idioma |
 
+
+### Entrada do agente Claude (máquina de origem, sem Xbox) — 2026-10-20
+
+**Escopo lido:** a entrada do OpenCode acima, `AGENTS.md`, os commits `35e49d8c` e `d0616649`, e o fluxo inteiro de
+`App::Run()` / `App::RunEmulator()`.
+
+**Diagnóstico do "fica no splash e sai limpo":**
+
+1. **A instrumentação perdia exatamente as linhas que explicam a saída.** `RedirectStdioToLogFile()` chamava
+   `setvbuf(stdout, nullptr, _IOLBF, 4096)`, mas **o CRT da Microsoft não implementa line buffering: `_IOLBF` funciona
+   como `_IOFBF` (buffer completo)**. As linhas do devlog ficavam presas no buffer de 4 KB, por isso não apareciam no
+   Output (pendência 2 do OpenCode). Quando o app desistia cedo, o buffer só era descarregado no `exit`, dentro do
+   pipe, e a thread pump *detached* era morta antes de drenar. Ou seja, a última mensagem, a que diz por que o app
+   saiu, nunca chegava nem no arquivo nem no debugger.
+2. **"Splash + saída limpa" = um `return` antecipado em `App::Run()`/`RunEmulator()`.** Todos os caminhos passam
+   por `ShowStartupFailure(...)`:
+   - `Failed to initialize SDL`;
+   - `Failed to create window`;
+   - **`Failed to initialize graphics.`** (D3D12 e os fallbacks falharam);
+   - `Failed to create software framebuffer texture` / `display texture` / `logo texture`;
+   - `Failed to create/start audio stream`;
+   - ou `Could not create profile folders` (este com `return -1`).
+
+   O `SDL_ShowSimpleMessageBox` desses caminhos provavelmente não aparece no Xbox, e é aí que entram os `_com_error`
+   e o "island for this CoreWindow" do log.
+
+**Mudanças (não commitadas; aguardando pedido do usuário, conforme AGENTS.md regra 10):**
+
+| Arquivo | Mudança |
+|---|---|
+| `apps/ymir-sdl3/src/platform/uwp/uwp_platform.cpp` | stdout/stderr **sem buffer** (`_IONBF`); thread pump guardada (`g_logPumpThread`, ponteiro de propósito, para não chamar `std::terminate` em destrutor estático) e **joined** por `ShutdownLogRedirect()` |
+| `apps/ymir-sdl3/src/platform/uwp/uwp_platform.hpp` | declara `ShutdownLogRedirect()` |
+| `apps/ymir-sdl3/src/main.cpp` | guard RAII que chama `ShutdownLogRedirect()` em **qualquer** saída do `main()` |
+| `apps/ymir-sdl3/src/app/app.cpp` | `ShowStartupFailure` também manda a mensagem via `OutputDebugStringA` (síncrono, independe do pipe) |
+
+Compilado aqui: UWP Debug OK. Não foi executado, porque esta máquina não tem Xbox e o AGENTS.md proíbe o agente de
+fazer deploy.
+
+**Próximo passo (usuário / próximo agente):**
+
+1. Rodar de novo por F5 no Xbox e copiar o Output. Procure **`[Ymir] Startup failure: ...`**: essa linha diz qual
+   passo falhou. As linhas `info | ...` do devlog também devem aparecer agora, em ordem.
+2. Se a falha for **`Failed to initialize graphics.`**, a mensagem lista o erro do D3D12 e o de cada fallback
+   (SDLRenderer). Junto com a linha `Failed to create swapchain (CoreWindow): HRESULT ...` da instrumentação do
+   OpenCode, isso decide entre swapchain, device ou tamanho.
+3. Teste de bisseção sem recompilar: em `LocalState\StrikerX3\Ymir\Ymir.toml`, mude a seção `[Video]` para
+   `GraphicsBackend = "SDLRenderer"`. Edite pelo Device Portal → File explorer, ou no PC no caminho da seção 1.2.
+   - Se com SDLRenderer o app abre, o problema está isolado no contexto D3D12 do Ymir.
+   - Se não abre, o problema é anterior ao gráfico, ou na janela/CoreWindow.
+
 ---
 
 ## 1. Estado atual (o que já está pronto e validado)

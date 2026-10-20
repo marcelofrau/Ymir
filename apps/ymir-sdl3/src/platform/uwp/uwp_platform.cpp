@@ -45,6 +45,14 @@ namespace {
 /// Large enough to absorb a burst of log lines while the pump thread is writing to the file.
 constexpr int kPipeBufferSize = 64 * 1024;
 
+/// @brief The thread that drains the redirection pipe into the log file. Joined by ShutdownLogRedirect().
+/// Intentionally heap-allocated and never deleted: a joinable std::thread with static storage would call
+/// std::terminate() from its destructor if the process exits through a path that skips ShutdownLogRedirect().
+std::thread *g_logPumpThread = nullptr;
+
+/// @brief The log file written by the pump thread. Closed by ShutdownLogRedirect().
+FILE *g_logFile = nullptr;
+
 } // namespace
 
 // -----------------------------------------------------------------------------
@@ -155,14 +163,18 @@ std::filesystem::path RedirectStdioToLogFile() {
     // The pipe handles are inherited by the redirect; the originals are no longer needed by this process
     _close(pipeWrite);
 
-    // Flush every line so the log survives crashes and can be read while the app is running
-    setvbuf(stdout, nullptr, _IOLBF, 4096);
+    // Disable buffering so every line reaches the pipe as soon as it is printed, which keeps the log useful when the
+    // app crashes or bails out early. Note that the MSVC CRT does not implement line buffering: _IOLBF behaves like
+    // _IOFBF, which kept whole blocks of the log stuck in the buffer and lost them on early exits.
+    setvbuf(stdout, nullptr, _IONBF, 0);
     setvbuf(stderr, nullptr, _IONBF, 0);
 
-    // The pump thread outlives this function on purpose: it must keep running until the process exits, because
-    // shutting the C runtime down on UWP does not run static destructors reliably enough to stop it cleanly.
-    // It is detached and only ever touches the log file, so it cannot interfere with app shutdown.
-    std::thread{[pipeRead, logFile] {
+    // The pump thread runs until every write end of the pipe is closed, which ShutdownLogRedirect() does right
+    // before main() returns. It must be joined there instead of detached: a detached thread is killed at process
+    // exit before it drains the pipe, which loses the last lines of the log -- usually the ones explaining why the
+    // app is exiting.
+    g_logFile = logFile;
+    g_logPumpThread = new std::thread{[pipeRead, logFile] {
         bool debugging = IsDebuggerPresent();
         OutputDebugStringA("[Ymir boot] log pump thread started\n");
 
@@ -196,9 +208,29 @@ std::filesystem::path RedirectStdioToLogFile() {
                 OutputDebugStringA(line.c_str());
             }
         }
-    }}.detach();
+        _close(pipeRead);
+    }};
 
     return logPath;
+}
+
+void ShutdownLogRedirect() {
+    if (g_logPumpThread == nullptr || !g_logPumpThread->joinable()) {
+        return;
+    }
+
+    // Closing the descriptors behind stdout and stderr closes the last write ends of the pipe, so the pump thread
+    // reads end-of-file after draining whatever is still buffered in the pipe and then exits
+    std::fflush(stdout);
+    std::fflush(stderr);
+    _close(_fileno(stdout));
+    _close(_fileno(stderr));
+    g_logPumpThread->join();
+
+    if (g_logFile != nullptr) {
+        std::fclose(g_logFile);
+        g_logFile = nullptr;
+    }
 }
 
 // -----------------------------------------------------------------------------

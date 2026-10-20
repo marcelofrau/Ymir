@@ -39,6 +39,14 @@ int main(int argc, char **argv) {
 
     // There is no console on UWP; send the development log to LocalState\StrikerX3\Ymir\ymir-uwp.log
     const std::filesystem::path logPath = platform::uwp::RedirectStdioToLogFile();
+
+    // Drain the log pipe on every path out of main(), including early returns and handled exceptions, so that the
+    // messages explaining an early exit make it to the log file
+    struct LogRedirectGuard {
+        ~LogRedirectGuard() {
+            platform::uwp::ShutdownLogRedirect();
+        }
+    } logRedirectGuard{};
     OutputDebugStringA(fmt::format("[Ymir boot] log redirection done: {}\n", logPath.string()).c_str());
 
     // Draw to the whole screen instead of the TV-safe area on Xbox

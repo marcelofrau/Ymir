@@ -31,6 +31,11 @@ std::filesystem::path FindExternalProfilePath();
 /// @return the path to the log file, or an empty path if the redirection failed
 std::filesystem::path RedirectStdioToLogFile();
 
+/// @brief Flushes stdout/stderr, closes the redirection pipe and waits for the log pump thread to write everything
+/// that is still in flight to the log file. Call it right before `main()` returns; anything printed afterwards is
+/// lost. Safe to call when the redirection failed or was never set up.
+void ShutdownLogRedirect();
+
 /// @brief Makes the app use the whole CoreWindow instead of the TV-safe area on Xbox, which would otherwise leave
 /// black borders around the screen. Must be called from the UI thread after the CoreWindow is created (any time
 /// inside `main()` on UWP).
