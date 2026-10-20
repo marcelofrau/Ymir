@@ -1,0 +1,8 @@
+{
+  "name": "tomlplusplus",
+  "version": "3.4.0",
+  "port-version": 1,
+  "description": "Header-only TOML config file parser and serializer for modern C++. Ymir UWP overlay: installs headers only (upstream port uses meson, which cannot target WindowsStore).",
+  "homepage": "https://marzer.github.io/tomlplusplus/",
+  "license": "MIT"
+}

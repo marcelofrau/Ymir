@@ -86,9 +86,11 @@ if (NOT Ymir_LIBRARY_ONLY)
 
     # discord-rpc - https://github.com/discord/discord-rpc
     # - Via myMCpp / PCSX2
-    message(STATUS "==> discord-rpc")
-    find_package(nlohmann_json CONFIG REQUIRED)
-    add_subdirectory(discord-rpc EXCLUDE_FROM_ALL)
+    if (Ymir_ENABLE_DISCORD_RPC)
+        message(STATUS "==> discord-rpc")
+        find_package(nlohmann_json CONFIG REQUIRED)
+        add_subdirectory(discord-rpc EXCLUDE_FROM_ALL)
+    endif ()
 endif ()
 
 # Place vendored library projects under a Vendored folder in Visual Studio solutions
@@ -99,7 +101,9 @@ if (MSVC)
     if (NOT Ymir_LIBRARY_ONLY)
         set_target_properties(imgui PROPERTIES FOLDER Vendored)
         set_target_properties(lz4 PROPERTIES FOLDER Vendored)
-        set_target_properties(discord-rpc PROPERTIES FOLDER Vendored)
+        if (Ymir_ENABLE_DISCORD_RPC)
+            set_target_properties(discord-rpc PROPERTIES FOLDER Vendored)
+        endif ()
     endif ()
 endif ()
 

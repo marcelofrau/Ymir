@@ -1,6 +1,7 @@
 [submodule "vendor/mio"]
 	path = vendor/mio
-	url = https://github.com/StrikerX3/mio.git
+	url = https://github.com/marcelofrau/mio.git
+	branch = uwp
 [submodule "vendor/concurrentqueue/concurrentqueue"]
 	path = vendor/concurrentqueue/concurrentqueue
 	url = https://github.com/cameron314/concurrentqueue.git
@@ -36,3 +37,4 @@
 	path = vendor/SDL3-uwp
 	url = https://github.com/SternXD/SDL3-uwp.git
 	branch = uwp-3.4.16
+	shallow = true

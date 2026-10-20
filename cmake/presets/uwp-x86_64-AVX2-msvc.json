@@ -1,0 +1,44 @@
+{
+  "version": 9,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 23,
+    "patch": 0
+  },
+  "include": [
+    "../config/arch-x86_64.json",
+    "../config/build.json",
+    "../config/platform-uwp.json",
+    "../config/targets.json"
+  ],
+  "configurePresets": [
+    {
+      "name": "UWP-x86-64-AVX2-MSVC",
+      "displayName": "UWP x86-64 AVX2 MSVC (Xbox Series X|S)",
+      "description": "UWP build for Xbox Series X|S in Dev Mode (Zen 2, AVX2). Multi-config Visual Studio solution; pick Debug or RelWithDebInfo when building.",
+      "inherits": [
+        "config-platform-uwp",
+        "config-build-full",
+        "config-arch-x86_64-AVX2",
+        "config-target-release"
+      ],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": null
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "UWP-x86-64-AVX2-MSVC-Debug",
+      "displayName": "UWP x86-64 AVX2 MSVC Debug",
+      "configurePreset": "UWP-x86-64-AVX2-MSVC",
+      "configuration": "Debug"
+    },
+    {
+      "name": "UWP-x86-64-AVX2-MSVC-Release",
+      "displayName": "UWP x86-64 AVX2 MSVC Release",
+      "configurePreset": "UWP-x86-64-AVX2-MSVC",
+      "configuration": "RelWithDebInfo"
+    }
+  ]
+}

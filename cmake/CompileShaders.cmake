@@ -23,12 +23,28 @@
 ##   DXC_DXIL_SUPPORTED (BOOL): whether the DXC executable can output DXIL
 ##   DXC_SPIRV_SUPPORTED (BOOL): whether the DXC executable can output SPIR-V
 
+# UWP builds don't need SPIR-V and require signed DXIL since shaders are not validated at runtime.
+# Prefer the Windows SDK DXC there, which signs DXIL with the dxil.dll shipped next to it.
+if (WINDOWS_STORE)
+    set(_programfiles_x86 "ProgramFiles(x86)")
+    find_program(DXC_EXECUTABLE
+        NAMES dxc
+        HINTS
+            "$ENV{${_programfiles_x86}}/Windows Kits/10/bin/${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}/x64"
+            "$ENV{WindowsSdkVerBinPath}/x64"
+        NO_DEFAULT_PATH
+    )
+    unset(_programfiles_x86)
+endif ()
+
 # Try to locate DXC in Vulkan SDK.
-find_program(DXC_EXECUTABLE_VULKAN
-    NAMES dxc
-    HINTS "$ENV{VULKAN_SDK}/bin" "$ENV{VULKAN_SDK}/bin64"
-    NO_DEFAULT_PATH
-)
+if (NOT DXC_EXECUTABLE)
+    find_program(DXC_EXECUTABLE_VULKAN
+        NAMES dxc
+        HINTS "$ENV{VULKAN_SDK}/bin" "$ENV{VULKAN_SDK}/bin64"
+        NO_DEFAULT_PATH
+    )
+endif ()
 
 # If found, use it.
 if (DXC_EXECUTABLE_VULKAN)
@@ -38,6 +54,20 @@ endif ()
 # Fall back to system-provided DXC compiler.
 if (NOT DXC_EXECUTABLE)
     find_program(DXC_EXECUTABLE NAMES dxc)
+endif ()
+
+# Fall back to the DXC compiler bundled with the Windows SDK selected by the Visual Studio generator.
+# This is needed when configuring outside of a Developer Command Prompt.
+if (WIN32 AND NOT DXC_EXECUTABLE)
+    set(_programfiles_x86 "ProgramFiles(x86)")
+    find_program(DXC_EXECUTABLE
+        NAMES dxc
+        HINTS
+            "$ENV{WindowsSdkVerBinPath}/x64"
+            "$ENV{${_programfiles_x86}}/Windows Kits/10/bin/${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}/x64"
+        NO_DEFAULT_PATH
+    )
+    unset(_programfiles_x86)
 endif ()
 
 # Bail out right away on Windows as we cannot easily compile DXIL shaders without DXC.

@@ -1,6 +1,9 @@
 {
   "dependencies": [
-    "catch2",
+    {
+      "name": "catch2",
+      "platform": "!uwp"
+    },
     "cereal",
     {
       "name": "curl",
@@ -10,19 +13,24 @@
         "http3",
         "ssl",
         "zstd"
-      ]
+      ],
+      "platform": "!uwp"
     },
     "cxxopts",
     "date",
     "neargye-semver",
     "nlohmann-json",
-    "openssl",
+    {
+      "name": "openssl",
+      "platform": "!uwp"
+    },
     "rtmidi",
     {
       "name": "sdl3",
       "features": [
         "vulkan"
-      ]
+      ],
+      "platform": "!uwp"
     },
     {
       "name": "sdl3",

@@ -15,6 +15,8 @@
     "cmake/presets/libonly-x86_64-SSE2-clang.json",
     "cmake/presets/libonly-x86_64-SSE2-msvc.json",
 
+    "cmake/presets/uwp-x86_64-AVX2-msvc.json",
+
     "cmake/presets/wip/arm-clang.json",
     "cmake/presets/wip/linux.json",
     "cmake/presets/wip/macos.json"
