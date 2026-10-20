@@ -426,6 +426,91 @@ Compilado aqui: UWP Debug e desktop.
 Se aparecer `Timed out after 10 seconds opening the default audio playback device`, a hipótese do deadlock está
 errada; siga o README de evidências.
 
+
+### Entrada do agente OpenCode #5 — 2026-10-20 (máquina de destino, COM Xbox, causa raiz confirmada)
+
+**Run 05 confirmou o bloqueio, sem ambiguidade.** O build com as marcas `[Ymir audio]` produziu:
+
+```
+[Ymir boot] initializing audio
+[Ymir audio] Init(): opening default playback device (freq=44100 format=8010 channels=2)
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\AudioSes.dll'. ...
+```
+
+A marca **antes** da chamada saiu; a marca **depois** (`Init(): SDL_OpenAudioDeviceStream returned ...`) não.
+**`SDL_OpenAudioDeviceStream` não retorna.** Formato pedido: S16LE, 44100 Hz, estéreo — nada exótico, então não são os
+parâmetros.
+
+**Causa raiz identificada no código do SDL3-uwp.** Cadeia:
+
+```
+SDL_OpenAudioDeviceStream → SDL_OpenAudioDevice → WASAPI_OpenDevice → ActivateWasapiDevice
+  → WASAPI_ActivateDevice                      (src/audio/wasapi/SDL_wasapi_winrt.cpp:292)
+     → ActivateAudioInterfaceAsync(...)        (mesmo arquivo:306)   <-- assíncrono, servido pela ASTA do app
+     → handler->WaitForCompletion()            (mesmo arquivo:317)   <-- SDL_WaitSemaphore, SEM TIMEOUT
+```
+
+O próprio SDL documenta o risco no local, em `SDL_wasapi_winrt.cpp:316`:
+
+> `// !!! FIXME: the problems in SDL2 that needed this to be synchronous are _probably_ solved by SDL3, and this can`
+> `// block indefinitely if a user prompt is shown to get permission to use a microphone.`
+
+`ActivateAudioInterfaceAsync` é assíncrono e sua conclusão é entregue pelo **dispatcher do CoreWindow** — que só é
+bombeado pela thread principal (a ASTA). Como essa thread é justamente a que está bloqueada dentro de
+`SDL_OpenAudioDeviceStream`, a ativação nunca completa e o semáforo nunca é liberado. Deadlock.
+
+Por que `SDL_Init(SDL_INIT_AUDIO)` (app.cpp:639) **passa** e a abertura do dispositivo **não**: o `Init` só faz a
+*enumeração* de endpoints, cujos eventos do watcher chegam por outra via. A *ativação* do endpoint só acontece na
+abertura — e é ali que trava.
+
+**Confirmação do mecanismo de desbloqueio.** O `SDL_PumpEvents()` da thread principal chega em:
+
+```
+SDL_PumpEvents → SDL_PumpEventsInternal (src/events/SDL_events.c:1501, `SDL_assert(SDL_IsMainThread())`)
+  → WINRT_PumpEvents (src/video/winrt/SDL_winrtevents.cpp:51)
+     → SDL_WinRTApp::PumpEvents (src/core/winrt/SDL_winrtapp_direct3d.cpp:418)
+        → CoreWindow::GetForCurrentThread()->Dispatcher->ProcessEvents(CoreProcessEventsOption::ProcessAllIfPresent)
+```
+
+A linha `SDL_winrtapp_direct3d.cpp:426` **é** o bombeamento do dispatcher da ASTA. Portanto a abordagem do agente
+Claude — abrir o dispositivo numa worker thread enquanto a thread principal bombeia — ataca a causa correta.
+
+**Riscos conhecidos da abordagem (aceitos, documentados):**
+
+1. Em `SDL_winrtapp_direct3d.cpp:669-672` o próprio SDL avisa que o `ProcessEvents` **não retorna** após entregar um
+   evento de *suspend*; e a variante `ProcessOneAndAllPending` (`:435`) bloqueia quando não há eventos pendentes. Se o
+   app for para background durante a janela de boot, o `SDL_PumpEvents()` pode travar em vez de retornar, e o timeout
+   de 10 s nunca dispara.
+2. O `opener.detach()` no timeout deixa uma thread viva dentro do SDL; se o app prosseguir e chamar `SDL_Quit()`, há
+   risco de uso concorrente das estruturas do SDL no teardown.
+3. A causa raiz permanece no `vendor/SDL3-uwp`, que a `AGENTS.md` regra 3 e o `AGENTS.md` do próprio SDL proíbem
+   alterar (contribuições de IA são vedadas lá). O contorno fica no Ymir, o que é o local correto dadas as restrições.
+
+**Rota alternativa levantada (não tentada ainda, plano B).** Existe um projeto no workspace do usuário,
+`F:\workspace\ymir-xbox-with-real-audio`, que **já roda áudio real no Xbox** — não via SDL/WASAPI, mas via
+**XAudio2** (`src/audio/XAudio2Output.cpp`): `XAudio2Create` → `CreateMasteringVoice` → `CreateSourceVoice`, tudo
+síncrono, sem `ActivateAudioInterfaceAsync`, sem semáforo, sem dependência de message pump. É a API de áudio nativa do
+Xbox e não tem esse modo de falha.
+
+Verificado nesta máquina: `xaudio2.lib` e `xaudio2.h` estão presentes no SDK 10.0.28000.0, que é exatamente o
+`WindowsTargetPlatformVersion` usado pelo build UWP (`out/build/UWP-x86-64-AVX2-MSVC/apps/ymir-sdl3/ymir-sdl3.vcxproj`),
+tanto em `um/x64` quanto em `Include/um`. Ou seja, a rota é viável sem dependência externa nova.
+
+Se a abordagem da worker thread falhar, **esta é a rota a seguir**: implementar um backend de áudio XAudio2 no Ymir,
+atrás de uma interface, selecionado sob `YMIR_PLATFORM_UWP` — em vez de insistir em contornar o WASAPI do SDL.
+
+**Instrumentação adicionada nesta entrada:** `OpenAudioDeviceStreamWithoutBlockingUIThread` ganhou marcas
+`[Ymir audio] open-on-worker:` — início da worker, retorno da worker, número de iterações de pump e detecção de
+timeout. O run 06 com esse build distingue as três saídas possíveis: worker retornou stream, worker retornou nullptr,
+ou timeout com a worker presa.
+
+**Pendências para o próximo agente:**
+
+1. Rodar o build atual (run 06) e ler as marcas `open-on-worker:`. Registrar o log bruto em `docs/uwp/evidence/`.
+2. Se destravar: confirmar que o app passa do splash e chega ao loop principal, e **validar pelo tile**, não só pelo
+   debugger.
+3. Se ainda travar: ir para a rota XAudio2 descrita acima.
+
 ---
 
 ## 1. Estado atual (o que já está pronto e validado)

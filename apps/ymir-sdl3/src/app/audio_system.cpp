@@ -52,8 +52,11 @@ SDL_AudioStream *OpenAudioDeviceStreamWithoutBlockingUIThread(const SDL_AudioSpe
     };
     auto state = std::make_shared<OpenState>();
 
+    YMIR_AUDIO_TRACE("open-on-worker: starting worker thread\n");
     std::thread opener{[state, audioSpec, callback, userdata] {
+        YMIR_AUDIO_TRACE("open-on-worker: worker calling SDL_OpenAudioDeviceStream\n");
         state->stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &audioSpec, callback, userdata);
+        YMIR_AUDIO_TRACE("open-on-worker: worker returned {}\n", state->stream != nullptr ? "a stream" : "nullptr");
         if (state->stream == nullptr) {
             // SDL errors are per-thread; copy it so the caller's thread can report it
             state->error = SDL_GetError();
@@ -62,13 +65,18 @@ SDL_AudioStream *OpenAudioDeviceStreamWithoutBlockingUIThread(const SDL_AudioSpe
     }};
 
     const auto deadline = std::chrono::steady_clock::now() + kUWPAudioOpenTimeout;
+    int pumpIterations = 0;
     while (!state->done.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline) {
         SDL_PumpEvents(); // dispatches CoreWindow events, which lets the audio activation complete
         SDL_Delay(1);
+        ++pumpIterations;
     }
+    YMIR_AUDIO_TRACE("open-on-worker: wait loop ended after {} pump iterations, done={}\n", pumpIterations,
+                     state->done.load(std::memory_order_acquire));
 
     if (!state->done.load(std::memory_order_acquire)) {
         // The worker is stuck inside SDL; leave it be; it only touches the shared state it owns a reference to
+        YMIR_AUDIO_TRACE("open-on-worker: TIMED OUT, detaching the worker thread\n");
         opener.detach();
         SDL_SetError("Timed out after %d seconds opening the default audio playback device",
                      static_cast<int>(kUWPAudioOpenTimeout.count()));

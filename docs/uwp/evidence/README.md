@@ -16,6 +16,38 @@ same symptom is expected but is not the current focus.
 |---|---|---|
 | 03 | `run-2026-10-20-03-texture-markers.raw.txt` | The log mirror works end to end. The D3D12 context initializes **successfully**. The boot reaches the framebuffer/display texture creation. Last marker: `[Ymir boot] display texture OK, stbi logo load next`. |
 | 04 | `run-2026-10-20-04-audio-hang.raw.txt` | Adds markers down the whole path between the graphics context and the main loop. **The boot stops right after `[Ymir boot] initializing audio`, when `AudioSes.dll` (WASAPI) loads.** No marker after that, and the loop is never reached. |
+| 05 | (see the quote below) | Audio-path markers prove the block is **inside** the `SDL_OpenAudioDeviceStream` call: the marker before it prints, the one after it never does. Root cause confirmed as the WASAPI activation deadlock. |
+
+## Run 05 — the decisive measurement
+
+```
+[Ymir boot] initializing audio
+[Ymir audio] Init(): opening default playback device (freq=44100 format=8010 channels=2)
+'ymir-sdl3.exe' (Win32): Loaded 'C:\Windows\System32\AudioSes.dll'. ...
+```
+
+`format=8010` is `SDL_AUDIO_S16LE`; the request is 44100 Hz stereo, an entirely ordinary format. The call is entered and
+**never returns**.
+
+## Root cause (confirmed)
+
+```
+SDL_OpenAudioDeviceStream → WASAPI_OpenDevice → ActivateWasapiDevice → WASAPI_ActivateDevice
+   src/audio/wasapi/SDL_wasapi_winrt.cpp:292
+   → ActivateAudioInterfaceAsync(...)     :306   async; completion is delivered by the app's ASTA dispatcher
+   → handler->WaitForCompletion()         :317   SDL_WaitSemaphore, no timeout
+```
+
+The completion handler is serviced by the CoreWindow dispatcher, which is pumped by the main (ASTA) thread. That thread
+is the one blocked inside SDL, so the activation never completes and the semaphore is never signalled. SDL itself flags
+the risk at `SDL_wasapi_winrt.cpp:316`.
+
+Why `SDL_Init(SDL_INIT_AUDIO)` passes: it only *enumerates* endpoints. The hang is in *activation*, which happens when
+the device is opened.
+
+Contributing conditions: the main thread's COM apartment is STA (`src/core/windows/SDL_windows.c:215`,
+`COINIT_APARTMENTTHREADED`); the UWP WASAPI platform init does **not** call `CoInitializeEx` itself
+(`SDL_wasapi_winrt.cpp:214` returns true immediately).
 
 ## The most recent run (04) — reading
 
@@ -68,13 +100,35 @@ Run 05 with that build answers the question unambiguously.
 
 ## Hypotheses, ranked
 
-1. **`SDL_OpenAudioDeviceStream` blocks opening the default playback device under Xbox/UWP.** Most likely, given the
-   measured stopping point. Not yet confirmed — run 05 decides.
-2. The block is not in SDL but in the driver/OS audio stack *after* the stream is opened (the call returns, and the app
-   blocks later without a marker). Less likely, because `starting audio stream` would have printed first.
-3. Something earlier silently corrupts state so that the audio call deadlocks — e.g. the two `_com_error` exceptions from
-   `CoreWindow::GetForCurrentThread()` / `ApplicationView::GetForCurrentView()`. Speculative; owed to the
-   "island for this CoreWindow has not been initialized" symptom that appears on every run.
+1. **`SDL_OpenAudioDeviceStream` blocks opening the default playback device under Xbox/UWP.** **CONFIRMED by run 05.**
+   See "Root cause" above. The block is the WASAPI activation deadlock, serviced by the ASTA dispatcher.
+2. The block is not in SDL but in the driver/OS audio stack *after* the stream is opened — **eliminated**: the
+   marker placed after the call never prints, so the call never returns.
+3. State corrupted earlier (the two `_com_error` from `CoreWindow::GetForCurrentThread()` /
+   `ApplicationView::GetForCurrentView()`) — **not needed as an explanation** now that the mechanism is known; the
+   "island for this CoreWindow has not been initialized" symptom is a CoreWindow activation quirk, not the cause here.
+
+## Workarounds under evaluation
+
+1. **Open the device from a worker thread while the main thread pumps the CoreWindow dispatcher** (`SDL_PumpEvents()`),
+   with a timeout. The pump path reaches
+   `CoreWindow::GetForCurrentThread()->Dispatcher->ProcessEvents(ProcessAllIfPresent)` at
+   `src/core/winrt/SDL_winrtapp_direct3d.cpp:426`, which is exactly the ASTA pump the activation needs. Implemented in
+   `audio_system.cpp`; run 06 verifies it.
+   - Known risk: `SDL_winrtapp_direct3d.cpp:669-672` warns that `ProcessEvents` does not return after delivering a
+     *suspend* event, and the `ProcessOneAndAllPending` variant (`:435`) blocks when no events are pending. A suspend
+     during the boot window can therefore turn the timeout into a hang.
+   - Known risk: detaching the stuck worker on timeout leaves a thread inside SDL, which is unsafe if the app later
+     calls `SDL_Quit()`.
+2. **Route audio through XAudio2 instead of SDL/WASAPI** (plan B). A sibling project in the user's workspace,
+   `F:\workspace\ymir-xbox-with-real-audio`, already runs real audio on the Xbox this way
+   (`src/audio/XAudio2Output.cpp`): `XAudio2Create` → `CreateMasteringVoice` → `CreateSourceVoice`, fully synchronous,
+   no `ActivateAudioInterfaceAsync`, no semaphore, no message-pump dependency. `xaudio2.lib` / `xaudio2.h` are present
+   in SDK 10.0.28000.0 — the exact `WindowsTargetPlatformVersion` this UWP build uses — so no new external dependency
+   is needed.
+
+Local changes to `vendor/SDL3-uwp` are not an option: repo `AGENTS.md` rule 3 and the vendored SDL's own `AGENTS.md`
+both forbid AI-authored contributions there.
 
 ## Root cause analysis of run 04 (source reading, 2026-10-20)
 
