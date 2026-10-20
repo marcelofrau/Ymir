@@ -31,8 +31,6 @@
         "Ymir_ENABLE_SANDBOX": "OFF",
         "Ymir_ENABLE_TESTS": "OFF",
         "Ymir_ENABLE_YMDASM": "OFF",
-        "Ymir_ENABLE_YMIR_DBG": "OFF",
-        "Ymir_ENABLE_YMIR_HEADLESS": "OFF",
         "Ymir_ENABLE_UPDATE_CHECKS": "OFF",
         "Ymir_ENABLE_DISCORD_RPC": "OFF",
         "Ymir_ENABLE_UPDATE_CHECKER": "OFF",

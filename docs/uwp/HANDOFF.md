@@ -43,16 +43,19 @@ Validado na máquina de origem em 2026-10-20 (VS Build Tools 2026 18.x, MSVC 14.
 | `.msix` assinado (`CN=CMake Test Cert`) + `.cer` + `Dependencies\x64\Microsoft.VCLibs*.appx` | ✅ gerados |
 | Conteúdo do `.msix`: `ymir-sdl3.exe`, `SDL3.dll`, `Assets\*.png`, `resources.pri`, `AppxSignature.p7x` | ✅ conferido |
 | Shaders DXIL assinados (hash do container DXBC diferente de zero) | ✅ conferido |
-| Build desktop (preset `Full-x86-64-AVX2-MSVC-Release`) e testes continuam passando | ✅ 75/75 (seção 1.1) |
+| Build desktop (preset `Full-x86-64-AVX2-MSVC-Release`) e testes continuam passando | ✅ 14/14 na 0.4.2 (seção 1.1) |
 | `scripts/uwp/package.ps1` → `out/dist/ymir-uwp_<ver>_x64.zip` (msix, cer, VCLibs, Install.ps1, INSTALL.md) + zip de símbolos | ✅ gerado e conferido |
-| CI/CD `.github/workflows/uwp.yml` (build, artifact, release por tag `uwp-v*`) | ✅ primeiro run verde em 2026-10-20 (runner `windows-2025` com **Visual Studio Enterprise 2026**, versão 0.4.0.2, artifacts `ymir-uwp-0.4.0.2` e `-symbols`). A publicação de release por tag ainda não foi exercitada (passo 15) |
+| CI/CD `.github/workflows/uwp.yml` (build, artifact, release por tag `uwp-v*`) | ✅ primeiro run verde em 2026-10-20 (runner `windows-2025` com **Visual Studio Enterprise 2026**, versão 0.4.0.2, artifacts `ymir-uwp-0.4.0.2` e `-symbols`; esse run foi antes do rebase pra 0.4.2). A publicação de release por tag ainda não foi exercitada (passo 15) |
+| Sincronizado com o upstream **0.4.2** (`8cdf0a53`) por rebase em 2026-10-20; build UWP Release limpo (`--fresh`, baseline nova do vcpkg) | ✅ |
 | Fallback VS 2022 (preset `UWP-x86-64-AVX2-MSVC-VS2022`) | ⚠️ configurado, mas **não compilado**: a máquina de origem e o runner do GitHub têm VS 2026 |
 | **Rodar o app** (PC ou Xbox) | ❌ **não testado**: a máquina de origem não tem Xbox e é corporativa |
 
 ### 1.1 Resultado da regressão desktop
-✅ Em 2026-10-20, com o código final desta branch: preset `Full-x86-64-AVX2-MSVC-Release` (Ninja + MSVC 14.51 +
-triplet `x64-windows`) compilou sem erros, e o `ctest` deu **75/75 testes OK**. As mudanças do port não quebram o
-desktop.
+✅ Em 2026-10-20, depois do rebase pro upstream 0.4.2: o preset `Full-x86-64-AVX2-MSVC-Release` (Ninja + MSVC
+14.51 + triplet `x64-windows`, baseline nova do vcpkg) compilou sem erros, e o `ctest` deu **14/14 testes OK**.
+
+Antes do rebase eram 75 testes. A diferença vem do upstream, que removeu `ymir-dbg`, `ymir-headless` e
+`ymir-dbg-commons` com os testes deles; não tem relação com o port.
 
 ### 1.2 Identidade do pacote (útil para achar arquivos)
 
@@ -62,7 +65,7 @@ desktop.
 | Publisher | `CN=CMake Test Cert` |
 | **Package Family Name (PFN)** | `Ymir.SaturnEmulator.UWP_d7c8pgvss6ysm` |
 | App Id | `App` (PRAID = `Ymir.SaturnEmulator.UWP_d7c8pgvss6ysm!App`) |
-| Versão | `0.4.0.0` local (vem do `project(Ymir VERSION ...)` no CMake); no CI, `0.4.0.<run>` ou a da tag `uwp-v*` |
+| Versão | `0.4.2.0` local (vem do `project(Ymir VERSION ...)` no CMake); no CI, `0.4.2.<run>` ou a da tag `uwp-v*` |
 | Pasta de dados (PC) | `%LOCALAPPDATA%\Packages\Ymir.SaturnEmulator.UWP_d7c8pgvss6ysm\LocalState\StrikerX3\Ymir\` |
 | Pasta de dados (Xbox, Device Portal → File explorer) | `LocalAppData\Ymir.SaturnEmulator.UWP_d7c8pgvss6ysm\LocalState\StrikerX3\Ymir\` |
 | **Log** | `<pasta de dados>\ymir-uwp.log` (stdout e stderr, com flush por linha) |
@@ -136,9 +139,9 @@ Confira cada item **antes** do passo 1. Os comandos de verificação devem rodar
   O primeiro configure demora alguns minutos: o vcpkg compila as dependências para `x64-uwp-static-md`.
 - [ ] **Esperado** no fim:
   ```
-  MSIX:         ...\AppPackages\ymir-sdl3\ymir-sdl3_0.4.0.0_x64_Debug_Test\ymir-sdl3_0.4.0.0_x64_Debug.msix
+  MSIX:         ...\AppPackages\ymir-sdl3\ymir-sdl3_0.4.2.0_x64_Debug_Test\ymir-sdl3_0.4.2.0_x64_Debug.msix
   Dependency:   ...\Dependencies\x64\Microsoft.VCLibs.x64.Debug.14.00.appx
-  Certificate:  ...\ymir-sdl3_0.4.0.0_x64_Debug.cer
+  Certificate:  ...\ymir-sdl3_0.4.2.0_x64_Debug.cer
   ```
 - [ ] Warnings **esperados e inofensivos**:
   - `APPX0006 ... runFullTrust`;
@@ -148,7 +151,7 @@ Confira cada item **antes** do passo 1. Os comandos de verificação devem rodar
 
 ### Passo 5: Build Release do pacote
 - [ ] `pwsh scripts/uwp/build.ps1 -Configuration Release`
-- [ ] **Esperado:** `...\ymir-sdl3_0.4.0.0_x64_RelWithDebInfo_Test\ymir-sdl3_0.4.0.0_x64_RelWithDebInfo.msix` e
+- [ ] **Esperado:** `...\ymir-sdl3_0.4.2.0_x64_RelWithDebInfo_Test\ymir-sdl3_0.4.2.0_x64_RelWithDebInfo.msix` e
   `Dependencies\x64\Microsoft.VCLibs.x64.14.00.appx`.
 - [ ] **Use o Release pro Xbox.** O Debug depende do `Microsoft.VCLibs.140.00.Debug` e é bem mais lento.
 
@@ -163,7 +166,7 @@ Confira cada item **antes** do passo 1. Os comandos de verificação devem rodar
 
 ### Passo 7 (opcional, recomendado): Smoke test no PC (Windows como app UWP)
 Achar problemas no PC é muito mais barato do que no Xbox.
-- [ ] Na pasta `...\ymir-sdl3_0.4.0.0_x64_RelWithDebInfo_Test\`, rode `pwsh .\Install.ps1`.
+- [ ] Na pasta `...\ymir-sdl3_0.4.2.0_x64_RelWithDebInfo_Test\`, rode `pwsh .\Install.ps1`.
 
   Ele pede elevação para instalar o `.cer` em *Trusted People* e instala as dependências. Se não puder elevar,
   veja **T-08**.
@@ -262,16 +265,16 @@ Escolha **uma** das opções:
   `gh workflow disable "PR builds" -R marcelofrau/Ymir`. Confira os nomes com `gh workflow list -R marcelofrau/Ymir`.
 - [ ] Dispare um build: `gh workflow run uwp.yml -R marcelofrau/Ymir --ref uwp/main`. Acompanhe com
   `gh run watch -R marcelofrau/Ymir`.
-- [ ] **Esperado:** o job "Build UWP package (x64)" termina verde e o run tem o artifact `ymir-uwp-0.4.0.<run>`.
+- [ ] **Esperado:** o job "Build UWP package (x64)" termina verde e o run tem o artifact `ymir-uwp-0.4.2.<run>`.
   O passo "Show toolchain" mostra qual VS foi usado.
 - [ ] Se falhar, baixe o log (`gh run view --log-failed -R marcelofrau/Ymir`) e procure na seção 4. Nos erros de
   compilação com VS 2022, veja T-01.
 - [ ] **Release:** depois do teste no Xbox (passo 12), crie e envie a tag:
   ```powershell
-  git tag uwp-v0.4.0.1
-  git push origin uwp-v0.4.0.1
+  git tag uwp-v0.4.2.1
+  git push origin uwp-v0.4.2.1
   ```
-  **Esperado:** aparece um GitHub Release "Ymir UWP 0.4.0.1" com `ymir-uwp_0.4.0.1_x64.zip` e o zip de símbolos.
+  **Esperado:** aparece um GitHub Release "Ymir UWP 0.4.2.1" com `ymir-uwp_0.4.2.1_x64.zip` e o zip de símbolos.
   Incremente o último número a cada release; ele precisa ser maior que o do release anterior pro Xbox aceitar como
   atualização.
 
@@ -412,6 +415,15 @@ Escolha **uma** das opções:
 - **Se ainda acontecer:** confirme que o hint é definido **antes** do `SDL_Init` (procure
   `SDL_HINT_WINRT_HANDLE_BACK_BUTTON` em `apps/ymir-sdl3/src/app/app.cpp`) e registre na seção 5.
 
+### T-18: `fatal: Unable to create '.git/index.lock': File exists`
+- **Causa:** um processo git anterior morreu e deixou o lock. Na máquina de origem isso aconteceu algumas vezes
+  durante builds longos. O CMake do Ymir não chama git, então o culpado é algo externo.
+- **Correção:**
+  1. Confirme que **nenhum** git está rodando: `Get-Process git -ErrorAction SilentlyContinue` não retorna nada.
+     Feche IDEs com integração git, se houver.
+  2. Remova **só esse arquivo**: `Remove-Item .git\index.lock`.
+  3. Repita o comando git.
+
 ---
 
 ## 5. Registro de execução (preencha durante o trabalho)
@@ -419,6 +431,7 @@ Escolha **uma** das opções:
 | Data | Passo | Resultado | Notas / erro / log anexado |
 |---|---|---|---|
 | 2026-10-20 | 1–6 | OK (máquina de origem) | `.msix` Debug e Release sem erros; regressão desktop 75/75 |
+| 2026-10-20 | 8 da seção 8 (rebase) | OK | Rebase pro upstream 0.4.2 (285 commits). Conflitos: `CMakeLists.txt` raiz (bloco de versão/feature flags reorganizado), `apps/ymir-sdl3/CMakeLists.txt` (macros) e `video_settings_view.cpp` (o upstream passou a mostrar o toggle de HW sempre; mudança do port removida). Backup pré-rebase em `backup/uwp-main-pre-0.4.2` (só local) |
 | 2026-10-20 | 15 (parcial) | OK | Run 39396157010 do `uwp.yml` verde com VS 2026 no runner; artifact de 5,3 MB |
 | | | | |
 

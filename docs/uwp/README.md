@@ -1,7 +1,7 @@
 # Ymir para UWP / Xbox Dev Mode — Arquitetura e decisões
 
 > Documento de referência do port. O passo a passo de execução fica em [HANDOFF.md](HANDOFF.md).
-> Última atualização: 2026-10-20.
+> Última atualização: 2026-10-20 (baseado no upstream Ymir 0.4.2, `8cdf0a53`).
 
 ## 1. Objetivo
 
@@ -77,7 +77,7 @@ O workflow `.github/workflows/uwp.yml` roda no runner `windows-2025`:
 | Gatilho | O que faz |
 |---|---|
 | push ou PR em `uwp/**` | build Release; zip como *artifact* do workflow |
-| tag `uwp-vX.Y.Z.R` (ex.: `uwp-v0.4.0.1`) | build com a versão da tag; **GitHub Release** com o zip e os símbolos |
+| tag `uwp-vX.Y.Z.R` (ex.: `uwp-v0.4.2.1`) | build com a versão da tag; **GitHub Release** com o zip e os símbolos |
 | manual (`workflow_dispatch`) | build; com `release: true`, publica uma *prerelease* `uwp-v<versão>` |
 
 - **Versão do pacote:** vem da tag, ou de `<versão do Ymir>.<run_number>` nos demais casos.
@@ -204,7 +204,6 @@ ymir-uwp_<ver>_x64_symbols.zip                      → .appxsym (símbolos pra 
 - `src/app/services/discord_rpc_service.cpp`: no-op sem `Ymir_ENABLE_DISCORD_RPC`.
 - `src/app/update_checker.hpp` e `src/app/update_checker_null.cpp` (novo).
 - `src/app/ui/windows/about_window.cpp`: entradas de curl, OpenSSL, nghttp* e brotli só com update checker.
-- `src/app/ui/views/settings/video_settings_view.cpp`: toggle "Use hardware acceleration" visível no UWP.
 - `src/util/os_exception_handler.cpp`: no-op no UWP (Vectored Exception Handler é desktop-only).
 - `src/util/os_features.cpp`: sem DWM no UWP.
 
