@@ -10,8 +10,9 @@ On the Xbox (Dev Mode, launched from Visual Studio 2026), the app **stopped on t
 (runs 03–06, the audio deadlock). It did not crash, did not exit, and showed no error dialog. The process stayed
 alive. On the PC (packaged UWP build) the same symptom is expected but is not the current focus.
 
-**Current symptom (run 07, XAudio2 backend):** the splash is dismissed and the screen turns **black** and stays
-black. See "Run 07" below.
+**Current symptom (run 08):** the boot **completes** — D3D12, ImGui, XAudio2, the emulator thread and the main loop
+all start — and the process then hits a **debug assertion in the CRT**, raised by
+`util::StdioSuppressor::~StdioSuppressor()` while the MIDI backend initializes. See "Run 08" below.
 
 ## Index of runs
 
@@ -22,6 +23,82 @@ black. See "Run 07" below.
 | 05 | (see the quote below) | Audio-path markers prove the block is **inside** the `SDL_OpenAudioDeviceStream` call: the marker before it prints, the one after it never does. Root cause confirmed as the WASAPI activation deadlock. |
 | 06 | `run-2026-10-20-06-worker-thread-pump-refuted.raw.txt` | The worker-thread + dispatcher-pump workaround. **Refuted:** ~5000 `SDL_PumpEvents()` calls over 10 seconds do not unblock the activation. The timeout produces a clean failure, and the detached worker outlives the VDP render threads (the orphan-thread risk). |
 | 07 | (no log kept) | First run with the XAudio2 backend, F5 with a **Debug** build. **The splash is dismissed and the screen turns black**, and stays that way. No output was saved. Reading below. |
+| 08 | `run-2026-10-21-08-midi-stdio-assert.raw.txt` | The XAudio2 backend works and the boot **completes**: D3D12, ImGui, audio, emulator thread and the main loop all start, with a correct window geometry (1920x1080, not minimized, focused, `io.DisplaySize` 1920x1080). The process then **hits a debug assertion** in `util::StdioSuppressor::~StdioSuppressor()` during MIDI init. |
+
+## Run 08 — the boot completes, then a CRT assertion in the MIDI init (2026-10-21)
+
+Raw log: `run-2026-10-21-08-midi-stdio-assert.raw.txt`.
+
+### What it proves
+
+```
+[Ymir gfx] D3D12 enhanced barriers reported: not supported; forced off on UWP
+[Ymir boot] ImGui backends initialized
+info  | GfxContext       | Dear ImGui backends initialized: yes
+[Ymir audio] XAudio2 engine created
+[Ymir audio] XAudio2 mastering voice created (2 ch, 44100 Hz)
+[Ymir audio] XAudio2 source voice created
+[Ymir audio] XAudio2 playback started
+[Ymir boot] saturn reset OK
+[Ymir boot] emulator thread started
+[Ymir boot] window shown
+[Ymir boot] entering main loop
+[Ymir boot] frame 0: window 1920x1080 (1920x1080 pixels), flags 632 (hidden=false minimized=false occluded=false input focus=true), ImGui display 1920x1080, framebuffer scale 1x1
+```
+
+- **The XAudio2 backend works on the Xbox.** `XAudio2Create`, `CreateMasteringVoice`, `CreateSourceVoice` and `Start`
+  all return. The WASAPI deadlock is resolved.
+- **The whole boot path passes.** Window geometry is correct: 1920x1080, not hidden, not minimized, not occluded, has
+  input focus, `io.DisplaySize` is 1920x1080, framebuffer scale 1x1.
+- **The CoreWindow was activated** — the splash was dismissed, and that only happens in `CoreWindow::Activate()`,
+  which SDL3-uwp calls from the first `SDL_PollEvent()` of the main loop.
+- The debug layer no longer breaks on warnings, and the ImGui DX12 backend initialized without asserting.
+
+### The failure
+
+```
+Debug Assertion Failed!
+File: minkernel\crts\ucrt\src\appcrt\lowio\dup2.cpp
+Line: 67
+Expression: ((unsigned)target_fh < _NHANDLE_)
+
+ymir-sdl3.exe!util::StdioSuppressor::~StdioSuppressor() Line 40
+ymir-sdl3.exe!app::services::MIDIService::DoInit(...) Line 178
+```
+
+`apps/ymir-sdl3/src/util/stdio_suppress.cpp` used `freopen` to point the stream at the null device:
+
+```cpp
+m_fd_prev = dup(fileno(file));
+freopen_s(&file, kNullFile, "w", file);   // closes the stream when it fails
+...
+dup2(m_fd_prev, fileno(m_file));           // fileno() == -1 -> assert
+```
+
+`freopen` **closes the stream when it fails**. Under UWP the reopen fails, `fileno(stderr)` becomes `-1`, and the
+restoring `_dup2(m_fd_prev, -1)` trips the CRT assertion. As a side effect `freopen` also closed the descriptor of
+the log pipe, killing the thread that drains the log.
+
+### Fix applied
+
+The redirection now works at the **file descriptor** level and never closes the stream:
+
+- `dup` the current descriptor into `m_fd_prev`;
+- `open` the null device into `m_fd_null`;
+- `dup2(m_fd_null, m_fd_target)`;
+- on destruction, `dup2(m_fd_prev, m_fd_target)` and close both temporaries.
+
+The target descriptor is cached in `m_fd_target` and the restore uses the cached value instead of calling `fileno()`
+again, so a stream that went bad can no longer produce an invalid descriptor. If the null device cannot be opened at
+all, the suppression is skipped and a `warn` is logged instead of crashing.
+
+**Side benefit:** the log pipe's descriptor is never closed by the suppressor, so the log pump thread survives it.
+
+### Still open
+
+- Whether the null device is reachable at all in an AppContainer. If it is not, the RtMidi noise stays in the log
+  (harmless) and the line `warn | StdioSuppress | Cannot open 'NUL' ...` will say so.
+- Whether frames are actually presented. Run 08 died before the first present trace could be read.
 
 ## Run 07 — the splash goes away, then a black screen (2026-10-21)
 
@@ -124,17 +201,19 @@ Because all five changes go into the same build, a working run 08 will not say w
 what the console reports (enhanced barriers) and the debug layer still prints its messages, so bisecting later is
 possible by reverting them one at a time.
 
-### How to read run 08
+### How to read run 09
+
+Run 08 is explained above. Run 09 is the first run with the `StdioSuppressor` fix.
 
 | Output shows | Conclusion |
 |---|---|
-| `D3D12 WARNING`/`D3D12 ERROR` lines and, in the old build, a break | Hypothesis 1 (debug layer). Fix the cause of the message |
-| `Dear ImGui DX12 backend could not create its root signature or pipeline state` | Hypothesis 1/3 (ImGui pipeline). Look at the ImGui shaders / PSO on the Xbox |
-| `stalled ... in phase 'present (...)'` with `Present() entered` but no `swapchain->Present returned` | Hypothesis 2, `Present(1, 0)` blocks |
-| `stalled ... in phase 'present (...)'` after `MoveToNextFrame: waiting on fence` | Hypothesis 2, the frame fence never completes |
-| `stalled ... in phase 'poll SDL events'` | Hypothesis 4 |
-| Frames keep coming (`Present() -> Ok` every 5 s), no stall, geometry shows `ImGui display 0x0` or `minimized=true` | Hypothesis 3 |
-| Frames keep coming and the geometry looks right, but the screen is black | The UI is drawn somewhere invisible: compare the swap chain size with the window size in the trace |
+| `Debug Assertion Failed!` in `dup2.cpp` again, but from a different frame | A second `_dup2` with an invalid descriptor exists; send the stack |
+| `warn \| StdioSuppress \| Cannot open 'NUL' to suppress output: errno N` | The null device is not reachable in the AppContainer. The suppression is skipped, the app keeps running, and the RtMidi noise stays in the log. Not fatal, but it needs another mechanism |
+| No `warn` from `StdioSuppress` | The null device opened fine and the suppression works |
+| `[Ymir present] ...` lines every 5 s | Frames are being presented; the UI should be visible |
+| `[Ymir watchdog] ... stalled ... in phase '...'` | The phase name says exactly where the UI thread stopped |
+| No `[Ymir present]` line at all, and no stall | The main loop is not reaching the present; look at the last phase marker |
+| `D3D12 WARNING`/`D3D12 ERROR` lines | The debug layer prints them without breaking now; they are pure information |
 
 ## Run 06 — the pump workaround is refuted
 

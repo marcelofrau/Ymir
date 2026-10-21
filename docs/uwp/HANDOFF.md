@@ -816,6 +816,98 @@ written from a full read of the source and is in English, with Mermaid diagrams.
   render on GitHub, fix its syntax.
 - `AGENTS.md`'s documentation map now lists `docs/ymir/`.
 
+### Entrada do agente OpenCode #7 - 2026-10-21 (maquina de destino, COM Xbox, run 08 + correcao do assert do MIDI)
+
+**Estado:** o boot agora **completa** no Xbox. D3D12, ImGui, XAudio2, thread do emulador e loop principal
+comecam. A unica falha e um **assert de debug do CRT** disparado durante a inicializacao do MIDI.
+
+#### 1. O que o run 08 provou
+
+```
+[Ymir gfx] D3D12 enhanced barriers reported: not supported; forced off on UWP
+[Ymir boot] ImGui backends initialized
+info  | GfxContext       | Dear ImGui backends initialized: yes
+[Ymir audio] XAudio2 engine created
+[Ymir audio] XAudio2 mastering voice created (2 ch, 44100 Hz)
+[Ymir audio] XAudio2 source voice created
+[Ymir audio] XAudio2 playback started
+[Ymir boot] saturn reset OK
+[Ymir boot] emulator thread started
+[Ymir boot] window shown
+[Ymir boot] entering main loop
+[Ymir boot] frame 0: window 1920x1080 (1920x1080 pixels), flags 632 (hidden=false minimized=false occluded=false input focus=true), ImGui display 1920x1080, framebuffer scale 1x1
+```
+
+- **O backend XAudio2 funciona no Xbox.** `XAudio2Create` / `CreateMasteringVoice` / `CreateSourceVoice` / `Start`
+  rodam sem travar. O deadlock do WASAPI esta resolvido.
+- **O boot inteiro passa.** A geometria da janela esta correta: 1920x1080, nao minimizada, com foco de input,
+  `io.DisplaySize` 1920x1080.
+- **O CoreWindow foi ativado** (o splash sumiu), o que so acontece em `CoreWindow::Activate()`, disparado pelo
+  primeiro `SDL_PollEvent()` do loop principal.
+- Log completo em `docs/uwp/evidence/run-2026-10-21-08-midi-stdio-assert.raw.txt`.
+
+#### 2. O crash: assert do CRT no destrutor do StdioSuppressor
+
+```
+Debug Assertion Failed!
+File: minkernel\crts\ucrt\src\appcrt\lowio\dup2.cpp
+Line: 67
+Expression: ((unsigned)target_fh < _NHANDLE_)
+
+ymir-sdl3.exe!util::StdioSuppressor::~StdioSuppressor() Line 40
+ymir-sdl3.exe!app::services::MIDIService::DoInit(...) Line 178
+```
+
+Causa raiz (`apps/ymir-sdl3/src/util/stdio_suppress.cpp`):
+
+```cpp
+// construtor
+m_fd_prev = dup(fileno(file));
+freopen_s(&file, kNullFile, "w", file);   // <-- fecha a stream se falhar
+// destrutor
+dup2(m_fd_prev, fileno(m_file));           // <-- fileno() = -1 se a stream foi fechada
+```
+
+`freopen` **fecha a stream** quando falha. Sob UWP a reabertura falha, entao `fileno(stderr)` passa a ser `-1` e o
+`_dup2(m_fd_prev, -1)` dispara o assert. **O `freopen` tambem fechava o descritor do pipe do log**, matando a thread
+que drena o log.
+
+Correcao aplicada: redirecionamento no **nivel do descritor**, sem `freopen`:
+`dup` do descritor original -> `open("NUL")` -> `dup2` -> restaurar no destrutor. A stream nunca e fechada, o
+descritor alvo e cacheado em `m_fd_target`, e a restauracao usa o valor cacheado em vez de `fileno()`. Se o null
+device nao puder ser aberto, a supressao e simplesmente ignorada (com um `warn` no log) em vez de quebrar o app.
+
+**Bonus:** o descritor do pipe do log nunca mais e fechado, entao a thread do log pump sobrevive a uma supressao.
+
+#### 3. Pendencia: o crash pode nao ser a unica coisa
+
+O `StdioSuppressor` e construido em `MIDIService::DoInit` para calar os avisos do RtMidi. O RtMidi no UWP pode
+nao ter nenhum backend de MIDI utilizavel. Verificar no proximo run:
+- se aparece `warn | StdioSuppress | Cannot open 'NUL' ...`, o null device nao e acessivel no AppContainer e a
+  supressao nao acontece (ruido do RtMidi no log, sem consequencia);
+- se nao aparece, a supressao funcionou.
+
+O `WrapRtMidi` ja trata o caso de "nenhum backend" devolvendo um Noop (`midi_types.hpp:245-257`), entao nao ha
+null-deref. **Nao ha outro assert conhecido no caminho.**
+
+#### 4. Proximo passo (usuario, com o Xbox)
+
+1. F5 com **Debug**. O assert do MIDI deve sumir. Salvar o Output em
+   `docs/uwp/evidence/run-<data>-09-*.raw.txt`.
+2. Conferir se o app **apresenta frames**: linhas `[Ymir present] ...` a cada 5 s.
+3. Conferir se o watchdog acusa stall: `[Ymir watchdog] ... stalled ...`.
+4. Se a UI aparecer (menu ImGui + modal *Welcome*), seguir o checklist V1-V12 do passo 12.
+5. Apos o boot estavel, remover a instrumentacao temporaria (ver a entrada do Claude #12).
+
+#### 5. Estado do repositorio
+
+- Branch `uwp/main`. Build local verde: `pwsh scripts/uwp/build.ps1 -Configuration Debug` (MSIX gerado).
+- **O pull do Claude e no-op**: os dois agentes trabalham na mesma working tree (`F:\workspace\Ymir`).
+- O build local pode falhar com `LNK1201` (PDB travado) enquanto o VS estiver aberto: matar os `MSBuild`/`mspdbsrv`
+  orfaos e **apagar** o `ymir-sdl3.pdb` (o lock e de escrita, o delete funciona).
+
+---
+
 ---
 
 ## 1. Estado atual (o que já está pronto e validado)
@@ -838,7 +930,7 @@ Validado na máquina de origem em 2026-10-20 (VS Build Tools 2026 18.x, MSVC 14.
 | CI/CD `.github/workflows/uwp.yml` (build, artifact, release por tag `uwp-v*`) | ✅ primeiro run verde em 2026-10-20 (runner `windows-2025` com **Visual Studio Enterprise 2026**, versão 0.4.0.2, artifacts `ymir-uwp-0.4.0.2` e `-symbols`; esse run foi antes do rebase pra 0.4.2). A publicação de release por tag ainda não foi exercitada (passo 15) |
 | Sincronizado com o upstream **0.4.2** (`8cdf0a53`) por rebase em 2026-10-20; build UWP Release limpo (`--fresh`, baseline nova do vcpkg) | ✅ |
 | Fallback VS 2022 (preset `UWP-x86-64-AVX2-MSVC-VS2022`) | ⚠️ configurado, mas **não compilado**: a máquina de origem e o runner do GitHub têm VS 2026 |
-| **Rodar o app** (PC ou Xbox) | ⚠️ **Xbox: with the XAudio2 backend the boot reaches the main loop (the splash is dismissed), but the screen stays black** (run 07; see section 0.1, Claude entry of 2026-10-21, and `docs/uwp/evidence/README.md`). PC: not tested |
+| **Rodar o app** (PC ou Xbox) | ⚠️ **Xbox: the boot now completes** (D3D12, ImGui, XAudio2, emulator thread and main loop all start, correct window geometry) and then the process **hits a CRT debug assertion** in `util::StdioSuppressor::~StdioSuppressor()` during MIDI init (run 08). **Fixed in the tree, not yet verified on the console.** PC: not tested |
 
 ### 1.1 Resultado da regressão desktop
 ✅ Em 2026-10-20, depois do rebase pro upstream 0.4.2: o preset `Full-x86-64-AVX2-MSVC-Release` (Ninja + MSVC
@@ -1241,6 +1333,7 @@ Escolha **uma** das opções:
 | 2026-10-20 | 12 (máquina de destino) | aguardando run 05 | Build Debug com marcas `[Ymir audio]` compilado; aguardando o usuário rodar no Xbox para confirmar se a parada é dentro de `SDL_OpenAudioDeviceStream` |
 | 2026-10-20 | 12 (target machine) | run 05/06 | WASAPI deadlock confirmed; worker-thread workaround refuted; XAudio2 backend implemented (`071639c9`) |
 | 2026-10-21 | 12 (target machine) | **PARTIAL** (run 07) | Debug, F5: the splash is dismissed (the main loop is reached, so XAudio2 works) and the screen stays black. No log kept. Instrumentation for run 08 added (section 0.1) |
+| 2026-10-21 | 12 (target machine) | **PARTIAL** (run 08) | Debug, F5: **the boot completes** (D3D12, ImGui, XAudio2, emulator thread, main loop, window 1920x1080 not minimized, `io.DisplaySize` 1920x1080). Then a **CRT assertion** (`dup2.cpp:67`, `((unsigned)target_fh < _NHANDLE_)`) in `util::StdioSuppressor::~StdioSuppressor()` during MIDI init. Root cause: `freopen` closes the stream when it fails, so `fileno()` returns -1. Fixed by redirecting at the descriptor level. Log: `docs/uwp/evidence/run-2026-10-21-08-midi-stdio-assert.raw.txt` |
 | | | | |
 
 ---
