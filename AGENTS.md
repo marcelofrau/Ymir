@@ -74,7 +74,7 @@ Do not chase these: `APPX0006 ... runFullTrust`, `LNK4075 ... /INCREMENTAL`, `MA
 
 ## Tests
 
-Catch2, registered with CTest via `catch_discover_tests` (target `ymir-core-tests`, `tests/ymir-core-tests/`). Tests are off when `ymir-core` is consumed as a subproject (`Ymir_LIBRARY_ONLY=ON`). The test count is small and changes when upstream removes targets — check `ctest` output rather than assuming a number.
+Catch2, registered with CTest via `catch_discover_tests`. Two targets: `ymir-core-tests` (`tests/ymir-core-tests/`) for the core library, and `ymir-sdl3-tests` (`tests/ymir-sdl3-tests/`) for the frontend — it compiles the frontend sources it tests directly (e.g. `apps/ymir-sdl3/src/util/stdio_suppress.cpp`) instead of linking the app, so keep its dependency list to the library headers only. Tests are off when `ymir-core` is consumed as a subproject (`Ymir_LIBRARY_ONLY=ON`) and are also off in the UWP build, so **a desktop-only test cannot catch a UWP-only failure** — the Xbox run remains the only real coverage for those. The test count is small and changes when upstream removes targets — check `ctest` output rather than assuming a number.
 
 ## Fork / git workflow
 
