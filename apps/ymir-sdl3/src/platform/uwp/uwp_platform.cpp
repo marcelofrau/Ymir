@@ -303,6 +303,19 @@ struct DialogResult {
     }
 };
 
+/// @brief Sets the picker's start location, ignoring failures.
+///
+/// The start location is only a hint: some location ids are not available on every platform (the
+/// Xbox console in particular), and setting them throws. Failing to set the hint must not prevent
+/// the picker from being shown, so the error is swallowed and the picker opens wherever it wants.
+template <typename TPicker>
+void TrySetStartLocation(TPicker &picker) {
+    try {
+        picker.SuggestedStartLocation(PickerLocationId::ComputerFolder);
+    } catch (...) {
+    }
+}
+
 fire_and_forget ShowFileDialogAsync(SDL_FileDialogType type, SDL_DialogFileCallback callback, void *userdata,
                                     std::vector<SDL_DialogFileFilter> filters, bool allowMany) {
     // Pickers must be created and shown on the UI thread; the callback can run on any thread
@@ -312,7 +325,7 @@ fire_and_forget ShowFileDialogAsync(SDL_FileDialogType type, SDL_DialogFileCallb
         case SDL_FILEDIALOG_OPENFILE: {
             FileOpenPicker picker{};
             picker.ViewMode(PickerViewMode::List);
-            picker.SuggestedStartLocation(PickerLocationId::ComputerFolder);
+            TrySetStartLocation(picker);
             std::vector<hstring> extensions{};
             for (const auto &filter : filters) {
                 if (filter.pattern != nullptr && std::string_view{filter.pattern} == "*") {
@@ -343,7 +356,7 @@ fire_and_forget ShowFileDialogAsync(SDL_FileDialogType type, SDL_DialogFileCallb
         }
         case SDL_FILEDIALOG_SAVEFILE: {
             FileSavePicker picker{};
-            picker.SuggestedStartLocation(PickerLocationId::ComputerFolder);
+            TrySetStartLocation(picker);
             for (const auto &filter : filters) {
                 std::vector<hstring> extensions{};
                 if (filter.pattern != nullptr) {
@@ -367,7 +380,7 @@ fire_and_forget ShowFileDialogAsync(SDL_FileDialogType type, SDL_DialogFileCallb
         }
         case SDL_FILEDIALOG_OPENFOLDER: {
             FolderPicker picker{};
-            picker.SuggestedStartLocation(PickerLocationId::ComputerFolder);
+            TrySetStartLocation(picker);
             picker.FileTypeFilter().Append(L"*");
 
             if (auto folder = co_await picker.PickSingleFolderAsync()) {
