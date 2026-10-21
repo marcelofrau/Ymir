@@ -28,6 +28,7 @@ Ymir is a Sega Saturn emulator (C++20, CMake). **This checkout is the `uwp/main`
 | `docs/uwp/README.md` | Port architecture, every design decision with its rationale, fork delta map |
 | `docs/uwp/HANDOFF.md` | Sequential Xbox runbook: build → sideload → verify checklist → troubleshooting T-01..T-18 |
 | `docs/uwp/` (other) | Port-specific deep dives as they are written |
+| `docs/ymir/` | General developer documentation of Ymir itself: Saturn hardware primer, architecture, core, video, audio, CD/media, frontend, build, glossary |
 | `CONTRIBUTING.md` | Coding, naming and architectural rules for Ymir itself, including AI usage guidelines |
 
 ## Engineering standards
