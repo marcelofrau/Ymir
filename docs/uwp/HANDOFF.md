@@ -16,7 +16,7 @@
 > | **File picker** | 🟡 Deve abrir (é a UI do sistema, navegável pelo controle). Filtros caem para "todos os arquivos". **Não verificado:** se o app consegue abrir por caminho um arquivo escolhido no armazenamento do console (`broadFileSystemAccess` não é suportado no Xbox) |
 > | **Emulação de verdade** | 🟡 Ainda não testada: falta IPL ROM (BIOS) e um disco |
 > | **Último run** | **09** (2026-10-21) — a GUI aparece, mas apertar A no *Welcome* não fez nada. Log **não** capturado (relato do usuário) |
-> | **Próximo run** | **10** — build com o cursor virtual. Testar: o cursor aparece? o d-pad move o foco? RB clica? |
+> | **Próximo run** | **11** — build com **traces do gamepad**. O cursor virtual **aparece mas não se move** (run 10). Suspeita principal: o controle do console **não está sendo reconhecido como gamepad** pelo SDL3-uwp (ver entrada #11). Testar: mande as linhas `[Ymir gamepad]` do Output |
 > | **HEAD** | ver `git log --oneline -3` em `uwp/main` |
 >
 > **Última atualização deste bloco:** 2026-10-21, pelo agente OpenCode.
@@ -1175,6 +1175,69 @@ virtual foi implementado em cima do nav justamente para nao depender dessa desco
 - Build local verde: `pwsh scripts/uwp/build.ps1 -Configuration Debug` (MSIX gerado).
 - O `LNK1201` (pdb travado) volta a aparecer quando o VS do usuario esta aberto: `Remove-Item` no `.pdb` resolve,
   nunca matar o VS do usuario.
+
+### Entrada do agente OpenCode #11 - 2026-10-21 (maquina de destino, COM Xbox, traces do gamepad)
+
+**Estado:** o run 10 provou que o **cursor virtual aparece** (ele e desenhado), mas **nao se mexe**. Nenhum input
+do gamepad chega a GUI. Esta sessao instrumentou o caminho do gamepad para descobrir **por que**.
+
+#### 1. O que foi lido no codigo do SDL3-uwp (antes de instrumentar)
+
+- Sob UWP (`WINDOWS_STORE`), o SDL3-uwp **desliga XInput e HIDAPI** e usa so o driver **Windows Gaming Input**
+  (`vendor/SDL3-uwp/CMakeLists.txt:2517-2543`: `SDL_JOYSTICK_WGI`, e `SDL_JOYSTICK_XINPUT`/`SDL_JOYSTICK_RAWINPUT`
+  sao condicionais a `NOT WINDOWS_STORE`).
+- O driver WGI **nao fornece mapeamento de gamepad proprio**: `WGI_JoystickGetGamepadMapping()` retorna `false`
+  (`SDL_windows_gaming_input.c:1027`). O mapeamento vem do **banco de gamepads do SDL**, casado por **GUID**.
+- O GUID do WGI e montado com `SDL_CreateJoystickGUID(bus, vendor, product, version, NULL, name, 'w', type)`
+  (`SDL_windows_gaming_input.c:484`) — inclui o **nome** no calculo, entao um nome diferente quebra o casamento.
+- O banco tem entradas para o Xbox Series X, com `rightx:a3,righty:a4` — ou seja, **o stick direito e mapeado**, mas
+  para os eixos **crus** `a3`/`a4`, que dependem da ordem de eixos do aparelho.
+
+**Duas hipoteses, ainda nao distinguidas pelos logs:** (a) o controle nem e reconhecido como gamepad (GUID sem
+casamento no banco) — nesse caso nem `SDL_EVENT_GAMEPAD_ADDED` existe; (b) ele e reconhecido, mas os eixos crus
+sao diferentes do que o banco assume, e o `rightx`/`righty` leem outra coisa (por exemplo os gatilhos).
+
+#### 2. Instrumentacao adicionada (commit `2f9f7a91`)
+
+Em `apps/ymir-sdl3/src/app/app.cpp`, so sob UWP:
+
+| Trace | Quando | O que diz |
+|---|---|---|
+| `[Ymir gamepad] <ctx>: joysticks=N gamepads=M \| #<id> name='...' guid=... isGamepad=yes/NO axes=... buttons=...` | depois do `SDL_Init`, e em `JOYSTICK_ADDED`/`GAMEPAD_ADDED` | **a enumeracao**: existe algum joystick? ele e reconhecido como gamepad? |
+| `[Ymir gamepad] raw axes: a0=... a1=...` e `[Ymir gamepad] gamepad axes: leftx=... rightx=...` | a cada 250 ms enquanto a GUI esta com o gamepad | **o mapeamento**: qual eixo cru corresponde a qual eixo de gamepad |
+| `[Ymir gamepad] axis <nome> = <valor>` | no evento de eixo (throttled a 250 ms) | o evento chega com o valor certo? |
+| `[Ymir gamepad] button <nome> pressed` | no evento de botao | o evento de botao chega? |
+
+#### 3. Como ler o run 11
+
+| Linha | Diagnostico |
+|---|---|
+| `joysticks=0` | o SDL **nao enumerou** o controle: o driver WGI nao esta vendo o aparelho |
+| `joysticks=1 gamepads=0` + `isGamepad=NO` | o controle e enumerado mas **nao reconhecido como gamepad**: falta o casamento de GUID no banco (solucao: `gamecontrollerdb.txt` proprio do app, ou `SDL_HINT_GAMECONTROLLERCONFIG`) |
+| `gamepads=1` mas `rightx=0` sempre | o mapeamento do banco nao casa com os eixos crus do aparelho |
+| `rightx` reage e `a3`/`a4` nao | a ordem dos eixos crus e outra: o banco espera `a3`/`a4` |
+| nenhum `[Ymir gamepad] axis`/`button` | os eventos nem chegam: o app nao esta recebendo evento de gamepad |
+
+#### 4. Pendencias
+
+1. **Rodar o run 11** e mandar as linhas `[Ymir gamepad]` do Output do VS.
+2. **Ate la, nao mexer mais no cursor** — a causa ainda nao esta identificada, e trocar a implementacao no escuro
+   seria repetir o erro do workaround do audio.
+3. **Rodar o file picker** (se a GUI ficar usavel).
+4. **Testar a emulacao**: IPL ROM em `roms/ipl/` e disco em `state/recent_discs.txt` (TESTING.md 2 e 3).
+5. **Remover a instrumentacao temporaria** quando o boot estiver estavel: `YMIR_BOOT_TRACE`, `YMIR_PRESENT_TRACE`,
+   `YMIR_UI_PHASE`, o trace de geometria, o `StallWatchdog` e o trace de enhanced barriers. **Manter** o `Trace()` e o
+   check de init do ImGui. **Manter** os traces do gamepad ate o input do controle estar resolvido.
+
+#### 5. Estado do repositorio
+
+- Branch `uwp/main`, HEAD `c588253e` + `2f9f7a91`.
+- Build local verde: `pwsh scripts/uwp/build.ps1 -Configuration Debug` (MSIX gerado).
+- API do SDL3-uwp nesta versao (armadilhas ja gastas tempo): `SDL_NumJoysticks`/`SDL_NumGamepads` nao existem
+  (usar `SDL_GetJoysticks(&count)` / `SDL_GetGamepads(&count)`); `SDL_Joystick` e opaco (usar
+  `SDL_GetJoystickFromID`, nunca `->instance_id`); `SDL_GetGamepadAxisName`/`SDL_GetGamepadButtonName` nao existem
+  (usar `SDL_GetGamepadStringForAxis`/`SDL_GetGamepadStringForButton`); o enum do eixo termina em
+  `SDL_GAMEPAD_AXIS_COUNT`, nao `_MAX`; `SDL_GetJoystickAxis` recebe `int`, nao um enum.
 
 ---
 
