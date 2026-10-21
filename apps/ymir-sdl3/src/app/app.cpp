@@ -115,7 +115,8 @@
 
 #if YMIR_PLATFORM_UWP
     // TEMPORARY boot tracing. Remove once the Xbox startup is stable.
-    #define YMIR_BOOT_TRACE(...) OutputDebugStringA(fmt::format("[Ymir boot] " __VA_ARGS__).c_str())
+    // Goes synchronously to both the debugger and ymir-uwp.log, so it also works when launched from the tile.
+    #define YMIR_BOOT_TRACE(...) ::platform::uwp::Trace(fmt::format("[Ymir boot] " __VA_ARGS__))
 #else
     #define YMIR_BOOT_TRACE(...)
 #endif
@@ -125,6 +126,7 @@
 #include <util/std_lib.hpp>
 
 #if YMIR_PLATFORM_UWP
+    #include <platform/uwp/stall_watchdog.hpp>
     #include <platform/uwp/uwp_platform.hpp>
 #endif
 
@@ -162,8 +164,9 @@ static void ShowStartupFailure(fmt::format_string<TArgs...> fmt, TArgs &&...args
     std::string message = fmt::format(fmt, static_cast<TArgs &&>(args)...);
     devlog::error<grp::base>("{}", message);
 #if YMIR_PLATFORM_UWP
-    // The message box may not be visible on Xbox; make sure the reason for the early exit reaches the debugger
-    OutputDebugStringA(fmt::format("[Ymir] Startup failure: {}\n", message).c_str());
+    // The message box may not be visible on Xbox; make sure the reason for the early exit reaches the debugger and
+    // the log file right away
+    ::platform::uwp::Trace(fmt::format("[Ymir] Startup failure: {}", message));
 #endif
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Ymir startup error", message.c_str(), nullptr);
 }
@@ -222,8 +225,8 @@ App::~App() {
 
 int App::Run(const CommandLineOptions &options) {
 #if YMIR_PLATFORM_UWP
-    // Temporary boot tracing alongside the devlog, because the stdio redirect may not be active yet
-    OutputDebugStringA("[Ymir boot] App::Run() entered\n");
+    // Temporary boot tracing alongside the devlog
+    YMIR_BOOT_TRACE("App::Run() entered\n");
 #endif
     devlog::info<grp::base>("{} {}", Ymir_APP_NAME, ymir::version::string);
 
@@ -1074,7 +1077,18 @@ void App::RunEmulator() {
     // ---------------------------------
     // Setup Dear ImGui Platform/Renderer backends
 
+#if YMIR_PLATFORM_UWP
+    // Without the ImGui backends nothing but the (black, without a BIOS) Saturn output is drawn, which looks like a
+    // hang on the Xbox. Fail loudly instead.
+    if (!m_graphicsService.ImGuiInit()) {
+        ShowStartupFailure("Failed to initialize the Dear ImGui backends for the {} graphics context",
+                           gfx::GraphicsBackendName(m_graphicsService.GetGraphicsContextBackend()));
+        return;
+    }
+    YMIR_BOOT_TRACE("ImGui backends initialized\n");
+#else
     m_graphicsService.ImGuiInit();
+#endif
 
     gfx::ColorRGBA clearColor{0.0f, 0.0f, 0.0f, 1.0f};
 
@@ -1363,10 +1377,22 @@ void App::RunEmulator() {
     YMIR_BOOT_TRACE("screenshot service started\n");
     ScopeGuard sgStopScreenshotThread{[&] { m_screenshotService.Stop(); }};
 
+#if YMIR_PLATFORM_UWP
+    // TEMPORARY: reports the phase the UI thread is stuck in when it stops making progress, which is the only way to
+    // locate a hang on runs launched from the tile. Remove once the Xbox startup is stable.
+    platform::uwp::StallWatchdog uiWatchdog{};
+    uiWatchdog.Start("UI", std::chrono::seconds{3});
+    #define YMIR_UI_PHASE(phase) uiWatchdog.Mark(phase)
+#else
+    #define YMIR_UI_PHASE(phase)
+#endif
+
+    YMIR_UI_PHASE("show window");
     YMIR_BOOT_TRACE("showing window\n");
     SDL_ShowWindow(screen.window);
     YMIR_BOOT_TRACE("window shown\n");
 
+    YMIR_UI_PHASE("reload controller databases");
     YMIR_BOOT_TRACE("reloading controller databases\n");
     m_romService.ReloadSDLGameControllerDatabases(false);
     YMIR_BOOT_TRACE("controller databases reloaded\n");
@@ -1433,8 +1459,29 @@ void App::RunEmulator() {
 
     auto prevTime = clk::now();
 
+#if YMIR_PLATFORM_UWP
+    // TEMPORARY: frame counter for the watchdog and the window geometry trace below
+    uint64 uwpFrameCount = 0;
+
+    // Last window/ImGui geometry that was traced; it is traced again only when it changes
+    struct UWPWindowGeometry {
+        int width = -1, height = -1;
+        int pixelWidth = -1, pixelHeight = -1;
+        SDL_WindowFlags flags = 0;
+        float displayWidth = -1.0f, displayHeight = -1.0f;
+        float framebufferScaleX = -1.0f, framebufferScaleY = -1.0f;
+
+        bool operator==(const UWPWindowGeometry &) const = default;
+    } uwpLastGeometry{};
+#endif
+
     YMIR_BOOT_TRACE("entering main loop\n");
     while (true) {
+#if YMIR_PLATFORM_UWP
+        uiWatchdog.SetFrame(uwpFrameCount);
+#endif
+        YMIR_UI_PHASE("frame pacing");
+
         bool fitWindowToScreenNow = false;
         bool forceScreenScale = false;
         int forcedScreenScale = 1;
@@ -1575,6 +1622,7 @@ void App::RunEmulator() {
         }
 
         // Process SDL events
+        YMIR_UI_PHASE("poll SDL events");
         SDL_Event evt{};
         while (SDL_PollEvent(&evt)) {
             ImGui_ImplSDL3_ProcessEvent(&evt);
@@ -2069,6 +2117,7 @@ void App::RunEmulator() {
         }
 
         // Update display
+        YMIR_UI_PHASE("wait for emulator frame and update framebuffer texture");
         if (screen.videoSync && screen.expectFrame && !m_context.paused) {
             screen.frameReadyEvent.Wait();
             screen.frameReadyEvent.Reset();
@@ -2195,8 +2244,36 @@ void App::RunEmulator() {
         // Draw ImGui widgets
 
         // Start the Dear ImGui frame
+        YMIR_UI_PHASE("ImGui new frame");
         m_graphicsService.ImGuiNewFrame();
         ImGui::NewFrame();
+
+#if YMIR_PLATFORM_UWP
+        // TEMPORARY: trace the window and ImGui display geometry on the first frame and whenever it changes. A zero
+        // ImGui display size or a hidden/minimized window means the UI is skipped even though frames are presented.
+        {
+            UWPWindowGeometry geometry{};
+            SDL_GetWindowSize(screen.window, &geometry.width, &geometry.height);
+            SDL_GetWindowSizeInPixels(screen.window, &geometry.pixelWidth, &geometry.pixelHeight);
+            geometry.flags = SDL_GetWindowFlags(screen.window);
+            geometry.displayWidth = io.DisplaySize.x;
+            geometry.displayHeight = io.DisplaySize.y;
+            geometry.framebufferScaleX = io.DisplayFramebufferScale.x;
+            geometry.framebufferScaleY = io.DisplayFramebufferScale.y;
+            if (geometry != uwpLastGeometry) {
+                YMIR_BOOT_TRACE("frame {}: window {}x{} ({}x{} pixels), flags {:X} (hidden={} minimized={} "
+                                "occluded={} input focus={}), ImGui display {}x{}, framebuffer scale {}x{}\n",
+                                uwpFrameCount, geometry.width, geometry.height, geometry.pixelWidth,
+                                geometry.pixelHeight, (uint64)geometry.flags, (geometry.flags & SDL_WINDOW_HIDDEN) != 0,
+                                (geometry.flags & SDL_WINDOW_MINIMIZED) != 0,
+                                (geometry.flags & SDL_WINDOW_OCCLUDED) != 0,
+                                (geometry.flags & SDL_WINDOW_INPUT_FOCUS) != 0, geometry.displayWidth,
+                                geometry.displayHeight, geometry.framebufferScaleX, geometry.framebufferScaleY);
+                uwpLastGeometry = geometry;
+            }
+        }
+#endif
+        YMIR_UI_PHASE("build UI");
 
         // In PhysicalMouse mode, automatically release all mice if any ImGui window gains focus
         // NOTE: ImGui::IsWindowFocused(ImGuiFocusedFlags_AnyWindow) cannot be used becaused the application always
@@ -3289,9 +3366,11 @@ void App::RunEmulator() {
         // ---------------------------------------------------------------------
         // Render window
 
+        YMIR_UI_PHASE("ImGui render");
         ImGui::Render();
 
         // Clear screen
+        YMIR_UI_PHASE("draw Saturn screen");
         m_graphicsService.ClearScreen(clearColor);
 
         // Draw Saturn screen
@@ -3443,9 +3522,11 @@ void App::RunEmulator() {
         screen.resolutionChanged = false;
 
         // Render ImGui widgets
+        YMIR_UI_PHASE("ImGui draw");
         m_graphicsService.ImGuiRenderFrame();
 
         {
+            YMIR_UI_PHASE("present (swap chain present, frame fence wait, begin next frame)");
             auto presentResult = m_graphicsService.Present();
             if (!presentResult) {
                 // Revert to sane settings right now, just to be safe
@@ -3461,6 +3542,10 @@ void App::RunEmulator() {
 
         // Process ImGui INI file write requests
         // TODO: compress and include in state blob
+        YMIR_UI_PHASE("end of frame (ImGui ini, settings, persistence)");
+#if YMIR_PLATFORM_UWP
+        ++uwpFrameCount;
+#endif
         if (io.WantSaveIniSettings) {
             ImGui::SaveIniSettingsToDisk(imguiIniLocationStr.c_str());
             io.WantSaveIniSettings = false;
@@ -3473,6 +3558,8 @@ void App::RunEmulator() {
     }
 
 end_loop:; // the semicolon is not a typo!
+
+#undef YMIR_UI_PHASE
 
     // Everything is cleaned up automatically by ScopeGuards
 }

@@ -200,6 +200,7 @@ ymir-uwp_<ver>_x64_symbols.zip                      → .appxsym (símbolos pra 
 - `src/main.cpp`: inclui `SDL_main.h`, cria o argv falso e liga o log em arquivo, tudo só no UWP.
 - `src/winmain.cpp`: desligado no UWP.
 - `src/platform/uwp/uwp_platform.{hpp,cpp}` (novo): log, perfil e pickers.
+- `src/platform/uwp/stall_watchdog.{hpp,cpp}` (new, temporary): logs the main-loop phase the UI thread is stuck in.
 - `src/app/app.cpp`: seleção de perfil no UWP.
 - `src/app/services/file_dialog_service.cpp`: desvia pros pickers WinRT.
 - `src/app/services/gfx/gfx_context_impl_d3d12.cpp`: CoreWindow + `SDL_GetWindowSizeInPixels`.

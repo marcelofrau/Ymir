@@ -428,6 +428,8 @@ if (Ymir_PLATFORM_UWP)
     target_sources(ymir-sdl3 PRIVATE
         src/platform/uwp/uwp_platform.cpp
         src/platform/uwp/uwp_platform.hpp
+        src/platform/uwp/stall_watchdog.cpp
+        src/platform/uwp/stall_watchdog.hpp
         src/app/xaudio2_backend.cpp
         src/app/xaudio2_backend.hpp
     )

@@ -10,6 +10,7 @@ Only compiled when YMIR_PLATFORM_UWP is set. Implemented with C++/WinRT; callers
 #include <SDL3/SDL_dialog.h>
 
 #include <filesystem>
+#include <string_view>
 
 namespace platform::uwp {
 
@@ -35,6 +36,16 @@ std::filesystem::path RedirectStdioToLogFile();
 /// that is still in flight to the log file. Call it right before `main()` returns; anything printed afterwards is
 /// lost. Safe to call when the redirection failed or was never set up.
 void ShutdownLogRedirect();
+
+/// @brief Writes a diagnostic line straight to the log file and to the debugger.
+///
+/// Unlike the development log, which travels through the redirection pipe and the pump thread, this writes
+/// synchronously from the calling thread, so the line survives a crash right after the call. It is what the
+/// temporary startup traces use, and it works when the app is launched from the tile (no debugger attached), where
+/// `OutputDebugStringA` alone goes nowhere. A trailing newline is appended if missing. Before
+/// `RedirectStdioToLogFile()` and after `ShutdownLogRedirect()` the line only goes to the debugger.
+/// @param[in] message the line to write
+void Trace(std::string_view message);
 
 /// @brief Makes the app use the whole CoreWindow instead of the TV-safe area on Xbox, which would otherwise leave
 /// black borders around the screen. Must be called from the UI thread after the CoreWindow is created (any time

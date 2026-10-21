@@ -587,6 +587,48 @@ exatamente em qual das três criações o XAudio2 pararia, se parar.
 4. Se o XAudio2 também falhar: checar em qual das três criações parou (as marcas dizem), e considerar
    `XAudio2CreateWithSharedContexts` ou revisar a categoria de stream.
 
+
+### Claude agent entry — 2026-10-21 (source machine, no Xbox): run 07, splash → black screen
+
+> Written in English per `AGENTS.md` rule 9. The full analysis is in `docs/uwp/evidence/README.md` → "Run 07".
+
+**What the user reported:** with the XAudio2 build, F5 with a **Debug** build, the splash goes away and the screen
+turns black, and stays black. No log was kept.
+
+**What that proves:** SDL3-uwp only calls `CoreWindow::Activate()` (which dismisses the splash) when the dispatcher is
+first pumped, and the first pump in Ymir is the main loop's `SDL_PollEvent()`. So **the XAudio2 backend works and the
+boot reaches the main loop**; what fails now is the first visible frame. Without a BIOS, the ImGui menu bar and the
+*Welcome* modal are the only things that should be on screen.
+
+**Ranked hypotheses:**
+1. Visual Studio is in break mode, for one of two reasons:
+   - the D3D12 debug layer breaks on **warnings** (`BreakOnWarnings(device, true)`);
+   - an `IM_ASSERT` fires in the ImGui DX12 backend, which builds its pipeline and compiles its shaders with
+     `D3DCompile` on the first frame.
+2. `Present(1, 0)` or the frame fence wait blocks. The entry #3 hypothesis was never tested, only dismissed because
+   the loop was not reached. **It is reopened.**
+3. Frames are presented but ImGui draws nothing (pipeline failure in Release, or display size 0).
+4. The UI thread blocks inside `SDL_PollEvent()` (SDL3-uwp's `ProcessOneAndAllPending` path).
+
+**Instrumentation added (uncommitted, all under `YMIR_PLATFORM_UWP`):**
+- `platform::uwp::Trace()` writes synchronously to the debugger **and** to `ymir-uwp.log`. Every temporary trace now
+  uses it, so a run launched from the tile also leaves the trail in the file.
+- The present trace is rate limited: the first 10 frames in full, then one every 5 s.
+- The D3D12 debug layer no longer breaks into the debugger on UWP; it still prints its messages.
+- The ImGui DX12 device objects are created at init. A failure is logged and becomes a clear startup failure.
+- `platform::uwp::StallWatchdog`: logs the main-loop phase the UI thread is stuck in after 3 s without progress.
+- Window/ImGui geometry is traced on the first frame and on every change.
+- XAudio2 diagnostics now go through `Trace()`: `SDL_LogInfo(SDL_LOG_CATEGORY_AUDIO, ...)` was filtered out by
+  SDL's default ERROR priority for that category, so those lines never appeared.
+
+**Next step (user, with the Xbox):**
+1. F5 with **Debug**, and keep the whole Output.
+2. F5 with **Release**.
+3. If the UI shows, launch from the tile and download `ymir-uwp.log`.
+
+Read the result with the table "How to read run 08" in `docs/uwp/evidence/README.md`. The fix is chosen from the
+data, not before.
+
 ---
 
 ## 1. Estado atual (o que já está pronto e validado)
@@ -609,7 +651,7 @@ Validado na máquina de origem em 2026-10-20 (VS Build Tools 2026 18.x, MSVC 14.
 | CI/CD `.github/workflows/uwp.yml` (build, artifact, release por tag `uwp-v*`) | ✅ primeiro run verde em 2026-10-20 (runner `windows-2025` com **Visual Studio Enterprise 2026**, versão 0.4.0.2, artifacts `ymir-uwp-0.4.0.2` e `-symbols`; esse run foi antes do rebase pra 0.4.2). A publicação de release por tag ainda não foi exercitada (passo 15) |
 | Sincronizado com o upstream **0.4.2** (`8cdf0a53`) por rebase em 2026-10-20; build UWP Release limpo (`--fresh`, baseline nova do vcpkg) | ✅ |
 | Fallback VS 2022 (preset `UWP-x86-64-AVX2-MSVC-VS2022`) | ⚠️ configurado, mas **não compilado**: a máquina de origem e o runner do GitHub têm VS 2026 |
-| **Rodar o app** (PC ou Xbox) | ⚠️ **Xbox: o boot chega ao `App::Run()` e o D3D12 inicializa, mas o app para no splash logo depois de `Leaving full screen mode`** (ver seção 0.1, entrada OpenCode #2). PC: não testado |
+| **Rodar o app** (PC ou Xbox) | ⚠️ **Xbox: with the XAudio2 backend the boot reaches the main loop (the splash is dismissed), but the screen stays black** (run 07; see section 0.1, Claude entry of 2026-10-21, and `docs/uwp/evidence/README.md`). PC: not tested |
 
 ### 1.1 Resultado da regressão desktop
 ✅ Em 2026-10-20, depois do rebase pro upstream 0.4.2: o preset `Full-x86-64-AVX2-MSVC-Release` (Ninja + MSVC
@@ -1010,6 +1052,8 @@ Escolha **uma** das opções:
 | 2026-10-20 | 15 (parcial) | OK | Run 39396157010 do `uwp.yml` verde com VS 2026 no runner; artifact de 5,3 MB |
 | 2026-10-20 | 12 (máquina de destino) | **PARCIAL** | **Primeiro boot real no Xbox.** O crash de `SDL_GetCurrentDirectory()` (`39aa6355`) está resolvido e o mirror de log funciona. O boot chega ao `App::Run()`, inicializa o D3D12 com sucesso e para no splash **dentro de `AudioSystem::Init()`** (`SDL_OpenAudioDeviceStream`) — o loop principal nunca é alcançado. Detalhes nas seções 0.1 (entradas #3 e #4) e em `docs/uwp/evidence/` |
 | 2026-10-20 | 12 (máquina de destino) | aguardando run 05 | Build Debug com marcas `[Ymir audio]` compilado; aguardando o usuário rodar no Xbox para confirmar se a parada é dentro de `SDL_OpenAudioDeviceStream` |
+| 2026-10-20 | 12 (target machine) | run 05/06 | WASAPI deadlock confirmed; worker-thread workaround refuted; XAudio2 backend implemented (`071639c9`) |
+| 2026-10-21 | 12 (target machine) | **PARTIAL** (run 07) | Debug, F5: the splash is dismissed (the main loop is reached, so XAudio2 works) and the screen stays black. No log kept. Instrumentation for run 08 added (section 0.1) |
 | | | | |
 
 ---

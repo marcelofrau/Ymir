@@ -29,8 +29,19 @@
 #include <fmt/format.h>
 
 #if YMIR_PLATFORM_UWP
+    #include <platform/uwp/uwp_platform.hpp>
+
+    #include <chrono>
+
     // TEMPORARY present-path tracing. Remove once the Xbox startup is stable.
-    #define YMIR_PRESENT_TRACE(...) OutputDebugStringA(fmt::format("[Ymir present] " __VA_ARGS__).c_str())
+    // Only usable inside Impl: it is gated by Impl::tracePresent, which Present() sets once per frame so that the
+    // trace does not flood the log at 60 fps (see Impl::kVerbosePresentFrames and Impl::kPresentTraceInterval).
+    #define YMIR_PRESENT_TRACE(...)                                                 \
+        do {                                                                        \
+            if (tracePresent) {                                                     \
+                ::platform::uwp::Trace(fmt::format("[Ymir present] " __VA_ARGS__)); \
+            }                                                                       \
+        } while (false)
 #else
     #define YMIR_PRESENT_TRACE(...)
 #endif
@@ -176,6 +187,19 @@ struct Direct3D12GraphicsContext::Impl {
 
     PresentMode presentMode = PresentMode::VSync;
 
+#if YMIR_PLATFORM_UWP
+    // TEMPORARY present-path trace rate limiting. Remove together with YMIR_PRESENT_TRACE.
+
+    /// @brief Number of initial frames whose presentation is traced in full.
+    static constexpr uint64 kVerbosePresentFrames = 10;
+    /// @brief Interval between traced frames after the initial ones.
+    static constexpr std::chrono::seconds kPresentTraceInterval{5};
+
+    uint64 presentCount = 0; ///< Number of Present() calls so far
+    std::chrono::steady_clock::time_point lastPresentTrace{};
+    bool tracePresent = false; ///< Whether the frame being presented is traced
+#endif
+
     struct Features {
         bool enhancedBarriers = false;
     } features;
@@ -301,7 +325,14 @@ struct Direct3D12GraphicsContext::Impl {
         if (FAILED(device.Create(spec.adapter, spec.featureLevel))) {
             return util::ErrorMessage{"Failed to create device"};
         }
+#if YMIR_PLATFORM_UWP
+        // Do not break into the debugger on D3D12 messages: under F5 on the Xbox a single validation warning on the
+        // first frame pauses the whole app, which looks exactly like a black-screen hang. The debug layer still
+        // prints every message to the Visual Studio Output window.
+        debugLayer.BreakOnWarnings(device.GetPointer(), false);
+#else
         debugLayer.BreakOnWarnings(device.GetPointer(), true);
+#endif
         device->SetName(L"[Ymir-GCtx] D3D12 device");
 
         D3D12_FEATURE_DATA_D3D12_OPTIONS12 options12{};
@@ -1002,7 +1033,16 @@ struct Direct3D12GraphicsContext::Impl {
         // involves destroying and recreating the entire swap chain, which doesn't seem to be worth the effort. Instead,
         // we'll treat VSync and Mailbox as the same mode.
 
-        YMIR_PRESENT_TRACE("Present() entered, mode={}\n", (int)presentMode);
+#if YMIR_PLATFORM_UWP
+        {
+            const auto now = std::chrono::steady_clock::now();
+            tracePresent = presentCount < kVerbosePresentFrames || now - lastPresentTrace >= kPresentTraceInterval;
+            if (tracePresent) {
+                lastPresentTrace = now;
+            }
+        }
+#endif
+        YMIR_PRESENT_TRACE("Present() entered, frame={} mode={}\n", presentCount, (int)presentMode);
 
         HRESULT hr;
         switch (presentMode) {
@@ -1017,6 +1057,9 @@ struct Direct3D12GraphicsContext::Impl {
 
         // If the log stops here, the swap chain never completed a vsync interval for this CoreWindow
         YMIR_PRESENT_TRACE("swapchain->Present returned hr={:08X}\n", (uint32)hr);
+#if YMIR_PLATFORM_UWP
+        ++presentCount;
+#endif
 
         if (auto result = MoveToNextFrame(); !result) {
             return util::ErrorMessage{fmt::format("Could not advance frame: {}", result.Error().message)};
@@ -2020,6 +2063,20 @@ bool Direct3D12GraphicsContext::ImGuiInit() {
     m_imguiInitialized =                                  //
         ImGui_ImplSDL3_InitForD3D(m_impl->spec.window) && //
         ImGui_ImplDX12_Init(&initInfo);
+
+#if YMIR_PLATFORM_UWP
+    // The DX12 backend normally creates its root signature and pipeline lazily on the first NewFrame, compiling its
+    // shaders at runtime with D3DCompile. If that fails, Debug builds stop on an IM_ASSERT and Release builds silently
+    // draw no UI at all -- both look like a black screen on the Xbox. Create them now so that a failure is reported
+    // at startup instead.
+    if (m_imguiInitialized && !ImGui_ImplDX12_CreateDeviceObjects()) {
+        devlog::error<grp::base>("Dear ImGui DX12 backend could not create its root signature or pipeline state");
+        ImGui_ImplDX12_Shutdown();
+        ImGui_ImplSDL3_Shutdown();
+        m_imguiInitialized = false;
+    }
+    devlog::info<grp::base>("Dear ImGui backends initialized: {}", m_imguiInitialized ? "yes" : "no");
+#endif
 
     return m_imguiInitialized;
 }

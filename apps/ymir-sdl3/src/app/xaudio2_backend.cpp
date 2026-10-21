@@ -2,8 +2,14 @@
 
 #include "audio_system.hpp"
 
+#include <platform/uwp/uwp_platform.hpp>
+
 #include <SDL3/SDL_error.h>
-#include <SDL3/SDL_log.h>
+
+#include <fmt/format.h>
+
+// SDL_LogInfo is not used for the diagnostics below: SDL filters the audio category at ERROR priority by default, so
+// those lines never reached the log. platform::uwp::Trace writes them to the debugger and ymir-uwp.log directly.
 
 #include <xaudio2.h>
 
@@ -61,10 +67,10 @@ bool XAudio2Backend::Init(int sampleRate, int channels, uint32 bufferSize, Reque
     if (FAILED(XAudio2Create(&m_engine, 0, XAUDIO2_DEFAULT_PROCESSOR)) || m_engine == nullptr) {
         m_engine = nullptr;
         SDL_SetError("Failed to create the XAudio2 engine");
-        SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "[Ymir audio] XAudio2Create failed");
+        platform::uwp::Trace("[Ymir audio] XAudio2Create failed");
         return false;
     }
-    SDL_LogInfo(SDL_LOG_CATEGORY_AUDIO, "[Ymir audio] XAudio2 engine created");
+    platform::uwp::Trace("[Ymir audio] XAudio2 engine created");
 
     // CreateMasteringVoice infers the channel layout from InputChannels; there is no channel mask parameter in
     // this SDK version.
@@ -75,11 +81,11 @@ bool XAudio2Backend::Init(int sampleRate, int channels, uint32 bufferSize, Reque
         m_masteringVoice = nullptr;
         ReleaseLocked();
         SDL_SetError("Failed to create the XAudio2 mastering voice");
-        SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "[Ymir audio] CreateMasteringVoice failed");
+        platform::uwp::Trace("[Ymir audio] CreateMasteringVoice failed");
         return false;
     }
-    SDL_LogInfo(SDL_LOG_CATEGORY_AUDIO, "[Ymir audio] XAudio2 mastering voice created (%d ch, %d Hz)",
-                m_channels, m_sampleRate);
+    platform::uwp::Trace(
+        fmt::format("[Ymir audio] XAudio2 mastering voice created ({} ch, {} Hz)", m_channels, m_sampleRate));
 
     // Samples are signed 16-bit PCM, matching what the emulator produces.
     WAVEFORMATEX format{};
@@ -97,10 +103,10 @@ bool XAudio2Backend::Init(int sampleRate, int channels, uint32 bufferSize, Reque
         m_sourceVoice = nullptr;
         ReleaseLocked();
         SDL_SetError("Failed to create the XAudio2 source voice");
-        SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "[Ymir audio] CreateSourceVoice failed");
+        platform::uwp::Trace("[Ymir audio] CreateSourceVoice failed");
         return false;
     }
-    SDL_LogInfo(SDL_LOG_CATEGORY_AUDIO, "[Ymir audio] XAudio2 source voice created");
+    platform::uwp::Trace("[Ymir audio] XAudio2 source voice created");
 
     m_inFlight.fill(false);
     m_nextBuffer = 0;
@@ -156,7 +162,7 @@ bool XAudio2Backend::Start() {
     }
 
     m_running.store(true, std::memory_order_relaxed);
-    SDL_LogInfo(SDL_LOG_CATEGORY_AUDIO, "[Ymir audio] XAudio2 playback started");
+    platform::uwp::Trace("[Ymir audio] XAudio2 playback started");
     return true;
 }
 

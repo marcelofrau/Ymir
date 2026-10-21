@@ -6,9 +6,12 @@ a summary.
 
 ## The problem
 
-On the Xbox (Dev Mode, launched from Visual Studio 2026), the app **stops on the splash screen and stays there**. It
-does not crash, does not exit, and shows no error dialog. The process stays alive. On the PC (packaged UWP build) the
-same symptom is expected but is not the current focus.
+On the Xbox (Dev Mode, launched from Visual Studio 2026), the app **stopped on the splash screen and stayed there**
+(runs 03–06, the audio deadlock). It did not crash, did not exit, and showed no error dialog. The process stayed
+alive. On the PC (packaged UWP build) the same symptom is expected but is not the current focus.
+
+**Current symptom (run 07, XAudio2 backend):** the splash is dismissed and the screen turns **black** and stays
+black. See "Run 07" below.
 
 ## Index of runs
 
@@ -18,6 +21,86 @@ same symptom is expected but is not the current focus.
 | 04 | `run-2026-10-20-04-audio-hang.raw.txt` | Adds markers down the whole path between the graphics context and the main loop. **The boot stops right after `[Ymir boot] initializing audio`, when `AudioSes.dll` (WASAPI) loads.** No marker after that, and the loop is never reached. |
 | 05 | (see the quote below) | Audio-path markers prove the block is **inside** the `SDL_OpenAudioDeviceStream` call: the marker before it prints, the one after it never does. Root cause confirmed as the WASAPI activation deadlock. |
 | 06 | `run-2026-10-20-06-worker-thread-pump-refuted.raw.txt` | The worker-thread + dispatcher-pump workaround. **Refuted:** ~5000 `SDL_PumpEvents()` calls over 10 seconds do not unblock the activation. The timeout produces a clean failure, and the detached worker outlives the VDP render threads (the orphan-thread risk). |
+| 07 | (no log kept) | First run with the XAudio2 backend, F5 with a **Debug** build. **The splash is dismissed and the screen turns black**, and stays that way. No output was saved. Reading below. |
+
+## Run 07 — the splash goes away, then a black screen (2026-10-21)
+
+No log was kept from this run; the only data is the user's description and the fact that it was a Debug build
+launched with F5. The symptom still carries a lot of information.
+
+### What "the splash went away" proves
+
+- The splash is dismissed by `CoreWindow::Activate()`, which SDL3-uwp only calls from `SDL_WinRTApp::OnAppActivated`
+  (`vendor/SDL3-uwp/src/core/winrt/SDL_winrtapp_direct3d.cpp:613-615`).
+- That handler is dispatched by the CoreWindow dispatcher, which is only pumped by `SDL_PumpEvents()`
+  (`:426`). `SDL_ShowWindow()` does not pump (the WinRT driver has no ShowWindow hook), and neither do the D3D12
+  init, the XAudio2 backend nor any other step of the boot.
+- So the first pump is the first `SDL_PollEvent()` of the main loop (`apps/ymir-sdl3/src/app/app.cpp`, "Process SDL
+  events"). **Run 07 got past the audio initialization — XAudio2 works — and reached the main loop.** This also
+  explains why the splash stayed up during the audio deadlock of runs 04–06: the window was never activated.
+
+### What the black screen means
+
+Without a BIOS, the Saturn output is black, so the only visible things should be the ImGui menu bar and the
+*Welcome* modal (`app.cpp`, `OpenWelcomeModal(true)`). A black screen means either the UI thread stopped in the
+first frames, or frames are presented without any UI in them.
+
+### Hypotheses, ranked
+
+1. **Visual Studio is in break mode (Debug build).** Two first-frame-only sources of a break:
+   - The D3D12 debug layer is set to break on **warnings**, not just errors
+     (`gfx_context_impl_d3d12.cpp` calls `DebugLayer::BreakOnWarnings(device, true)`, which sets
+     `SetBreakOnSeverity` for WARNING, ERROR and CORRUPTION, `libs/ymir-core/src/ymir/gpu/d3d12/d3d12_debug.cpp`).
+     The first `ClearRenderTargetView`/`Present` is the first frame the runtime validates.
+   - `ImGui_ImplDX12_NewFrame` creates the ImGui root signature and pipeline lazily on the first frame and asserts if
+     that fails (`vendor/imgui/imgui/backends/imgui_impl_dx12.cpp`, `IM_ASSERT(0 && "...CreateDeviceObjects()
+     failed!")`). That includes compiling the ImGui shaders **at runtime** with `D3DCompile` (vs_5_0/ps_5_0, DXBC).
+   Under the debugger either one pauses the process, which looks exactly like "alive, black, never moves".
+2. **`Present(1, 0)` or the frame fence wait blocks on the CoreWindow.** This was "eliminated" after run 04 only
+   because the loop was never reached; it was **never actually tested** and is open again.
+3. **Frames are presented but ImGui draws nothing.** The Release-build face of hypothesis 1 (no assert, silent
+   failure), or `io.DisplaySize` being zero because SDL flagged the window as minimized
+   (`imgui_impl_sdl3.cpp`, `ImGui_ImplSDL3_GetWindowSizeAndFramebufferScale`). The latter only happens after a
+   `VisibilityChanged(false)` (`SDL_winrtapp_direct3d.cpp:528-530`), which is unlikely at startup.
+4. **The UI thread blocks inside `SDL_PollEvent()`.** If SDL3-uwp thinks the window is invisible and no
+   hidden/minimized event is pending, `PumpEvents` switches to `ProcessEvents(ProcessOneAndAllPending)`, which waits
+   for an event (`SDL_winrtapp_direct3d.cpp:390-436`).
+
+Ruled out by reading the code: the video-sync wait on `frameReadyEvent` (`syncInWindowedMode` defaults to `false`
+and the log says `Leaving full screen mode`), and audio sync (it can only stall the emulator thread, not the UI).
+
+### Diagnostic gaps found while analysing it
+
+- `YMIR_BOOT_TRACE`/`YMIR_PRESENT_TRACE` only called `OutputDebugStringA`, which goes nowhere without a debugger, so a
+  run launched from the tile left no trace in `ymir-uwp.log`.
+- `YMIR_PRESENT_TRACE` wrote 3+ lines per frame, flooding the Output window at 60 fps.
+- The XAudio2 backend logged with `SDL_LogInfo(SDL_LOG_CATEGORY_AUDIO, ...)`, but SDL filters every category except
+  APPLICATION at ERROR priority by default (`vendor/SDL3-uwp/src/SDL_log.c:397-410`), so those lines were never
+  printed.
+- The return value of `ImGuiInit()` was ignored.
+
+### Instrumentation for run 08 (all under `YMIR_PLATFORM_UWP`)
+
+| Change | Where |
+|---|---|
+| `platform::uwp::Trace()`: synchronous write to the debugger **and** `ymir-uwp.log`; all temporary traces use it | `platform/uwp/uwp_platform.{hpp,cpp}`, `app.cpp`, `main.cpp`, `xaudio2_backend.cpp` |
+| Present trace in full for the first 10 frames, then one frame every 5 s, with the frame number | `gfx_context_impl_d3d12.cpp` |
+| D3D12 debug layer no longer breaks on messages (it still prints them to the Output window) | `gfx_context_impl_d3d12.cpp` |
+| ImGui DX12 device objects created right after `ImGui_ImplDX12_Init`; a failure is logged and `App::RunEmulator` stops with a startup failure instead of a first-frame assert or a silent black screen | `gfx_context_impl_d3d12.cpp`, `app.cpp` |
+| `StallWatchdog`: the main loop marks each phase; a monitor thread logs `[Ymir watchdog] UI thread stalled for N ms in phase '...' (frame N)` after 3 s without progress | `platform/uwp/stall_watchdog.{hpp,cpp}`, `app.cpp` |
+| Window/ImGui geometry (size in DIPs and pixels, flags, `io.DisplaySize`, framebuffer scale) on the first frame and on every change | `app.cpp` |
+
+### How to read run 08
+
+| Output shows | Conclusion |
+|---|---|
+| `D3D12 WARNING`/`D3D12 ERROR` lines and, in the old build, a break | Hypothesis 1 (debug layer). Fix the cause of the message |
+| `Dear ImGui DX12 backend could not create its root signature or pipeline state` | Hypothesis 1/3 (ImGui pipeline). Look at the ImGui shaders / PSO on the Xbox |
+| `stalled ... in phase 'present (...)'` with `Present() entered` but no `swapchain->Present returned` | Hypothesis 2, `Present(1, 0)` blocks |
+| `stalled ... in phase 'present (...)'` after `MoveToNextFrame: waiting on fence` | Hypothesis 2, the frame fence never completes |
+| `stalled ... in phase 'poll SDL events'` | Hypothesis 4 |
+| Frames keep coming (`Present() -> Ok` every 5 s), no stall, geometry shows `ImGui display 0x0` or `minimized=true` | Hypothesis 3 |
+| Frames keep coming and the geometry looks right, but the screen is black | The UI is drawn somewhere invisible: compare the swap chain size with the window size in the trace |
 
 ## Run 06 — the pump workaround is refuted
 
@@ -199,7 +282,7 @@ to look at the WinRT device watcher / `GetDefaultAudioRenderId` path, or at the 
 
 | Hypothesis | Why it is dead |
 |---|---|
-| `swapchain->Present(1, 0)` blocks on a vblank that never comes | **The loop is never reached.** Run 04 stops well before the first frame. The `[Ymir present]` traces added for it produced no output at all. |
+| ~~`swapchain->Present(1, 0)` blocks on a vblank that never comes~~ **REOPENED by run 07** | It was dismissed because run 04 never reached the loop, not because it was tested. Since run 07 reaches the loop, it is a live hypothesis again (see "Run 07"). |
 | The app returns early / exits cleanly (entry #2 of the handoff) | The process stays alive; there is no `ShowStartupFailure` and no `goto end_loop`. |
 | The D3D12 context or the swapchain fails to create (the old T-12 recipe) | `Direct3D 12 graphics context initialized successfully` is logged on every run. |
 | `GetGamingDeviceModelInformation()` failing (`gaming device unknown`) is the cause | It does fail, but it makes the code fall back to 1920x1080, which matches the console's actual configured output mode. Cosmetic only. |

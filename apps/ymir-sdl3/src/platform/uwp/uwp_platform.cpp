@@ -214,6 +214,23 @@ std::filesystem::path RedirectStdioToLogFile() {
     return logPath;
 }
 
+void Trace(std::string_view message) {
+    // OutputDebugStringA needs a null-terminated string; the copy also lets the newline be appended
+    std::string line{message};
+    if (line.empty() || line.back() != '\n') {
+        line.push_back('\n');
+    }
+    OutputDebugStringA(line.c_str());
+
+    // g_logFile is only written by RedirectStdioToLogFile(), before any other thread exists, and by
+    // ShutdownLogRedirect(), right before main() returns, so reading it here does not race in practice. The CRT locks
+    // the stream for each fwrite, so these lines never interleave with the ones written by the log pump thread.
+    if (FILE *logFile = g_logFile; logFile != nullptr) {
+        std::fwrite(line.data(), 1, line.size(), logFile);
+        std::fflush(logFile);
+    }
+}
+
 void ShutdownLogRedirect() {
     if (g_logPumpThread == nullptr || !g_logPumpThread->joinable()) {
         return;

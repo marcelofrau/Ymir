@@ -47,11 +47,12 @@ int main(int argc, char **argv) {
             platform::uwp::ShutdownLogRedirect();
         }
     } logRedirectGuard{};
-    OutputDebugStringA(fmt::format("[Ymir boot] log redirection done: {}\n", logPath.string()).c_str());
+    // From here on, Trace() also writes to the log file, so the markers survive runs launched from the tile
+    platform::uwp::Trace(fmt::format("[Ymir boot] log redirection done: {}", logPath.string()));
 
     // Draw to the whole screen instead of the TV-safe area on Xbox
     platform::uwp::UseFullCoreWindowBounds();
-    OutputDebugStringA("[Ymir boot] core window bounds set\n");
+    platform::uwp::Trace("[Ymir boot] core window bounds set");
 #endif
 
 #if defined(_WIN32)
