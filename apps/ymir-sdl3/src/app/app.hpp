@@ -60,6 +60,23 @@ private:
 
     std::chrono::steady_clock::time_point m_mouseHideTime;
 
+#if YMIR_PLATFORM_UWP
+    /// @brief True when the gamepad drives the ImGui layer instead of the emulated Saturn.
+    ///
+    /// The Xbox has a single gamepad that has to serve both the GUI and the emulated console, so
+    /// the input must be routed to one of them at a time. The View button toggles the routing and
+    /// a modal dialog always takes the gamepad over while it is open.
+    bool m_gamepadGuiFocus = false;
+
+    /// @brief True while an ImGui modal dialog is open, which always captures the gamepad.
+    bool m_gamepadGuiModalOpen = false;
+
+    /// @brief True when the gamepad is routed to the ImGui layer rather than to the Saturn.
+    bool GamepadDrivesGui() const {
+        return m_gamepadGuiFocus || m_gamepadGuiModalOpen;
+    }
+#endif
+
     void RunEmulator();
 
     void StartEmulatorThread();

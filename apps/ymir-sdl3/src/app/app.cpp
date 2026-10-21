@@ -657,6 +657,13 @@ void App::RunEmulator() {
     ImGui::LoadIniSettingsFromDisk(imguiIniLocationStr.c_str());
     io.IniFilename = nullptr;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
+#if YMIR_PLATFORM_UWP
+    // The Xbox has no keyboard: the gamepad is the only input device the GUI can be driven with.
+    // The keyboard navigation is turned off so that io.WantCaptureKeyboard only reports true while
+    // a modal dialog is open or a widget is being interacted with, which is the signal used to
+    // route the gamepad to the GUI. See the gamepad routing in the event loop below.
+    io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableKeyboard;
+#endif
     // io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;  // Enable Gamepad Controls
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable; // Enable Docking
     io.KeyRepeatDelay = 0.350f;
@@ -1763,16 +1770,38 @@ void App::RunEmulator() {
             {
                 const int playerIndex = gamepadPlayerIndices.GetPlayerIndex(evt.gaxis.which);
                 const float value = evt.gaxis.value < 0 ? evt.gaxis.value / 32768.0f : evt.gaxis.value / 32767.0f;
-                inputContext.ProcessPrimitive(playerIndex, input::SDL3ToGamepadAxis1D((SDL_GamepadAxis)evt.gaxis.axis),
-                                              value);
+#if YMIR_PLATFORM_UWP
+                // The Xbox has a single gamepad that must drive either the ImGui layer or the
+                // emulated Saturn, never both: otherwise the console reacts to the button presses
+                // meant for the GUI. See GamepadDrivesGui().
+                if (!GamepadDrivesGui()) {
+#endif
+                    inputContext.ProcessPrimitive(playerIndex, input::SDL3ToGamepadAxis1D((SDL_GamepadAxis)evt.gaxis.axis),
+                                                  value);
+#if YMIR_PLATFORM_UWP
+                }
+#endif
                 break;
             }
             case SDL_EVENT_GAMEPAD_BUTTON_DOWN: [[fallthrough]];
             case SDL_EVENT_GAMEPAD_BUTTON_UP: //
             {
                 const int playerIndex = gamepadPlayerIndices.GetPlayerIndex(evt.gbutton.which);
-                inputContext.ProcessPrimitive(
-                    playerIndex, input::SDL3ToGamepadButton((SDL_GamepadButton)evt.gbutton.button), evt.gbutton.down);
+#if YMIR_PLATFORM_UWP
+                // The View button is not part of the Saturn control pad, so it is free to switch
+                // the gamepad over to the GUI. The emulated console inputs are reset on the switch
+                // so no stale button state leaks from one side to the other.
+                if (evt.gbutton.button == SDL_GAMEPAD_BUTTON_BACK && evt.gbutton.down) {
+                    m_gamepadGuiFocus = !m_gamepadGuiFocus;
+                    inputContext.ResetAllGamepadInputs();
+                }
+                if (!GamepadDrivesGui()) {
+#endif
+                    inputContext.ProcessPrimitive(
+                        playerIndex, input::SDL3ToGamepadButton((SDL_GamepadButton)evt.gbutton.button), evt.gbutton.down);
+#if YMIR_PLATFORM_UWP
+                }
+#endif
                 break;
             }
 
@@ -2233,12 +2262,28 @@ void App::RunEmulator() {
             ImGui::SetMouseCursor(ImGuiMouseCursor_None);
         }
 
+#if YMIR_PLATFORM_UWP
+        // The Xbox has no keyboard, so ImGui's navigation can only be driven by the gamepad.
+        // io.NavActive is turned on by the gamepad only when NavEnableGamepad is already enabled
+        // (and by the keyboard otherwise), so gating the flag on io.NavActive would leave the GUI
+        // permanently unreachable with a controller. The gamepad navigation is therefore enabled as
+        // soon as a gamepad is present, and the navigation follows the gamepad routing: while the
+        // gamepad drives the emulated Saturn the GUI ignores it, so a button press is never
+        // handled by both at the same time.
+        const bool gamepadPresent = (io.BackendFlags & ImGuiBackendFlags_HasGamepad) != 0;
+        if (gamepadPresent && GamepadDrivesGui()) {
+            io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+        } else {
+            io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableGamepad;
+        }
+#else
         // Selectively enable gamepad navigation if ImGui navigation is active
         if (io.NavActive) {
             io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
         } else {
             io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableGamepad;
         }
+#endif
 
         // ---------------------------------------------------------------------
         // Draw ImGui widgets
@@ -2247,6 +2292,14 @@ void App::RunEmulator() {
         YMIR_UI_PHASE("ImGui new frame");
         m_graphicsService.ImGuiNewFrame();
         ImGui::NewFrame();
+
+#if YMIR_PLATFORM_UWP
+        // Track whether the GUI is holding the gamepad. With the keyboard navigation disabled
+        // (there is no keyboard on the Xbox) ImGui only reports WantCaptureKeyboard while a modal
+        // dialog is open or a widget is being interacted with. The value lags one frame because
+        // ImGui computes it from the state of the previous frame.
+        m_gamepadGuiModalOpen = io.WantCaptureKeyboard;
+#endif
 
 #if YMIR_PLATFORM_UWP
         // TEMPORARY: trace the window and ImGui display geometry on the first frame and whenever it changes. A zero
@@ -3362,6 +3415,26 @@ void App::RunEmulator() {
             }
         }
         ImGui::End();
+
+#if YMIR_PLATFORM_UWP
+        // Show which side of the gamepad routing is active, so the user knows whether the
+        // controller is currently driving the GUI or the emulated Saturn.
+        {
+            const ImGuiViewport *viewport = ImGui::GetMainViewport();
+            const float scale = m_imguiData.displayScale;
+            ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x - 220.0f * scale,
+                                            viewport->WorkPos.y + 4.0f * scale));
+            ImGui::SetNextWindowBgAlpha(0.0f);
+            if (ImGui::Begin("##gamepad_focus_indicator", nullptr,
+                             ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
+                                 ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings)) {
+                ImGui::TextUnformatted(m_gamepadGuiModalOpen ? "Gamepad: GUI (dialog)"
+                                                             : m_gamepadGuiFocus ? "Gamepad: GUI"
+                                                                                 : "Gamepad: Emulator");
+            }
+            ImGui::End();
+        }
+#endif
 
         // ---------------------------------------------------------------------
         // Render window
