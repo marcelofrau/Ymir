@@ -5,7 +5,9 @@ Ymir is a Sega Saturn emulator (C++20, CMake). **This checkout is the `uwp/main`
 ## Read before working on the port
 
 - `docs/uwp/README.md` — architecture, every design decision with its rationale, full map of the fork's delta. **Read this before touching port code.**
-- `docs/uwp/HANDOFF.md` — sequential runbook for the Xbox bring-up (build → sideload → verify checklist → troubleshooting T-01..T-18). Section 0 lists the hard rules for the executor.
+- `docs/uwp/HANDOFF.md` — **the shared memory between the agents working on this port.** The `START HERE` block at the top is the canonical current state and is rewritten every session; the rest is the sequential Xbox runbook (build → sideload → verify checklist → troubleshooting T-01..T-18) plus the append-only session log. Section 0 lists the hard rules for the executor.
+- `docs/uwp/TESTING.md` — how to test on the Xbox without a mouse (IPL ROM and disc auto-load, hotkey bindings, the gamepad-cursor feature design).
+- `docs/uwp/evidence/` — raw logs of the Xbox runs and what each one proves or does not prove.
 - `CONTRIBUTING.md` — coding, naming and architectural rules for Ymir itself.
 
 ## Port-specific rules (from HANDOFF §0 — these override convenience)
@@ -18,15 +20,19 @@ Ymir is a Sega Saturn emulator (C++20, CMake). **This checkout is the `uwp/main`
 6. One commit per fix, message format `uwp: <what changed>`.
 7. Code style: 4-space indent, nested preprocessor directives indented, **comments in English**, line endings LF.
 8. **Never deploy or launch the app yourself — not on the PC, not on the Xbox.** Do not run `deploy-xbox.ps1`, `Add-AppxPackage`, `Install.ps1`, `Start-Process shell:AppsFolder\...`, or attach a debugger to `ymir-sdl3.exe`. The agent's job stops at editing code and building (`pwsh scripts/uwp/build.ps1`). **Ask the user to run and test it manually in Visual Studio 2026 (F5 / deploy straight to the Xbox), and wait for their log or report before continuing.**
-9. **Everything is written in English**: code comments, Doxygen blocks, commit messages, and all documentation. The conversation with the user is in Portuguese; the artifacts are not. When code must be documented or commented, always write the comment — do not leave non-obvious logic unexplained.
+9. **Everything is written in English**: code comments, Doxygen blocks, commit messages, and all documentation. The conversation with the user is in Portuguese; the artifacts are not. When code must be documented or commented, always write the comment — do not leave non-obvious logic unexplained. **Deliberate exception:** `docs/uwp/HANDOFF.md` and `docs/uwp/evidence/` are in **Portuguese**, because they are the operational document the user reads every session. A file is never half in each language.
 10. **Never `git commit` or `git push` unless the user explicitly asks for it** ("commit", "faz o commit", "push"). Stage or leave changes in the working tree; wait for the request.
+11. **Update the shared memory before you commit.** `docs/uwp/HANDOFF.md` has a `START HERE` block at the top that is the canonical current state; rewrite it with the real state, update §1 and §5, and **append** a new entry to the session log (§0.1). Never delete or rewrite past entries. Record decisions in `docs/uwp/README.md` §4 and raw evidence in `docs/uwp/evidence/`.
+12. **The other agent shares this working tree** (`F:\workspace\Ymir`). "Pulling" their work is usually a no-op — their commits already land on the local HEAD. Check `git log HEAD..origin/uwp/main` and `git status` before concluding nothing changed.
 
 ## Documentation map
 
 | Doc | Purpose |
 |---|---|
 | `docs/uwp/README.md` | Port architecture, every design decision with its rationale, fork delta map |
-| `docs/uwp/HANDOFF.md` | Sequential Xbox runbook: build → sideload → verify checklist → troubleshooting T-01..T-18 |
+| `docs/uwp/HANDOFF.md` | **Shared memory between the port agents**: canonical state at the top, then the sequential Xbox runbook (build → sideload → verify checklist → troubleshooting T-01..T-18) and the append-only session log |
+| `docs/uwp/TESTING.md` | Testing on the Xbox without a mouse: IPL ROM and disc auto-load, hotkey bindings, gamepad-cursor feature design |
+| `docs/uwp/evidence/` | Raw logs of the Xbox runs, with what each one proves and what it does not |
 | `docs/uwp/` (other) | Port-specific deep dives as they are written |
 | `docs/ymir/` | General developer documentation of Ymir itself: Saturn hardware primer, architecture, core, video, audio, CD/media, frontend, build, glossary |
 | `CONTRIBUTING.md` | Coding, naming and architectural rules for Ymir itself, including AI usage guidelines |
@@ -96,6 +102,9 @@ Catch2, registered with CTest via `catch_discover_tests`. Two targets: `ymir-cor
 - On UWP the app instance must be set to **App type: Game** in Dev Home (App = 1 GB RAM and a GPU slice). This limit does not apply under a debugger, so debugger runs mislead.
 - `SDL_GetCurrentDirectory()` and friends can return `nullptr` in an AppContainer; SDL getters that return pointers must be null-checked before wrapping in `std::string`. (`SDL_GetPrefPath` has the same hazard.)
 - The development log is mirrored to the Visual Studio Output window (`Output → Debug`) through `OutputDebugStringA` while a debugger is attached, so it can be copied from there without going through Device Portal. Running from the tile (no debugger) writes to the file only.
+- **The Microsoft CRT under UWP closes a stream when `freopen` fails.** After that `fileno()` returns `-1` and a later `_dup2` trips a debug assertion in `dup2.cpp`. Redirect stdio at the **descriptor** level (`dup` + `open("NUL")` + `dup2`) and never close the stream. See `util::StdioSuppressor`.
+- **SDL's WASAPI audio path deadlocks on the Xbox**: `SDL_OpenAudioDeviceStream` waits on a no-timeout semaphore after `ActivateAudioInterfaceAsync`, and pumping the CoreWindow dispatcher does not unblock it. The UWP build uses its own **XAudio2** backend behind the `AudioBackend` interface; the desktop build keeps the SDL backend.
+- The emulator is already driven by the gamepad (default port 1 Control Pad bindings). Only the ImGui layer needs a mouse, and the Xbox has none — see `docs/uwp/TESTING.md` for the ways to test without one.
 
 ## Xbox startup — read before touching boot, logging or threads
 

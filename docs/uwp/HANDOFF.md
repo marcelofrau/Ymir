@@ -1,6 +1,53 @@
-# HANDOFF: Ymir UWP / Xbox Dev Mode (runbook sequencial)
+# HANDOFF: Ymir UWP / Xbox Dev Mode — memory compartilhado entre agentes
 
-> **Para o agente que vai continuar:** este documento é um roteiro **sequencial**. Execute os passos **na ordem**,
+> ### START HERE — estado atual (canônico)
+>
+> Este bloco é a **fonte da verdade**. É reescrito a cada sessão; as seções abaixo dele são histórico e runbook —
+> use-as para o *como*, nunca para o *estado atual*.
+>
+> | Item | Estado |
+> |---|---|
+> | **Boot no Xbox** | ✅ **Completo.** D3D12, ImGui, XAudio2, thread do emulador, loop principal, frames apresentados |
+> | **Splash** | ✅ Some. O CoreWindow ativa no primeiro `SDL_PollEvent` do loop principal |
+> | **GUI (ImGui)** | ✅ Aparece, 1920x1080, `io.DisplaySize` correto |
+> | **Áudio** | ✅ XAudio2. O WASAPI do SDL **trava** no Xbox (deadlock no `SDL_OpenAudioDeviceStream`) |
+> | **Entrada no emulador** | ✅ O gamepad já dirige o Saturn pelas bindings padrão da porta 1 |
+> | **GUI navegável pelo gamepad** | ❌ A GUI é mouse+teclado e o console não tem mouse. Ver [TESTING.md](TESTING.md) |
+> | **Emulação de verdade** | 🟡 Ainda não testada: falta IPL ROM (BIOS) e um disco |
+> | **Último run** | **09** (2026-10-21) — a GUI aparece. Log **não** capturado (relato do usuário) |
+> | **HEAD** | `8328de5c` em `uwp/main` |
+>
+> **Última atualização deste bloco:** 2026-10-21, pelo agente OpenCode.
+>
+> ---
+>
+> ### Contrato do memory compartilhado
+>
+> Este documento é o canal entre os **dois agentes** que trabalham neste port (OpenCode e Claude). ElesDividem a mesma
+> working tree (`F:\workspace\Ymir`), então o "pull" do outro agente é normalmente **no-op**: os commits já chegam
+> no HEAD local. Verifique com `git log HEAD..origin/uwp/main` antes de concluir que não houve mudança.
+>
+> **No começo de cada sessão:**
+>
+> 1. Leia **este bloco** e a seção 0 (regras). É o estado atual.
+> 2. Confira `git log --oneline -10` e `git status` — o outro agente pode ter commitado.
+> 3. Não releia o log de sessões (§0.1) procurando estado atual: ele é **histórico**. Se o bloco de cima não
+>    mencionar algo, **pergunte ou descubra**, não presuma.
+>
+> **No fim de cada sessão:**
+>
+> 1. **Reescreva o bloco "START HERE"** com o estado real.
+> 2. Atualize a seção 1 (Estado atual) e a seção 5 (Registro de execução).
+> 3. **Anexe** uma entrada em §0.1 (registro de passagem). Nunca apague nem reescreva entradas antigas.
+> 4. Documente decisões no [README.md](README.md) (seção 4) e evidências em `docs/uwp/evidence/`.
+> 5. Commit + push, se o usuário pediu.
+>
+> **Idioma:** este documento e o `docs/uwp/evidence/` são em **português** (documento operacional do usuário). Código,
+> comentários, mensagens de commit e o resto de `docs/` são em **inglês**. Ver a regra 12 da seção 0.
+
+---
+
+> **Para o agente que vai continuar:** as seções 2 a 10 são um roteiro **sequencial**. Execute os passos **na ordem**,
 > um de cada vez, e marque `[x]` ao concluir. A arquitetura e o motivo de cada decisão estão em
 > [README.md](README.md). Leia a seção 0 antes de começar.
 >
@@ -31,13 +78,22 @@
 10. **Nunca faça `git commit` nem `git push` sem pedido explícito** do usuário.
 11. **Tudo é escrito em inglês** — comentários, Doxygen, mensagens de commit e documentação. Só a conversa com o
     usuário é em português. Comente a lógica não óbvia; não deixe nada implícito.
+    **Exceção deliberada:** `docs/uwp/HANDOFF.md` e `docs/uwp/evidence/` ficam em **português**, porque são o documento
+    operacional que o usuário lê a cada sessão. Não misture: um arquivo é todo em um idioma.
+12. **Atualize o bloco "START HERE"** (topo deste arquivo) no fim de toda sessão, antes de commitar. É ele que o outro
+    agente lê primeiro. Ver o "Contrato do memory compartilhado" no topo.
+13. **Não rode o app nem faça deploy** (repetido da regra 9 porque é a violação mais fácil de cometer). O agente
+    edita e compila; o usuário testa.
 
 ---
 
-## 0.1 Registro de passagem entre agentes (leia antes de tudo)
+## 0.1 Registro de passagem entre agentes (histórico — leia só se precisar do contexto de uma sessão)
 
 > Este handoff é o **canal de comunicação entre agentes**. Cada agente que trabalha no port registra aqui o que leu,
 > o que fez, o que provou e o que deixou pendente para o próximo. **Não apague entradas antigas** — anexe as novas.
+>
+> O **estado atual** está no bloco "START HERE" no topo deste arquivo, não aqui. Use este registro para reconstruir
+> *por que* o estado é o que é.
 
 ### Entrada do agente OpenCode — 2026-10-20 (sessão da máquina de destino, com Xbox)
 
@@ -922,6 +978,55 @@ invariavel nova (nunca fechar a stream).
 
 ---
 
+### Entrada do agente OpenCode #8 - 2026-10-21 (maquina de destino, COM Xbox, run 09 + memory compartilhado)
+
+**Estado:** o port **roda no Xbox**. O run 09 passou do assert do CRT e **a GUI do Ymir aparece** no console.
+
+#### 1. O que o run 09 provou
+
+Relato do usuario: a GUI aparece. Log nao capturado. Combinado com o run 08 (boot completo ate o loop principal,
+janela 1920x1080, `io.DisplaySize` 1920x1080), o quadro e:
+
+- o assert do CRT do `StdioSuppressor` sumiu (correcao `02b591d7`);
+- o D3D12, o ImGui, o XAudio2 e o loop principal estao de pe;
+- **o que falta e a entrada**: a GUI e mouse+teclado e o console nao tem mouse.
+
+#### 2. O que foi feito nesta sessao
+
+- **`docs/uwp/TESTING.md` (novo)**: o roteiro de teste no Xbox sem depender do mouse. Descoberta principal: **o
+  emulador ja e dirigido pelo gamepad** (bindings padrao da porta 1 em `settings.cpp`, `Settings::ResetBinds` para
+  `input.ports[0].controlPad.binds`: A/B/C/X/Y/L/R/Start, d-pad e stick esquerdo). O mouse so e necessario para a
+  camada ImGui. E da para dispensar a GUI inteira:
+  - **IPL ROM** em `roms/ipl/` -> o modal *Welcome* nem abre (`app.cpp`, `OpenWelcomeModal(true)` so e chamado quando
+    nao ha ROM);
+  - **disco** em `state/recent_discs.txt` + `RememberLastLoadedDisc = true` no `Ymir.toml` -> o app carrega o disco
+    sozinho (`app.cpp`, o segundo ramo do `if (!options.gameDiscPath.empty())`);
+  - **hotkeys** na seção `[Hotkeys]` do `Ymir.toml` aceitam botoes do gamepad no formato `GamepadGuide@0`
+    (`input::ToString(const InputElement &)` em `input_events.cpp`).
+- **Este arquivo virou memory compartilhado**: o bloco "START HERE" no topo e a fonte da verdade, reescrito a cada
+  sessao; o registro de passagem (§0.1) e historico e so cresce. O contrato esta escrito no topo.
+- **`docs/uwp/evidence/README.md`**: run 09 registrado.
+- **`docs/uwp/README.md`**: decisoes D20 (backend XAudio2) e D21 (redirecionamento de stdio por descritor).
+
+#### 3. Pendencias
+
+1. **Testar a emulacao de verdade**: IPL ROM + disco (TESTING.md §2 e §3). O usuario precisa copiar os arquivos pelo
+   Device Portal.
+2. **"Gamepad move o cursor"**: e uma feature real, nao um hack. O design esta em TESTING.md §5: injetar eventos de
+   mouse sinteticos no SDL, que o ImGui ja consome via `ImGui_ImplSDL3_ProcessEvent`. Nao implementado ainda.
+3. **Remover a instrumentacao temporaria** depois que o boot estiver estavel: `YMIR_BOOT_TRACE`, `YMIR_PRESENT_TRACE`,
+   `YMIR_UI_PHASE`, o trace de geometria, o `StallWatchdog` e o trace de enhanced barriers. **Manter** o `Trace()` e
+   o check de init do ImGui.
+4. **Capturar o log do run 09** (o usuario nao salvou). O proximo run ja vem instrumentado.
+
+#### 4. Estado do repositorio
+
+- Branch `uwp/main`, HEAD `8328de5c` + os commits desta sessao.
+- Build local verde: `pwsh scripts/uwp/build.ps1 -Configuration Debug` (MSIX gerado).
+- O pull do Claude e **no-op**: os dois agentesDividem a mesma working tree (`F:\workspace\Ymir`).
+
+---
+
 ---
 
 ## 1. Estado atual (o que já está pronto e validado)
@@ -944,16 +1049,29 @@ Validado na máquina de origem em 2026-10-20 (VS Build Tools 2026 18.x, MSVC 14.
 | CI/CD `.github/workflows/uwp.yml` (build, artifact, release por tag `uwp-v*`) | ✅ primeiro run verde em 2026-10-20 (runner `windows-2025` com **Visual Studio Enterprise 2026**, versão 0.4.0.2, artifacts `ymir-uwp-0.4.0.2` e `-symbols`; esse run foi antes do rebase pra 0.4.2). A publicação de release por tag ainda não foi exercitada (passo 15) |
 | Sincronizado com o upstream **0.4.2** (`8cdf0a53`) por rebase em 2026-10-20; build UWP Release limpo (`--fresh`, baseline nova do vcpkg) | ✅ |
 | Fallback VS 2022 (preset `UWP-x86-64-AVX2-MSVC-VS2022`) | ⚠️ configurado, mas **não compilado**: a máquina de origem e o runner do GitHub têm VS 2026 |
-| **Rodar o app** (PC ou Xbox) | ⚠️ **Xbox: the boot now completes** (D3D12, ImGui, XAudio2, emulator thread and main loop all start, correct window geometry) and then the process **hits a CRT debug assertion** in `util::StdioSuppressor::~StdioSuppressor()` during MIDI init (run 08). **Fixed in the tree, not yet verified on the console.** PC: not tested |
+| **Rodar o app** (PC ou Xbox) | ✅ **Xbox: o app roda** (run 09, 2026-10-21). Boot completo: D3D12, ImGui, XAudio2, thread do emulador, loop principal, frames apresentados, GUI 1920x1080. O assert do CRT no `StdioSuppressor` foi corrigido (`02b591d7`) e o run 09 passou dele. **Falta:** a GUI não é navegável pelo gamepad (é mouse+teclado) e a emulação em si ainda não foi testada (falta IPL ROM + disco) — ver [TESTING.md](TESTING.md). PC: não testado |
 
-### 1.1 Resultado da regressão desktop
+### 1.1 Testar no Xbox sem mexer na GUI
+
+Ver **[TESTING.md](TESTING.md)** — o roteiro completo. Resumo do que importa:
+
+- A GUI é mouse+teclado, mas **o emulador já é dirigido pelo gamepad** (bindings padrão da porta 1: A/B/C/X/Y/L/R/
+  Start, d-pad e stick esquerdo).
+- **Sem mouse, dá pra testar:** basta ter a **IPL ROM (BIOS)** em `roms/ipl/` (some com o modal *Welcome*) e um disco
+  em `state/recent_discs.txt` com `RememberLastLoadedDisc = true` no `Ymir.toml` (dispensa o file picker).
+- Botões do gamepad podem ser ligados a ações do app direto no `Ymir.toml`, sem passar pela GUI:
+  `ToggleFullScreen = ["GamepadGuide@0"]` na seção `[Hotkeys]`.
+- O "gamepad move o cursor do mouse" é uma feature real (design em TESTING.md §5), não um hack: ela entraria
+  injetando eventos de mouse sintéticos no SDL, que o ImGui já consome.
+
+### 1.2 Resultado da regressão desktop
 ✅ Em 2026-10-20, depois do rebase pro upstream 0.4.2: o preset `Full-x86-64-AVX2-MSVC-Release` (Ninja + MSVC
 14.51 + triplet `x64-windows`, baseline nova do vcpkg) compilou sem erros, e o `ctest` deu **14/14 testes OK**.
 
 Antes do rebase eram 75 testes. A diferença vem do upstream, que removeu `ymir-dbg`, `ymir-headless` e
 `ymir-dbg-commons` com os testes deles; não tem relação com o port.
 
-### 1.2 Identidade do pacote (útil para achar arquivos)
+### 1.3 Identidade do pacote (útil para achar arquivos)
 
 | Campo | Valor |
 |---|---|
@@ -1343,11 +1461,12 @@ Escolha **uma** das opções:
 | 2026-10-20 | 1–6 | OK (máquina de origem) | `.msix` Debug e Release sem erros; regressão desktop 75/75 |
 | 2026-10-20 | 8 da seção 8 (rebase) | OK | Rebase pro upstream 0.4.2 (285 commits). Conflitos: `CMakeLists.txt` raiz (bloco de versão/feature flags reorganizado), `apps/ymir-sdl3/CMakeLists.txt` (macros) e `video_settings_view.cpp` (o upstream passou a mostrar o toggle de HW sempre; mudança do port removida). Backup pré-rebase em `backup/uwp-main-pre-0.4.2` (só local) |
 | 2026-10-20 | 15 (parcial) | OK | Run 39396157010 do `uwp.yml` verde com VS 2026 no runner; artifact de 5,3 MB |
-| 2026-10-20 | 12 (máquina de destino) | **PARCIAL** | **Primeiro boot real no Xbox.** O crash de `SDL_GetCurrentDirectory()` (`39aa6355`) está resolvido e o mirror de log funciona. O boot chega ao `App::Run()`, inicializa o D3D12 com sucesso e para no splash **dentro de `AudioSystem::Init()`** (`SDL_OpenAudioDeviceStream`) — o loop principal nunca é alcançado. Detalhes nas seções 0.1 (entradas #3 e #4) e em `docs/uwp/evidence/` |
+| 2026-10-20 | 12 (máquina de destino) | **PARCIAL** | **Primeiro boot real no Xbox.** O crash de `SDL_GetCurrentDirectory()` (`39aa6355`) está resolvido e o mirror de log funciona. O boot chega ao `App::Run()`, inicializa o D3D12 com sucesso e para no splash **dentro de `AudioSystem::Init()`** (`SDL_OpenAudioDeviceStream`) — o loop principal nunca é alcançado. Detalhes na seção 0.1 (entradas #3 e #4) e em `docs/uwp/evidence/` |
 | 2026-10-20 | 12 (máquina de destino) | aguardando run 05 | Build Debug com marcas `[Ymir audio]` compilado; aguardando o usuário rodar no Xbox para confirmar se a parada é dentro de `SDL_OpenAudioDeviceStream` |
 | 2026-10-20 | 12 (target machine) | run 05/06 | WASAPI deadlock confirmed; worker-thread workaround refuted; XAudio2 backend implemented (`071639c9`) |
 | 2026-10-21 | 12 (target machine) | **PARTIAL** (run 07) | Debug, F5: the splash is dismissed (the main loop is reached, so XAudio2 works) and the screen stays black. No log kept. Instrumentation for run 08 added (section 0.1) |
 | 2026-10-21 | 12 (target machine) | **PARTIAL** (run 08) | Debug, F5: **the boot completes** (D3D12, ImGui, XAudio2, emulator thread, main loop, window 1920x1080 not minimized, `io.DisplaySize` 1920x1080). Then a **CRT assertion** (`dup2.cpp:67`, `((unsigned)target_fh < _NHANDLE_)`) in `util::StdioSuppressor::~StdioSuppressor()` during MIDI init. Root cause: `freopen` closes the stream when it fails, so `fileno()` returns -1. Fixed by redirecting at the descriptor level. Log: `docs/uwp/evidence/run-2026-10-21-08-midi-stdio-assert.raw.txt` |
+| 2026-10-21 | 12 (target machine) | **OK** (run 09) | Debug, F5: the CRT assertion is gone and **the Ymir GUI appears** on the console. The port is usable. Log not captured (user report). Open: the GUI is mouse-driven and the console has no mouse; the emulation itself is not tested yet (no IPL ROM, no disc) |
 | | | | |
 
 ---

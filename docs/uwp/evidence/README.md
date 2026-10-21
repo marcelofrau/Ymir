@@ -10,9 +10,9 @@ On the Xbox (Dev Mode, launched from Visual Studio 2026), the app **stopped on t
 (runs 03–06, the audio deadlock). It did not crash, did not exit, and showed no error dialog. The process stayed
 alive. On the PC (packaged UWP build) the same symptom is expected but is not the current focus.
 
-**Current symptom (run 08):** the boot **completes** — D3D12, ImGui, XAudio2, the emulator thread and the main loop
-all start — and the process then hits a **debug assertion in the CRT**, raised by
-`util::StdioSuppressor::~StdioSuppressor()` while the MIDI backend initializes. See "Run 08" below.
+**Current symptom (run 09):** the app **runs on the console** — the CRT assertion is gone and the Ymir GUI appears.
+What is missing is not the boot but the **input**: the GUI is mouse-and-keyboard driven and the Xbox has no mouse.
+See "Run 09" below and `docs/uwp/TESTING.md`.
 
 ## Index of runs
 
@@ -24,6 +24,29 @@ all start — and the process then hits a **debug assertion in the CRT**, raised
 | 06 | `run-2026-10-20-06-worker-thread-pump-refuted.raw.txt` | The worker-thread + dispatcher-pump workaround. **Refuted:** ~5000 `SDL_PumpEvents()` calls over 10 seconds do not unblock the activation. The timeout produces a clean failure, and the detached worker outlives the VDP render threads (the orphan-thread risk). |
 | 07 | (no log kept) | First run with the XAudio2 backend, F5 with a **Debug** build. **The splash is dismissed and the screen turns black**, and stays that way. No output was saved. Reading below. |
 | 08 | `run-2026-10-21-08-midi-stdio-assert.raw.txt` | The XAudio2 backend works and the boot **completes**: D3D12, ImGui, audio, emulator thread and the main loop all start, with a correct window geometry (1920x1080, not minimized, focused, `io.DisplaySize` 1920x1080). The process then **hits a debug assertion** in `util::StdioSuppressor::~StdioSuppressor()` during MIDI init. |
+| 09 | (no log kept) | The CRT assertion is gone and **the Ymir GUI appears** on the console. The port is usable. No output was saved. The open problem is now the input, not the boot: the GUI is mouse-driven. |
+
+## Run 09 — the app runs, the GUI appears (2026-10-21)
+
+Raw log: not captured (user report only).
+
+### What it proves
+
+- The `StdioSuppressor` fix works: the process no longer trips the CRT assertion in the MIDI init.
+- The whole boot path is stable on the console: D3D12, ImGui, XAudio2, emulator thread, main loop, frames presented,
+  window 1920x1080 with the correct geometry.
+- **The Ymir GUI renders on the Xbox.**
+
+### What it does not prove
+
+- Nothing about the emulation itself: there is no IPL ROM and no disc on the console yet.
+- Nothing about the input: the GUI is mouse-and-keyboard driven, and the console has no mouse. The emulator is
+  already gamepad-driven (default port 1 bindings), so the only gap is navigating the ImGui layer.
+
+### Next run
+
+See `docs/uwp/TESTING.md` for the file layout that makes the boot GUI-free (IPL ROM in `roms/ipl/`, disc in
+`state/recent_discs.txt`, `RememberLastLoadedDisc = true`).
 
 ## Run 08 — the boot completes, then a CRT assertion in the MIDI init (2026-10-21)
 
@@ -201,13 +224,16 @@ Because all five changes go into the same build, a working run 08 will not say w
 what the console reports (enhanced barriers) and the debug layer still prints its messages, so bisecting later is
 possible by reverting them one at a time.
 
-### How to read run 09
+### How to read run 10
 
-Run 08 is explained above. Run 09 is the first run with the `StdioSuppressor` fix.
+Run 09 is explained above. Run 10 is the first run with the emulation actually loaded (IPL ROM and disc in place).
 
 | Output shows | Conclusion |
 |---|---|
 | `Debug Assertion Failed!` in `dup2.cpp` again, but from a different frame | A second `_dup2` with an invalid descriptor exists; send the stack |
+| `Loading IPL ROM from ...` followed by `IPL ROM loaded successfully` | The BIOS was found and loaded: the *Welcome* modal is gone |
+| `Loading disc image ...` | The disc was auto-loaded from `state/recent_discs.txt` |
+| Neither line | The files are not in the profile folder, or `RememberLastLoadedDisc` is still `false` |
 | `warn \| StdioSuppress \| Cannot open 'NUL' to suppress output: errno N` | The null device is not reachable in the AppContainer. The suppression is skipped, the app keeps running, and the RtMidi noise stays in the log. Not fatal, but it needs another mechanism |
 | No `warn` from `StdioSuppress` | The null device opened fine and the suppression works |
 | `[Ymir present] ...` lines every 5 s | Frames are being presented; the UI should be visible |

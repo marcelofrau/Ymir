@@ -118,6 +118,11 @@ ymir-uwp_<ver>_x64_symbols.zip                      → .appxsym (símbolos pra 
 5. Com **Settings > Video > Use hardware acceleration** ligado, o VDP usa `UseDirect3D12Renderer`. Se falhar, volta
    automaticamente pro renderer por software (`events/emu_event_factory.cpp`).
 6. Diálogos de arquivo usam pickers WinRT (corrotina `fire_and_forget`, conclusão entregue pelo `ProcessEvents` do SDL).
+7. O áudio é aberto pelo backend **XAudio2** (`xaudio2_backend.cpp`): `XAudio2Create` → `CreateMasteringVoice` →
+   `CreateSourceVoice` → `Start`. O WASAPI do SDL3 trava no console (ver D20).
+8. stdout/stderr são redirecionados para um pipe, e uma threadPump escreve cada linha no arquivo de log **e** em
+   `OutputDebugStringA` (quando há debugger anexado, o Output do VS espelha o devlog). O redirecionamento é feito por
+   descritor, nunca com `freopen` (ver D21).
 
 ## 4. Decisões técnicas (com motivo)
 
@@ -142,6 +147,8 @@ ymir-uwp_<ver>_x64_symbols.zip                      → .appxsym (símbolos pra 
 | D17 | Enhanced barriers forced off on UWP (graphics context and VDP HW renderer), legacy `ResourceBarrier` used instead | XBSX2 hard-disables them on Xbox ("Not supported on Xbox", `pcsx2/GS/Renderers/DX12/GSDevice12.cpp`) regardless of the feature check, and Ymir's graphics context issues them on every frame for the back buffer. The legacy path already exists and is what older desktop GPUs use | Trusting `EnhancedBarriersSupported` |
 | D18 | CoreWindow swap chain without the frame latency waitable object, without `SetMaximumFrameLatency`, without tearing, and with `DXGI_SCALING_STRETCH` | Matches the swap chains known to work on Xbox: SDL3-uwp's own D3D12 renderer drops the waitable flag, the latency call and tearing on WinRT; RetroArch defaults waitable swap chains off on WinRT; xenia, Dolphin, XBSX2 and Cemu use STRETCH (xenia to fix a zoom bug). Ymir never waited on the waitable object anyway | The desktop settings (`SCALING_NONE`, waitable flag, tearing when supported) |
 | D19 | D3D12 debug layer does not break into the debugger on UWP; messages are only printed | Under F5 a single first-frame validation warning paused the app with a black screen. No Xbox port breaks on warnings by default: xenia/Dolphin/XBSX2 make breaking opt-in, RetroArch and SDL3-uwp break on ERROR only | Break on WARNING/ERROR/CORRUPTION as on desktop |
+| D20 | **Backend de áudio próprio no UWP: XAudio2** (`xaudio2_backend.{hpp,cpp}`), atrás da interface `AudioBackend` | O path WASAPI do SDL3 **trava** no Xbox: `SDL_OpenAudioDeviceStream` chama `ActivateAudioInterfaceAsync` e espera num semáforo sem timeout (`vendor/SDL3-uwp/src/audio/wasapi/SDL_wasapi_winrt.cpp:306` e `:317`). Bombear o dispatcher do CoreWindow (`SDL_PumpEvents`, ~5000 iterações em 10 s) **não** destrava. XAudio2 é síncrono, é a API nativa do console e não tem dependência de message pump | Manter o WASAPI do SDL e esperar o dispatcher; fazer o SDL abrir o áudio (proibido: `vendor/SDL3-uwp` não é alterado) |
+| D21 | **Redirecionamento de stdout/stderr no nível do descritor**, nunca com `freopen` | O CRT da Microsoft **fecha a stream** quando o `freopen` falha; depois disso `fileno()` devolve `-1` e o `_dup2` no destrutor dispara um assert do CRT (`dup2.cpp:67`). Foi o que travou o boot no Xbox, em `util::StdioSuppressor`. A correção faz `dup` + `open("NUL")` + `dup2`, cacheia o fd alvo e nunca fecha a stream. Efeito extra: o descritor do pipe do log não é mais fechado, então a thread que drena o log sobrevive | `freopen` (quebra o boot); `SetStdHandle` (não cobre o CRT) |
 
 ## 5. Macros e opções de CMake
 
