@@ -899,9 +899,23 @@ null-deref. **Nao ha outro assert conhecido no caminho.**
 4. Se a UI aparecer (menu ImGui + modal *Welcome*), seguir o checklist V1-V12 do passo 12.
 5. Apos o boot estavel, remover a instrumentacao temporaria (ver a entrada do Claude #12).
 
-#### 5. Estado do repositorio
+#### 5. Cobertura de teste adicionada
+
+Novo alvo `ymir-sdl3-tests` (`tests/ymir-sdl3-tests/`), Catch2, no mesmo padrao do `ymir-core-tests`. Ele compila
+as fontes do frontend que testa direto (sem linkar o app) e cobre o `util::StdioSuppressor`:
+
+- a stream e silenciada enquanto o suppressor esta vivo e restaurada depois;
+- a stream nunca e fechada, entao `fileno()` continua valido.
+
+**Limitacao importante:** os testes estao **OFF no build UWP** (`Ymir_ENABLE_TESTS=OFF`) e o `catch2` do
+`vcpkg.json` e apenas para `!uwp`. Portanto **um teste desktop nao pegaria o bug do `freopen`**, que so falha
+sob UWP. O run no Xbox continua sendo a cobertura real das falhas exclusivas de UWP. O que o teste garante e a
+invariavel nova (nunca fechar a stream).
+
+#### 6. Estado do repositorio
 
 - Branch `uwp/main`. Build local verde: `pwsh scripts/uwp/build.ps1 -Configuration Debug` (MSIX gerado).
+- Commits desta sessao: `02b591d7` (correcao do assert) e `7dd73f74` (alvo de teste).
 - **O pull do Claude e no-op**: os dois agentes trabalham na mesma working tree (`F:\workspace\Ymir`).
 - O build local pode falhar com `LNK1201` (PDB travado) enquanto o VS estiver aberto: matar os `MSBuild`/`mspdbsrv`
   orfaos e **apagar** o `ymir-sdl3.pdb` (o lock e de escrita, o delete funciona).
