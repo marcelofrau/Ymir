@@ -25,6 +25,64 @@ See "Run 09" below and `docs/uwp/TESTING.md`.
 | 07 | (no log kept) | First run with the XAudio2 backend, F5 with a **Debug** build. **The splash is dismissed and the screen turns black**, and stays that way. No output was saved. Reading below. |
 | 08 | `run-2026-10-21-08-midi-stdio-assert.raw.txt` | The XAudio2 backend works and the boot **completes**: D3D12, ImGui, audio, emulator thread and the main loop all start, with a correct window geometry (1920x1080, not minimized, focused, `io.DisplaySize` 1920x1080). The process then **hits a debug assertion** in `util::StdioSuppressor::~StdioSuppressor()` during MIDI init. |
 | 09 | (no log kept) | The CRT assertion is gone and **the Ymir GUI appears** on the console. The port is usable. No output was saved. The open problem is now the input, not the boot: the GUI is mouse-driven. |
+| 10 | (no log kept) | The virtual cursor appears but does not move, and A does nothing on the *Welcome* modal. |
+| 11 | `run-2026-10-21-11-no-gamepad-enumerated.raw.txt` | The decisive input measurement: **`joysticks=0 gamepads=0`**, no axis and no button event at all. Root cause: the SDL Windows Gaming Input driver is **opt-in** and the app never set `SDL_HINT_JOYSTICK_WGI`. |
+| 12 | (user report) | With the WGI hint enabled, **the console controller is seen by the app**: the GUI is navigable, the virtual cursor works, and **the Saturn BIOS boots**. The open problem is now **performance**: the emulation is slow. |
+
+## Run 12 — the controller works and the BIOS boots, but it is slow (2026-10-21)
+
+Raw log: not captured (user report only). The fix under test is commit `1f098a91`
+(`SDL_SetHint(SDL_HINT_JOYSTICK_WGI, "1")` before `SDL_Init`).
+
+### What it proves
+
+- The WGI driver works on the console once the hint is set: the app sees the controller, the ImGui layer is
+  navigable and the virtual cursor moves.
+- The whole chain works end to end on real hardware: **the Saturn BIOS boots on the Xbox**.
+- The port is functionally usable: the remaining problem is performance, not correctness.
+
+### What it does not prove
+
+- Nothing about the D3D12 VDP renderer on the console: the log of run 11 shows the app is running the **software**
+  VDP renderer (see the performance section below), so the hardware path is still untested.
+- Nothing about the file picker on the console.
+
+### The performance lead: the VDP is running in software
+
+The run 11 log shows, before the app even reaches the main loop:
+
+```
+info  | VDP-Config       | Switched to Software VDP renderer
+debug | SWRender-VDP1    | Enabling threaded VDP1 rendering
+debug | SWRender-VDP2    | Enabling threaded VDP2 rendering
+```
+
+The app only asks for the **Direct3D 12 VDP renderer** when the setting `video.useHardwareAcceleration` is on
+(`apps/ymir-sdl3/src/app/app.cpp:664` enqueues `events::emu::SwitchVDPRenderer`, handled in
+`apps/ymir-sdl3/src/app/events/emu_event_factory.cpp:94`), and **that setting defaults to false**
+(`apps/ymir-sdl3/src/app/settings.cpp:1138`). It is persisted in the profile as
+`[Video] UseHardwareAcceleration = false`.
+
+There is no `Switched to Direct3D 12 VDP renderer` line in the log, so the D3D12 VDP renderer was never used on
+the console. With the Saturn's VDP1 and VDP2 fully software-emulated, slow emulation is the expected outcome.
+
+**No code change is needed to test this**: set `UseHardwareAcceleration = true` in the profile's `Ymir.toml`
+(`[Video]` section) or toggle *Hardware VDP rendering* in the Tweaks/Video settings, and check the log for
+`Switched to Direct3D 12 VDP renderer`. If the console's D3D12 cannot run the compute-based VDP renderer, the app
+falls back to the software renderer and reports it.
+
+### Second performance factor: the IPL ROM auto-scan
+
+While the *Welcome* modal is open, the app re-scans the `roms/ipl` folder every **400 ms**
+(`apps/ymir-sdl3/src/app/services/window_manager_service.cpp:141`, `kScanInterval`), and each scan writes four
+devlog lines. On UWP the profile lives in a virtualized package folder, where directory enumeration is not cheap.
+This floods the log (thousands of lines in the run 11 capture) and costs CPU. It is intentional behaviour (it
+auto-loads the IPL ROM as soon as the file appears), but it has to be taken into account when reading a log.
+
+### Next run
+
+- Toggle hardware VDP rendering and see whether the console runs the D3D12 VDP renderer, and how much faster it is.
+- Measure the frame rate with the *Welcome* modal closed, to separate the scan cost from the VDP cost.
 
 ## Run 09 — the app runs, the GUI appears (2026-10-21)
 
@@ -33,6 +91,7 @@ Raw log: not captured (user report only).
 ### What it proves
 
 - The `StdioSuppressor` fix works: the process no longer trips the CRT assertion in the MIDI init.
+
 - The whole boot path is stable on the console: D3D12, ImGui, XAudio2, emulator thread, main loop, frames presented,
   window 1920x1080 with the correct geometry.
 - **The Ymir GUI renders on the Xbox.**

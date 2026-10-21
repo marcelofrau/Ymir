@@ -15,8 +15,8 @@
 > | **GUI navegável pelo gamepad** | 🟡 **Cursor virtual implementado, ainda não testado no console.** O ImGui só mostra o retângulo de foco do nav **depois** que uma direção é pressionada (`imgui.cpp:15070-15076`), então apertar A sem mover o foco não faz nada. Agora há cursor de mouse virtual: analógico **direito** move, **RB** = clique esquerdo, **LB** = clique direito; d-pad/stick esquerdo = nav do ImGui (A ativa, B volta). Ver [TESTING.md](TESTING.md) §5 |
 > | **File picker** | 🟡 Deve abrir (é a UI do sistema, navegável pelo controle). Filtros caem para "todos os arquivos". **Não verificado:** se o app consegue abrir por caminho um arquivo escolhido no armazenamento do console (`broadFileSystemAccess` não é suportado no Xbox) |
 > | **Emulação de verdade** | 🟡 Ainda não testada: falta IPL ROM (BIOS) e um disco |
-> | **Último run** | **11** (2026-10-21) — boot completo, **zero joysticks enumerados** (`joysticks=0 gamepads=0`). Causa-raiz achada: o driver **WGI é opt-in** no SDL e o app nunca ligou o hint `SDL_JOYSTICK_WGI` |
-> | **Próximo run** | **12** — build com `SDL_SetHint(SDL_HINT_JOYSTICK_WGI, "1")` antes do `SDL_Init`. Testar: o controle aparece no log? o cursor se move? o d-pad navega? |
+> | **Último run** | **12** (2026-10-21) — **o controle funciona e a BIOS do Saturn boota no Xbox.** Problema aberto agora: **desempenho** (a emulação está lenta) |
+> | **Próximo run** | **13** — medir onde está o custo. **Pista principal: o VDP está em renderer *software*** (`UseHardwareAcceleration` é `false` por padrão). Testar: `UseHardwareAcceleration = true` no `Ymir.toml` e ver se aparece `Switched to Direct3D 12 VDP renderer` |
 > | **HEAD** | ver `git log --oneline -3` em `uwp/main` |
 >
 > **Última atualização deste bloco:** 2026-10-21, pelo agente OpenCode.
@@ -1320,6 +1320,70 @@ O trace de eixos passou a ser de 1 em 1 segundo (antes 4x/s, spam demais).
 - Branch `uwp/main`, HEAD `1f098a91`.
 - Build local verde: `pwsh scripts/uwp/build.ps1 -Configuration Debug` (MSIX gerado).
 - Evidencia do run 11: `docs/uwp/evidence/run-2026-10-21-11-no-gamepad-enumerated.raw.txt`.
+
+### Entrada do agente OpenCode #13 - 2026-10-21 (FIM DE SESSAO: o controle funciona, a BIOS boota, a emulacao esta lenta)
+
+**Estado:** o run 12 (com `SDL_SetHint(SDL_HINT_JOYSTICK_WGI, "1")`) **funcionou**: o controle do console e visto pelo
+app, a GUI e navegavel, o cursor virtual funciona e **a BIOS do Saturn boota no Xbox**. A porta esta
+funcionalmente pronta; o problema aberto agora e **desempenho**.
+
+#### 1. O que o run 12 provou
+
+- O driver WGI funciona no console assim que o hint e ligado: `SDL_EVENT_GAMEPAD_ADDED` chega, o mapeamento do
+  banco do SDL casou com o controle do console, e o ImGui + o cursor virtual respondem.
+- A cadeia completa funciona em hardware real: **a BIOS do Saturn boota no Xbox**.
+- O que o run 12 **nao** prova: nada sobre o renderer D3D12 do VDP (o console rodou com o renderer *software*),
+  nada sobre o file picker, e nada sobre desempenho (nao ha medicao de FPS).
+
+#### 2. Pista principal para a lentidao: o VDP esta em renderer *software*
+
+O log do run 11 mostra, **antes** do app entrar no loop principal:
+
+```
+info  | VDP-Config       | Switched to Software VDP renderer
+debug | SWRender-VDP1    | Enabling threaded VDP1 rendering
+debug | SWRender-VDP2    | Enabling threaded VDP2 rendering
+```
+
+O app so pede o **renderer D3D12 do VDP** quando a setting `video.useHardwareAcceleration` esta ligada
+(`apps/ymir-sdl3/src/app/app.cpp:664` enfileira `events::emu::SwitchVDPRenderer`, tratado em
+`apps/ymir-sdl3/src/app/events/emu_event_factory.cpp:94`), e **essa setting e `false` por padrao**
+(`apps/ymir-sdl3/src/app/settings.cpp:1138`). Ela e persistida no profile como
+`[Video] UseHardwareAcceleration = false`.
+
+**Nao ha linha `Switched to Direct3D 12 VDP renderer` no log**: o renderer D3D12 do VDP nunca rodou no console.
+Com o VDP1 e o VDP2 do Saturn **emulados por software**, lentidao e o resultado esperado.
+
+**Teste sem mexer em codigo:** colocar `UseHardwareAcceleration = true` no `Ymir.toml` do profile
+(`[Video]`), ou ligar *Hardware VDP rendering* nas settings de video, e procurar
+`Switched to Direct3D 12 VDP renderer` no log. Se o D3D12 do console nao rodar o renderer baseado em compute
+shaders, o app volta para o software e avisa.
+
+#### 3. Segundo fator de custo: o auto-scan de IPL ROM
+
+Enquanto o modal *Welcome* esta aberto, o app **re-escania a pasta `roms/ipl` a cada 400 ms**
+(`apps/ymir-sdl3/src/app/services/window_manager_service.cpp:141`, `kScanInterval`), e cada scan escreve quatro
+linhas de devlog. Sob UWP o profile mora numa pasta de pacote virtualizada, onde enumerar diretorio nao e barato.
+No log do run 11 isso gerou **milhares de linhas** e um custo de CPU constante. E comportamento intencional
+(auto-carrega o IPL ROM assim que o arquivo aparece), mas precisa ser considerado ao ler um log.
+
+#### 4. Pendencias
+
+1. **Medir o desempenho** com o renderer D3D12 do VDP ligado vs desligado.
+2. **Medir o FPS** com o modal *Welcome* fechado, para separar o custo do scan do custo do VDP.
+3. **Testar o file picker** no console (ver `docs/uwp/TESTING.md` 4).
+4. **Testar um disco** de verdade: IPL em `roms/ipl/`, disco em `state/recent_discs.txt` (TESTING.md 2 e 3).
+5. **Ruido de log**: avaliar baixar o `kScanInterval` ou limitar o log do auto-scan.
+6. **Remover a instrumentacao temporaria** quando o boot estiver estavel: `YMIR_BOOT_TRACE`, `YMIR_PRESENT_TRACE`,
+   `YMIR_UI_PHASE`, o trace de geometria, o `StallWatchdog` e o trace de enhanced barriers. **Manter** o `Trace()`,
+   o check de init do ImGui e os traces do gamepad.
+
+#### 5. Estado do repositorio
+
+- Branch `uwp/main`, HEAD `19db4c1e` + os commits de documentacao desta entrada.
+- Build local verde: `pwsh scripts/uwp/build.ps1 -Configuration Debug` (MSIX gerado).
+- Evidencia do run 11: `docs/uwp/evidence/run-2026-10-21-11-no-gamepad-enumerated.raw.txt`.
+- O run 12 nao tem log bruto salvo (relato do usuario): o run 13 deve ser capturado em arquivo.
 
 ---
 

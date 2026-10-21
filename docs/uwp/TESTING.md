@@ -168,6 +168,20 @@ controller.
 ImGui 1.93 already ships the whole console navigation model, and the vendored `imgui_impl_sdl3` backend already feeds
 it. Nothing was missing except the flag.
 
+**But the flag was not the only thing that was missing.** The first Xbox run with the navigation in place still
+received nothing at all from the controller, and the tracing showed `joysticks=0 gamepads=0`: the SDL **Windows
+Gaming Input driver is opt-in** and the app never set `SDL_HINT_JOYSTICK_WGI`. Under UWP the WGI is the *only*
+driver (SDL3-uwp turns XInput and HIDAPI off on `WINDOWS_STORE`), so without the hint the joystick subsystem starts
+with no driver at all, enumerates zero devices and delivers no event. The fix is one line before `SDL_Init`:
+
+```cpp
+#if YMIR_PLATFORM_UWP
+    SDL_SetHint(SDL_HINT_JOYSTICK_WGI, "1");
+#endif
+```
+
+The hint has to be set **before** `SDL_Init`, because the driver reads it while the subsystem starts.
+
 | Input | ImGui action |
 |---|---|
 | D-pad / left stick | Move the focus between widgets |
@@ -303,3 +317,38 @@ The app writes stdout and stderr to:
 
 It is flushed line by line. When a debugger is attached, the same lines also go to `OutputDebugStringA`, so they show
 up in the Visual Studio Output window (that is the `ymir-sdl3` log tee in `platform/uwp/uwp_platform.cpp`).
+
+## 9. Performance on the console
+
+The BIOS boots, but the emulation is slow. Two known factors, in the order they should be checked:
+
+### 9.1 The VDP runs in software
+
+The app only asks for the **Direct3D 12 VDP renderer** when the setting `video.useHardwareAcceleration` is on, and
+that setting **defaults to false** (`apps/ymir-sdl3/src/app/settings.cpp:1138`). It is persisted in the profile's
+`Ymir.toml`:
+
+```toml
+[Video]
+UseHardwareAcceleration = true
+```
+
+With the setting off, the Saturn's VDP1 and VDP2 are fully software-emulated, which is the expected cause of slow
+emulation. Toggle it in the app instead (*Tweaks* or *Video* settings → *Hardware VDP rendering*) and check the log
+for `Switched to Direct3D 12 VDP renderer`. If the console's D3D12 cannot run the compute-based VDP renderer, the app
+falls back to the software renderer and says so.
+
+### 9.2 The IPL ROM auto-scan
+
+While the *Welcome* modal is open, the app re-scans the `roms/ipl` folder every **400 ms** and writes four devlog
+lines per scan (`apps/ymir-sdl3/src/app/services/window_manager_service.cpp:141`). On UWP the profile lives in a
+virtualized package folder, where directory enumeration is not cheap, and the log floods (thousands of lines in one
+capture). It is intentional — it auto-loads the IPL ROM as soon as the file appears — but it has to be taken into
+account when reading a log or measuring a frame rate.
+
+### 9.3 How to measure
+
+The app presents frames through the swapchain; the `[Ymir present]` trace prints one line per frame when the
+`YMIR_PRESENT_TRACE` instrumentation is on. A frame counter over a fixed wall-clock window gives the frame rate, and
+the same measurement with the *Welcome* modal closed separates the scan cost from the VDP cost.
+
