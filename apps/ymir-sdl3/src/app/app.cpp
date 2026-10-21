@@ -132,6 +132,8 @@
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_events.h>
+#include <SDL3/SDL_gamepad.h>
+#include <SDL3/SDL_joystick.h>
 #include <SDL3/SDL_messagebox.h>
 #include <SDL3/SDL_misc.h>
 
@@ -174,6 +176,69 @@ static void ShowStartupFailure(fmt::format_string<TArgs...> fmt, TArgs &&...args
 }
 
 #if YMIR_PLATFORM_UWP
+// Dumps the joystick and gamepad inventory.
+//
+// The Xbox controller reaches SDL through the Windows Gaming Input driver, which reports the raw
+// axes of the device and relies on the gamepad database for the mapping. Whether the console
+// controller is recognized as a gamepad at all, and which raw axis ends up being the right stick,
+// cannot be answered by reading the code: it has to be observed. This dump is the instrumentation
+// for that question.
+static void TraceGamepadInventory(const char *context) {
+    int joystickCount = 0;
+    SDL_JoystickID *joystickIds = SDL_GetJoysticks(&joystickCount);
+    int gamepadCount = 0;
+    SDL_JoystickID *gamepadIds = SDL_GetGamepads(&gamepadCount);
+    std::string inventory =
+        fmt::format("[Ymir gamepad] {}: joysticks={} gamepads={}", context, joystickCount, gamepadCount);
+    for (int i = 0; joystickIds != nullptr && i < joystickCount; ++i) {
+        SDL_Joystick *joystick = SDL_GetJoystickFromID(joystickIds[i]);
+        if (joystick == nullptr) {
+            continue;
+        }
+        char guid[33] = {};
+        SDL_GUIDToString(SDL_GetJoystickGUID(joystick), guid, sizeof(guid));
+        const char *name = SDL_GetJoystickName(joystick);
+        inventory += fmt::format(" | #{} name='{}' guid={} isGamepad={} axes={} buttons={} hats={}",
+                                 joystickIds[i],
+                                 name != nullptr ? name : "",
+                                 std::string(guid),
+                                 SDL_IsGamepad(joystickIds[i]) ? "yes" : "NO",
+                                 SDL_GetNumJoystickAxes(joystick),
+                                 SDL_GetNumJoystickButtons(joystick),
+                                 SDL_GetNumJoystickHats(joystick));
+    }
+    if (joystickIds != nullptr) {
+        SDL_free(joystickIds);
+    }
+    if (gamepadIds != nullptr) {
+        SDL_free(gamepadIds);
+    }
+    ::platform::uwp::Trace(inventory);
+}
+
+// Dumps the raw joystick axes and the mapped gamepad axes of a gamepad, so the two can be
+// compared: the raw axes are what the hardware reports, the gamepad axes are what the mapping
+// produced out of them.
+static void TraceGamepadAxes(SDL_Gamepad *gamepad) {
+    if (gamepad == nullptr) {
+        return;
+    }
+    std::string raw = "[Ymir gamepad] raw axes:";
+    if (SDL_Joystick *joystick = SDL_GetGamepadJoystick(gamepad); joystick != nullptr) {
+        const int axisCount = SDL_GetNumJoystickAxes(joystick);
+        for (int i = 0; i < axisCount; ++i) {
+            raw += fmt::format(" a{}={}", i, SDL_GetJoystickAxis(joystick, i));
+        }
+    }
+    std::string mapped = "[Ymir gamepad] gamepad axes:";
+    for (int i = 0; i < SDL_GAMEPAD_AXIS_COUNT; ++i) {
+        const auto axis = static_cast<SDL_GamepadAxis>(i);
+        mapped += fmt::format(" {}={}", SDL_GetGamepadStringForAxis(axis), SDL_GetGamepadAxis(gamepad, axis));
+    }
+    ::platform::uwp::Trace(raw);
+    ::platform::uwp::Trace(mapped);
+}
+
 void App::SetVirtualMouseButton(int button, bool down) {
     bool &state = button == ImGuiMouseButton_Left ? m_virtualMouseLeft : m_virtualMouseRight;
     if (state == down) {
@@ -205,16 +270,35 @@ void App::UpdateVirtualMouse() {
     float axisY = 0.0f;
     int gamepadCount = 0;
     SDL_JoystickID *gamepadIds = SDL_GetGamepads(&gamepadCount);
+    SDL_Gamepad *primaryGamepad = nullptr;
     if (gamepadIds != nullptr) {
         for (int i = 0; i < gamepadCount; ++i) {
             SDL_Gamepad *gamepad = SDL_GetGamepadFromID(gamepadIds[i]);
             if (gamepad != nullptr) {
+                primaryGamepad = gamepad;
                 axisX = static_cast<float>(SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_RIGHTX));
                 axisY = static_cast<float>(SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_RIGHTY));
                 break;
             }
         }
         SDL_free(gamepadIds);
+    }
+
+    // Throttled dump of the state the cursor code actually reads, so a run that does not move the
+    // cursor can say whether the gamepad is missing, unmapped or reporting zeroed axes.
+    static auto lastCursorTrace = clk::now();
+    if ((clk::now() - lastCursorTrace) >= std::chrono::milliseconds(250)) {
+        lastCursorTrace = clk::now();
+        if (primaryGamepad != nullptr) {
+            TraceGamepadAxes(primaryGamepad);
+        } else {
+            int joystickCount = 0;
+            SDL_GetJoysticks(&joystickCount);
+            int gamepadCount = 0;
+            SDL_GetGamepads(&gamepadCount);
+            ::platform::uwp::Trace(fmt::format("[Ymir gamepad] no gamepad found: joysticks={} gamepads={}",
+                                              joystickCount, gamepadCount));
+        }
     }
 
     float dirX = axisX / 32767.0f;
@@ -721,6 +805,9 @@ void App::RunEmulator() {
         return;
     }
     ScopeGuard sgQuit{[&] { SDL_Quit(); }};
+#if YMIR_PLATFORM_UWP
+    TraceGamepadInventory("after SDL_Init");
+#endif
 
     // ---------------------------------
     // Setup Dear ImGui context
@@ -1708,6 +1795,15 @@ void App::RunEmulator() {
         // Process SDL events
         YMIR_UI_PHASE("poll SDL events");
         SDL_Event evt{};
+#if YMIR_PLATFORM_UWP
+        // Throttle for the gamepad input tracing: the axis events arrive at the frame rate while a
+        // stick is pushed, and one line per event would bury the rest of the log.
+        static auto lastGamepadTrace = clk::now();
+        const bool traceGamepad = (clk::now() - lastGamepadTrace) >= std::chrono::milliseconds(250);
+        if (traceGamepad) {
+            lastGamepadTrace = clk::now();
+        }
+#endif
         while (SDL_PollEvent(&evt)) {
             ImGui_ImplSDL3_ProcessEvent(&evt);
             if (io.WantCaptureKeyboard != imguiWantedKeyboardInput) {
@@ -1811,6 +1907,15 @@ void App::RunEmulator() {
                 }
                 break;
 
+            case SDL_EVENT_JOYSTICK_ADDED: [[fallthrough]];
+            case SDL_EVENT_JOYSTICK_REMOVED:
+#if YMIR_PLATFORM_UWP
+                // The joystick event is traced as well as the gamepad one: a device that SDL does
+                // not recognize as a gamepad only produces the joystick event, and that is exactly
+                // the case that has to be told apart from "the axes are zero".
+                TraceGamepadInventory(evt.type == SDL_EVENT_JOYSTICK_ADDED ? "joystick added" : "joystick removed");
+#endif
+                break;
             case SDL_EVENT_GAMEPAD_ADDED: //
             {
                 SDL_Gamepad *gamepad = SDL_OpenGamepad(evt.gdevice.which);
@@ -1820,6 +1925,10 @@ void App::RunEmulator() {
                     gamepads[evt.gdevice.which] = gamepad;
                     inputContext.ConnectGamepad(playerIndex);
                     devlog::debug<grp::base>("Gamepad {} added -> player index {}", evt.gdevice.which, playerIndex);
+#if YMIR_PLATFORM_UWP
+                    TraceGamepadInventory("gamepad added");
+                    TraceGamepadAxes(gamepad);
+#endif
                 }
                 break;
             }
@@ -1848,6 +1957,11 @@ void App::RunEmulator() {
                 const int playerIndex = gamepadPlayerIndices.GetPlayerIndex(evt.gaxis.which);
                 const float value = evt.gaxis.value < 0 ? evt.gaxis.value / 32768.0f : evt.gaxis.value / 32767.0f;
 #if YMIR_PLATFORM_UWP
+                if (traceGamepad) {
+                    ::platform::uwp::Trace(fmt::format("[Ymir gamepad] axis {} = {}",
+                                                      SDL_GetGamepadStringForAxis((SDL_GamepadAxis)evt.gaxis.axis),
+                                                      evt.gaxis.value));
+                }
                 // The Xbox has a single gamepad that must drive either the ImGui layer or the
                 // emulated Saturn, never both: otherwise the console reacts to the button presses
                 // meant for the GUI. See GamepadDrivesGui().
@@ -1865,6 +1979,10 @@ void App::RunEmulator() {
             {
                 const int playerIndex = gamepadPlayerIndices.GetPlayerIndex(evt.gbutton.which);
 #if YMIR_PLATFORM_UWP
+                if (evt.gbutton.down) {
+                    ::platform::uwp::Trace(fmt::format("[Ymir gamepad] button {} pressed",
+                                                      SDL_GetGamepadStringForButton((SDL_GamepadButton)evt.gbutton.button)));
+                }
                 // The View button is not part of the Saturn control pad, so it is free to switch
                 // the gamepad over to the GUI. The emulated console inputs are reset on the switch
                 // so no stale button state leaks from one side to the other.
