@@ -590,57 +590,231 @@ exatamente em qual das três criações o XAudio2 pararia, se parar.
 
 ### Claude agent entry — 2026-10-21 (source machine, no Xbox): run 07, splash → black screen
 
-> Written in English per `AGENTS.md` rule 9. The full analysis is in `docs/uwp/evidence/README.md` → "Run 07".
+> Written in English per `AGENTS.md` rule 9. This is the complete record of the session: what was observed, how it was
+> reasoned about, what every other Xbox port was checked for, what changed (file by file), how it was verified, what
+> was committed and pushed, and exactly what to do next. The raw analysis lives in `docs/uwp/evidence/README.md` →
+> "Run 07" and "Cross-check against other Xbox ports"; the decisions are D17–D19 in `README.md` §4.
 
-**What the user reported:** with the XAudio2 build, F5 with a **Debug** build, the splash goes away and the screen
-turns black, and stays black. No log was kept.
+#### 1. Starting point
 
-**What that proves:** SDL3-uwp only calls `CoreWindow::Activate()` (which dismisses the splash) when the dispatcher is
-first pumped, and the first pump in Ymir is the main loop's `SDL_PollEvent()`. So **the XAudio2 backend works and the
-boot reaches the main loop**; what fails now is the first visible frame. Without a BIOS, the ImGui menu bar and the
-*Welcome* modal are the only things that should be on screen.
+- Branch `uwp/main` at `071639c9` ("Replace the blocked SDL audio path with an XAudio2 backend"), working tree clean.
+- The source machine has **VS Build Tools 2026** (`C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools`)
+  but no Visual Studio IDE and no Xbox, so nothing could be run here (`AGENTS.md` rule 8 forbids it anyway).
+- **Run 07** (reported by the user, no log kept): the first run with the XAudio2 backend, **F5 with a Debug build**.
+  The splash screen went away, then the screen turned **black** and stayed black; the process stayed alive.
 
-**Ranked hypotheses:**
-1. Visual Studio is in break mode, for one of two reasons:
-   - the D3D12 debug layer breaks on **warnings** (`BreakOnWarnings(device, true)`);
-   - an `IM_ASSERT` fires in the ImGui DX12 backend, which builds its pipeline and compiles its shaders with
-     `D3DCompile` on the first frame.
-2. `Present(1, 0)` or the frame fence wait blocks. The entry #3 hypothesis was never tested, only dismissed because
-   the loop was not reached. **It is reopened.**
-3. Frames are presented but ImGui draws nothing (pipeline failure in Release, or display size 0).
-4. The UI thread blocks inside `SDL_PollEvent()` (SDL3-uwp's `ProcessOneAndAllPending` path).
+#### 2. What run 07 proves (read from the code, not guessed)
 
-**Instrumentation added (uncommitted, all under `YMIR_PLATFORM_UWP`):**
-- `platform::uwp::Trace()` writes synchronously to the debugger **and** to `ymir-uwp.log`. Every temporary trace now
-  uses it, so a run launched from the tile also leaves the trail in the file.
-- The present trace is rate limited: the first 10 frames in full, then one every 5 s.
-- The D3D12 debug layer no longer breaks into the debugger on UWP; it still prints its messages.
-- The ImGui DX12 device objects are created at init. A failure is logged and becomes a clear startup failure.
-- `platform::uwp::StallWatchdog`: logs the main-loop phase the UI thread is stuck in after 3 s without progress.
-- Window/ImGui geometry is traced on the first frame and on every change.
-- XAudio2 diagnostics now go through `Trace()`: `SDL_LogInfo(SDL_LOG_CATEGORY_AUDIO, ...)` was filtered out by
-  SDL's default ERROR priority for that category, so those lines never appeared.
+1. SDL3-uwp only calls `CoreWindow::Activate()`, which is what dismisses the splash, from
+   `SDL_WinRTApp::OnAppActivated` (`vendor/SDL3-uwp/src/core/winrt/SDL_winrtapp_direct3d.cpp:613-615`).
+2. That handler is dispatched by the CoreWindow dispatcher, which is only pumped by `SDL_PumpEvents()`
+   (`SDL_winrtapp_direct3d.cpp:426`). The WinRT video driver has no ShowWindow hook, so `SDL_ShowWindow()` does not
+   pump; neither do the D3D12 init, XAudio2 or any other step of the boot.
+3. Therefore the first pump is the first `SDL_PollEvent()` of the main loop (`apps/ymir-sdl3/src/app/app.cpp`,
+   "Process SDL events"), and **run 07 reached the main loop: the XAudio2 backend works.** This also explains why the
+   splash stayed up during the audio deadlock of runs 04–06: the window was never activated.
+4. Without a BIOS the Saturn output is black, so the only visible things should be the ImGui menu bar and the
+   *Welcome* modal (`app.cpp`, `OpenWelcomeModal(true)` when no IPL ROM is found). A black screen means the UI thread
+   stopped in the first frames, or frames are presented with no UI in them.
 
-**Next step (user, with the Xbox):**
-1. F5 with **Debug**, and keep the whole Output.
+#### 3. Hypotheses, as ranked after reading Ymir and before looking at other ports
+
+| # | Hypothesis | Mechanism in Ymir |
+|---|---|---|
+| H1 | Visual Studio is in break mode (Debug build) | `gfx_context_impl_d3d12.cpp` called `DebugLayer::BreakOnWarnings(device, true)` → `SetBreakOnSeverity` for WARNING, ERROR and CORRUPTION (`libs/ymir-core/src/ymir/gpu/d3d12/d3d12_debug.cpp:85-106`); run 06 loads `d3d12SDKLayers.dll`. Or an `IM_ASSERT` in `ImGui_ImplDX12_NewFrame`, which creates the ImGui pipeline lazily on the first frame (`vendor/imgui/imgui/backends/imgui_impl_dx12.cpp:1072-1074`); `ymir_imconfig.h` does not redefine `IM_ASSERT` |
+| H2 | `Present(1, 0)` or the frame fence wait blocks | Entry #3's hypothesis. It was "eliminated" after run 04 only because the loop was never reached — **never actually tested**, so reopened |
+| H3 | Frames are presented but ImGui draws nothing | Silent pipeline failure in Release; `ImGuiInit()`'s result was ignored (`app.cpp`); or `io.DisplaySize` = 0 when SDL flags the window MINIMIZED (`imgui_impl_sdl3.cpp:979`), which only happens after `VisibilityChanged(false)` |
+| H4 | The UI thread blocks in `SDL_PollEvent()` | `PumpEvents` switches to `ProcessEvents(ProcessOneAndAllPending)`, which waits for an event, when SDL thinks the window is invisible and no hide event is pending (`SDL_winrtapp_direct3d.cpp:390-436`) |
+| H5 | Activation deadline when launched from the tile | Activation only happens after the whole boot. Not applicable under F5 (the debugger disables it), and it kills rather than freezes |
+
+Ruled out by reading the code: the video-sync wait on `frameReadyEvent` (`syncInWindowedMode` defaults to `false`,
+`settings.cpp:1123`, and the log says `Leaving full screen mode`), and audio sync (it can only stall the emulator
+thread, never the UI thread).
+
+#### 4. Diagnostic gaps found along the way
+
+- `YMIR_BOOT_TRACE`/`YMIR_PRESENT_TRACE` only called `OutputDebugStringA`, which goes nowhere without a debugger: a run
+  launched from the tile left no trace in `ymir-uwp.log`.
+- `YMIR_PRESENT_TRACE` printed 3+ lines per frame (180+ per second), flooding the Output window.
+- The XAudio2 backend logged through `SDL_LogInfo(SDL_LOG_CATEGORY_AUDIO, ...)`, but SDL filters every category except
+  APPLICATION at ERROR priority by default (`vendor/SDL3-uwp/src/SDL_log.c:397-410`), so its lines never printed.
+- `m_graphicsService.ImGuiInit()`'s return value was ignored.
+
+#### 5. Cross-check against other Xbox ports (the user asked for it)
+
+Source reading only, nothing built or run. The user's own ports and the projects already in
+`D:\workspace\_non_work_\` were read in place. Four more were **shallow-cloned** there for this purpose
+(`git clone --depth 1 --single-branch`, no submodules, read only):
+
+- `xemu-uwp` (branch `uwp-d3d12`, DanP142);
+- `Cemu-UWP` (branch `uwp-d3d12`, DanP142);
+- `Azahar-UWP` (branch `UWP`, DanP142);
+- `flycast` (upstream `master`).
+
+They came from the Emulation Revival list (`https://emulationrevival.github.io/xbox-dev-mode/emulators.html`).
+
+| Project | What it contributed |
+|---|---|
+| scummvm-uwp (user) | `docs/XBOX-TILE-LAUNCH-KILL.md`: three mechanisms the debugger switches off (ODS on a coroutine stack, late activation, 1 GB App cap); fix = early `Activate`, async boot, ODS guard. Commit `226d29f`: a real "debug layer breakpoint on Xbox". Repeated black screens from two swap chains on one CoreWindow, or from never presenting |
+| dosbox-pure-uwp (user) | Activates in `OnActivated`, defers heavy loading; `Present1(1, 0)` works; XAudio2 for audio |
+| sm64ex-uwp | `Present(1, 0)` + waits on the waitable object (1000 ms timeout); runtime `D3DCompile`, ships `d3dcompiler_47.dll` |
+| XBSX2 | **Enhanced barriers forced off on Xbox** ("Not supported on Xbox", `pcsx2/GS/Renderers/DX12/GSDevice12.cpp`); no waitable object; scaling left at STRETCH; clears and presents right after creating the swap chain; debug break only when opted in **and** `IsDebuggerPresent()`; deny-lists `INCOMPATIBLE_BARRIER_LAYOUT` ("The current OS version of D3D12 (616) has a validation bug"); Series S swap chain capped at 1440p ("if you try to make a 4K Swap Chain the application will crash"); runtime `D3DCompile` for ImGui |
+| RetroArch | `Present(swap_interval, 0)` on the UI thread on Xbox; waitable swap chains **off by default on WinRT** (`config.def.h`); runtime `D3DCompile` with exactly vs_5_0/ps_5_0; debug break on ERROR only |
+| SDL3-uwp's own D3D12 renderer | On WinRT: **no waitable flag, no `SetMaximumFrameLatency`, no tearing** (commit `7a7e54b5d`); same present-then-fence-wait pattern as Ymir; breaks on ERROR/CORRUPTION only |
+| xenia (Blades-UWP) | STRETCH forced "to workaround the zoom bug"; tearing default off on UWP; no waitable; debug/breaks all opt-in; precompiled ImGui shaders |
+| Dolphin | STRETCH; runtime `D3DCompile` vs_5_0/ps_5_0 for ImGui; validation opt-in |
+| PPSSPP | Swap chain created before activation works; "In UWP, the CoreWindow is always 1920x1080, even when running at 4K" |
+| xemu-uwp | Closest to Ymir (SDL3 + `imgui_impl_dx12` + D3D12): checks `ImGui_ImplDX12_Init`/`CreateDeviceObjects`; STRETCH; waits on the waitable object with a 100 ms bound; presents black on all buffers right after creation; debug layer opt-in, only logged |
+| Cemu-UWP | STRETCH, flags 0; patched ImGui DX12 backend using DXC; fence waits bounded; debug layer only logged |
+| flycast | DX11, STRETCH, tearing only after a feature check; `imgui_impl_dx11` with runtime `D3DCompile` (system DLL) |
+| Azahar-UWP | OpenGL through Mesa (no DXGI code); late Activate via SDL2 works |
+
+**Verdicts after the cross-check:**
+
+- **H1 is the best-supported hypothesis.** No Xbox port breaks on D3D12 *warnings* by default.
+- **H2 is weakened.** `Present(1, 0)` works on Xbox in RetroArch, XBSX2, xemu, Cemu and SDL3-uwp.
+- **H3:**
+  - `D3DCompile` itself is ruled out; it works at runtime on Xbox in RetroArch, Dolphin, XBSX2, flycast and xemu.
+  - An init or pipeline failure is still possible, and is now checked.
+- **H4:** the mechanism is confirmed in SDL3-uwp, but no port has observed it.
+- **H5:** not applicable to F5; it matters for tile launches.
+
+**Differences between Ymir and every working port:**
+
+1. Enhanced barriers on every frame.
+2. A waitable swap chain that is never waited on, with `SetMaximumFrameLatency(3)`.
+3. Tearing on a CoreWindow swap chain.
+4. `DXGI_SCALING_NONE`.
+5. Break on WARNING.
+
+#### 6. Changes — commit `dc7d015e` "uwp: Make the next Xbox run locate the black screen after the splash"
+
+All under `YMIR_PLATFORM_UWP` or in port-only files.
+
+| File | Change |
+|---|---|
+| `apps/ymir-sdl3/src/platform/uwp/uwp_platform.{hpp,cpp}` | New `platform::uwp::Trace(std::string_view)`: appends a newline if missing, calls `OutputDebugStringA`, then `fwrite`+`fflush` straight into the log `FILE*` (`g_logFile`). It is synchronous, so a line survives a crash right after the call. The CRT locks the stream per `fwrite`, so lines never interleave with the pump thread's. Before the redirect and after `ShutdownLogRedirect()` it only reaches the debugger |
+| `apps/ymir-sdl3/src/platform/uwp/stall_watchdog.{hpp,cpp}` (new) | `platform::uwp::StallWatchdog`. `Mark(phase)` (lock-free: relaxed store of the phase pointer + release increment of a sequence number); `SetFrame(n)`. A monitor thread polls every 500 ms; after the threshold (3 s) without a new mark it logs `[Ymir watchdog] UI thread stalled for N ms in phase '...' (frame N)`, repeats every 5 s, and logs `resumed after N ms` when progress comes back. No global state: it is a local object in `App::RunEmulator` |
+| `apps/ymir-sdl3/CMakeLists.txt` | Adds the watchdog sources to the `if (Ymir_PLATFORM_UWP)` block |
+| `apps/ymir-sdl3/src/app/app.cpp` | `YMIR_BOOT_TRACE` goes through `Trace()`. `ShowStartupFailure` uses `Trace()`. `App::Run()` entry marker uses the macro. **`ImGuiInit()` is checked**: on failure, `ShowStartupFailure("Failed to initialize the Dear ImGui backends ...")` and return. The watchdog starts right before `SDL_ShowWindow` ("UI", 3 s). `YMIR_UI_PHASE(...)` marks: show window, reload controller databases, frame pacing, poll SDL events, wait for emulator frame and update framebuffer texture, ImGui new frame, build UI, ImGui render, draw Saturn screen, ImGui draw, present, end of frame. Frame counter `uwpFrameCount`. **Geometry trace** after `ImGui::NewFrame()`: window size (DIPs and pixels), flags (hidden/minimized/occluded/input focus), `io.DisplaySize`, `io.DisplayFramebufferScale`, on the first frame and on every change |
+| `apps/ymir-sdl3/src/app/services/gfx/gfx_context_impl_d3d12.cpp` | `YMIR_PRESENT_TRACE` goes through `Trace()`, gated by `Impl::tracePresent`: the first 10 frames (`kVerbosePresentFrames`) in full, then one frame every 5 s (`kPresentTraceInterval`), with the frame number. **`BreakOnWarnings(device, false)` on UWP**: messages are still printed. **`ImGui_ImplDX12_CreateDeviceObjects()` right after `ImGui_ImplDX12_Init`**; on failure both backends are shut down, `m_imguiInitialized = false`, and an error is logged; `Dear ImGui backends initialized: yes/no` is always logged |
+| `apps/ymir-sdl3/src/main.cpp` | The post-redirect boot markers go through `Trace()` so they reach the log file |
+| `apps/ymir-sdl3/src/app/xaudio2_backend.cpp` | `SDL_LogInfo`/`SDL_LogError` → `Trace()` (engine, mastering voice, source voice, playback started, and the three failures) |
+| `docs/uwp/evidence/README.md` | Run 07 section, hypotheses, diagnostic gaps, instrumentation table, "How to read run 08" table; the Present hypothesis marked **REOPENED** |
+| `docs/uwp/HANDOFF.md`, `docs/uwp/README.md` | This entry; §1/§5 rows; watchdog in the delta map |
+
+#### 7. Changes — commit `52d0abf7` "uwp: Align the D3D12 swap chain and barriers with ports that work on Xbox"
+
+Applied at the user's request ("align everything now") instead of waiting for run 08.
+
+| File | Change | Why (decision) |
+|---|---|---|
+| `apps/ymir-sdl3/src/app/services/gfx/gfx_context_impl_d3d12.cpp` | `features.enhancedBarriers = false` on UWP after the `OPTIONS12` check; the reported value is traced: `[Ymir gfx] D3D12 enhanced barriers reported: ...; forced off on UWP` | D17, XBSX2 |
+| same file | Swap chain: `DXGI_SCALING_STRETCH` and `Flags = 0` on UWP (desktop keeps `SCALING_NONE` + `FRAME_LATENCY_WAITABLE_OBJECT`) | D18, SDL3-uwp / RetroArch / xenia / Dolphin / XBSX2 / Cemu |
+| `libs/ymir-core/include/ymir/gpu/d3d12/d3d12_swap_chain.hpp` | On UWP, CoreWindow swap chains: tearing forced off; `SetMaximumFrameLatency`/`GetFrameLatencyWaitableObject` skipped when the waitable flag is absent (`m_usesWaitableObject`); `IsValidExt()` no longer requires a waitable object in that case (it would otherwise report the swap chain as invalid) | D18 |
+| `libs/ymir-core/src/ymir/hw/vdp/renderer/vdp_renderer_hw_d3d12.cpp` | Enhanced barriers forced off on UWP before `barrierTracker.UseEnhancedBarriers(...)` | D17 |
+| `docs/uwp/README.md` | Decisions D17 (enhanced barriers), D18 (swap chain), D19 (no debug break) in §4; delta map entries | — |
+| `docs/uwp/evidence/README.md` | "Cross-check against other Xbox ports" | — |
+
+**Accepted trade-off:**
+
+- If run 08 works, it will not say which of the changes fixed it.
+- To bisect, revert them one at a time, in this order: debug break, enhanced barriers, waitable/latency, tearing,
+  STRETCH.
+- The enhanced-barrier trace and the still-printed debug-layer messages narrow it down without a rebuild.
+
+#### 8. Verification done on the source machine
+
+| Check | Result |
+|---|---|
+| `pwsh scripts/uwp/build.ps1 -Configuration Debug` | OK, MSIX generated (`...\ymir-sdl3_0.4.2.0_x64_Debug_Test\`) |
+| `pwsh scripts/uwp/build.ps1 -Configuration Release` | OK, MSIX generated (`...\ymir-sdl3_0.4.2.0_x64_RelWithDebInfo_Test\`) |
+| Desktop `cmake --build out\build\Full-x86-64-AVX2-MSVC-Release --target ymir-sdl3` (from a `vcvars64.bat` environment) | OK |
+| Desktop `ctest` | **14/14** passed |
+| New compiler warnings in changed lines | none (the C4244/C4267 warnings in the log are from pre-existing lines) |
+| `clang-format` | applied to the new files; the other diffs only touch pre-existing lines, left alone (rule 1) |
+| Run on the Xbox | **not done** — the user runs it |
+
+#### 9. Git
+
+- Commits `dc7d015e` and `52d0abf7` on `uwp/main`, pushed to `origin` (`071639c9..52d0abf7`). The commit identity is
+  the personal one (`marcelofrau@gmail.com`).
+- The first commit was split out of the working tree by temporarily removing the alignment hunks. It matches the
+  instrumentation-only state that was built earlier in the session.
+- A stale `.git/index.lock` (0 bytes) blocked the first commit. No `git.exe` was running, so only that file was
+  removed, per T-18.
+- `.claude/plans/` files were deliberately left out of the commits.
+- CI (`UWP (Xbox)`, run `39598826249`) was triggered by the push; its result was not awaited in this session.
+
+#### 10. Known gaps and risks noticed but not changed
+
+- **Tile launches (H5):** activation still happens only after the whole boot. If the app is killed from the tile,
+  activate early, for example with `SDL_PumpEvents()` right after `SDL_CreateWindow`, and keep pumping during heavy
+  init (scummvm's fix pattern).
+- **DIP vs pixel:**
+  - `ResizeFramebuffer` is fed `evt.window.data1/2` (window coordinates) instead of pixels (`app.cpp`,
+    `SDL_EVENT_WINDOW_RESIZED`).
+  - The Saturn image layout uses `SDL_GetWindowSize` (`app.cpp`, "Get window size").
+  - Both are harmless while SDL3-uwp reports 1:1, but wrong at 200 % layout scaling.
+- **`ResizeFramebuffer` RTV slots:** it allocates new RTV descriptors for the swap chain buffers without freeing the
+  old ones. This is shared with desktop and the heap holds 256 slots.
+- **`AudioSystem::Init`** does not store the requested sample rate and channel count. The defaults happen to match
+  (44100 Hz, 2 channels).
+- **`StallWatchdog` and `Trace()` at shutdown:**
+  - The watchdog is destroyed before the emulator thread is joined, so a teardown hang is not watched.
+  - `Trace()` reads `g_logFile` without synchronization; this is safe in practice, and is documented at the
+    definition.
+- **Series S:** XBSX2 says a 4K swap chain crashes it. SDL3-uwp already caps `SDL_GetWindowSizeInPixels` per model,
+  and Ymir sizes its swap chain from that value.
+- **Not adopted, noted for later:** clearing and presenting black on all back buffers right after creating the swap
+  chain (XBSX2, xemu).
+
+#### 11. Next step (user, with the Xbox)
+
+1. F5 with **Debug**. Keep the whole Output window (save it as
+   `docs/uwp/evidence/run-<date>-08-<summary>.raw.txt`).
 2. F5 with **Release**.
-3. If the UI shows, launch from the tile and download `ymir-uwp.log`.
+3. If the UI shows, launch **from the tile** and download `ymir-uwp.log` from the Device Portal.
+4. Read the result with "How to read run 08" in `docs/uwp/evidence/README.md`. The lines to look for:
+   - `[Ymir gfx] D3D12 enhanced barriers reported: ...`;
+   - `Dear ImGui backends initialized: ...`;
+   - `[Ymir boot] frame 0: window ...`;
+   - `[Ymir present] ...` lines;
+   - any `[Ymir watchdog] ... stalled ...` line;
+   - any `D3D12 WARNING`/`D3D12 ERROR` line.
+5. If the *Welcome* modal shows up, continue with the checklist V1–V12 (step 12). When the boot is stable, remove the
+   temporary instrumentation:
+   - `YMIR_BOOT_TRACE`, `YMIR_PRESENT_TRACE` and `YMIR_UI_PHASE`;
+   - the geometry trace;
+   - `StallWatchdog`;
+   - the enhanced-barrier trace.
 
-Read the result with the table "How to read run 08" in `docs/uwp/evidence/README.md`. The fix is chosen from the
-data, not before.
+   Keep `Trace()` itself and the ImGui init check.
 
-**Addendum (same day): cross-check against other Xbox ports, and alignment applied at the user's request.**
-- Sources: the user's ports (scummvm, dosbox-pure, sm64ex, xbox-uwp-lab) and the ones in the workspace (XBSX2,
-  RetroArch, SDL3-uwp, xenia Blades-UWP, Dolphin, PPSSPP).
-- Also shallow-cloned from the Emulation Revival list into `D:\workspace\_non_work_\`, read only: xemu-uwp,
-  Cemu-UWP, Azahar-UWP and flycast.
-- Conclusions are in `docs/uwp/evidence/README.md` → "Cross-check against other Xbox ports". H1 is the best-supported
-  hypothesis; `Present(1, 0)` and runtime `D3DCompile` are shown to work on Xbox.
-- The user chose to align everything now rather than wait for run 08. On UWP: enhanced barriers forced off (graphics
-  context and VDP HW renderer); swap chain without the waitable object, `SetMaximumFrameLatency` and tearing;
-  `DXGI_SCALING_STRETCH`. Decisions D17–D19 in `README.md` §4.
-- Built and verified: UWP Debug, UWP Release, desktop `ymir-sdl3`, and `ctest` 14/14.
-- Trade-off accepted: if run 08 works, it will not say which change fixed it. Revert them one at a time to bisect.
+#### 12. General Ymir documentation written in the same session
+
+At the user's request, `docs/ymir/` was added: developer documentation of Ymir as a whole, not just the port. It was
+written from a full read of the source and is in English, with Mermaid diagrams.
+
+| Page | Contents |
+|---|---|
+| `README.md` | Index |
+| `features.md` | Features |
+| `saturn-hardware.md` | Hardware primer |
+| `architecture.md` | Architecture |
+| `core-system.md` | Core system side |
+| `video.md` | Video |
+| `audio.md` | Audio |
+| `cd-and-media.md` | CD block and media |
+| `frontend.md` | Frontend |
+| `build-and-test.md` | Build and tests |
+| `glossary.md` | Glossary |
+
+- Each page ends with "Notes found while documenting", which lists possible bugs seen in the code, for example ROM
+  cartridge save-state handling in `serdes/cereal_savestate.hpp`. **None of them were verified by running anything.**
+- The Mermaid diagrams were **not** render-checked: the user ended the session before validation. If one does not
+  render on GitHub, fix its syntax.
+- `AGENTS.md`'s documentation map now lists `docs/ymir/`.
 
 ---
 
