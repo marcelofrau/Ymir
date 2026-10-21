@@ -146,6 +146,8 @@
 #include <rtmidi/RtMidi.h>
 
 #include <clocale>
+#include <cmath>
+#include <algorithm>
 #include <mutex>
 #include <numbers>
 #include <span>
@@ -170,6 +172,81 @@ static void ShowStartupFailure(fmt::format_string<TArgs...> fmt, TArgs &&...args
 #endif
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Ymir startup error", message.c_str(), nullptr);
 }
+
+#if YMIR_PLATFORM_UWP
+void App::SetVirtualMouseButton(int button, bool down) {
+    bool &state = button == ImGuiMouseButton_Left ? m_virtualMouseLeft : m_virtualMouseRight;
+    if (state == down) {
+        // ImGui already knows about this state, do not queue a redundant event
+        return;
+    }
+    state = down;
+    ImGui::GetIO().AddMouseButtonEvent(button, down);
+}
+
+void App::UpdateVirtualMouse() {
+    ImGuiIO &io = ImGui::GetIO();
+
+    if (!GamepadDrivesGui()) {
+        // The gamepad drives the emulated Saturn: the virtual cursor is idle and hidden, and any
+        // button still held is released so that it does not stick when the GUI takes the gamepad
+        // back.
+        io.MouseDrawCursor = false;
+        SetVirtualMouseButton(ImGuiMouseButton_Left, false);
+        SetVirtualMouseButton(ImGuiMouseButton_Right, false);
+        return;
+    }
+
+    io.MouseDrawCursor = true;
+
+    // The right analog stick drives the cursor. The left stick and the d-pad are left to ImGui's
+    // own gamepad navigation, so the two never fight over the same axis.
+    float axisX = 0.0f;
+    float axisY = 0.0f;
+    int gamepadCount = 0;
+    SDL_JoystickID *gamepadIds = SDL_GetGamepads(&gamepadCount);
+    if (gamepadIds != nullptr) {
+        for (int i = 0; i < gamepadCount; ++i) {
+            SDL_Gamepad *gamepad = SDL_GetGamepadFromID(gamepadIds[i]);
+            if (gamepad != nullptr) {
+                axisX = static_cast<float>(SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_RIGHTX));
+                axisY = static_cast<float>(SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_RIGHTY));
+                break;
+            }
+        }
+        SDL_free(gamepadIds);
+    }
+
+    float dirX = axisX / 32767.0f;
+    float dirY = axisY / 32767.0f;
+    const float magnitude = std::sqrt(dirX * dirX + dirY * dirY);
+    constexpr float kDeadZone = 0.2f;
+    if (magnitude > kDeadZone) {
+        // Rescale the deflection so the cursor speed ramps up smoothly from zero at the dead zone
+        const float scaled = (magnitude - kDeadZone) / (1.0f - kDeadZone);
+        dirX = dirX / magnitude * scaled;
+        dirY = dirY / magnitude * scaled;
+    } else {
+        dirX = 0.0f;
+        dirY = 0.0f;
+    }
+
+    if (!m_virtualCursorPlaced) {
+        // Start at the center of the display, which is where the modal dialogs are shown
+        m_virtualCursorX = io.DisplaySize.x * 0.5f;
+        m_virtualCursorY = io.DisplaySize.y * 0.5f;
+        m_virtualCursorPlaced = true;
+    }
+
+    constexpr float kCursorSpeed = 900.0f; // pixels per second at full deflection
+    m_virtualCursorX += dirX * kCursorSpeed * io.DeltaTime;
+    m_virtualCursorY += dirY * kCursorSpeed * io.DeltaTime;
+    m_virtualCursorX = std::clamp(m_virtualCursorX, 0.0f, io.DisplaySize.x);
+    m_virtualCursorY = std::clamp(m_virtualCursorY, 0.0f, io.DisplaySize.y);
+
+    io.AddMousePosEvent(m_virtualCursorX, m_virtualCursorY);
+}
+#endif
 
 App::App()
     : m_graphicsService(m_context, m_settings)
@@ -1795,6 +1872,22 @@ void App::RunEmulator() {
                     m_gamepadGuiFocus = !m_gamepadGuiFocus;
                     inputContext.ResetAllGamepadInputs();
                 }
+                if (GamepadDrivesGui()) {
+                    // While the GUI has the gamepad, the shoulder buttons act as the virtual mouse
+                    // buttons: the right shoulder is the left click and the left shoulder the right
+                    // click. The face buttons are left to ImGui's gamepad navigation, so a button
+                    // press is never handled by both the navigation and the mouse at once.
+                    switch (evt.gbutton.button) {
+                    case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER:
+                        SetVirtualMouseButton(ImGuiMouseButton_Left, evt.gbutton.down);
+                        break;
+                    case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER:
+                        SetVirtualMouseButton(ImGuiMouseButton_Right, evt.gbutton.down);
+                        break;
+                    default:
+                        break;
+                    }
+                }
                 if (!GamepadDrivesGui()) {
 #endif
                     inputContext.ProcessPrimitive(
@@ -2256,8 +2349,16 @@ void App::RunEmulator() {
         if (mouseMoved || mouseDown || io.WantCaptureMouse) {
             m_mouseHideTime = clk::now();
         }
+#if YMIR_PLATFORM_UWP
+        // The virtual cursor must stay visible while the gamepad drives the GUI, otherwise there
+        // would be no pointer to aim with. Hiding it is only safe when there is a real mouse.
+        const bool virtualCursorActive = GamepadDrivesGui();
+#else
+        constexpr bool virtualCursorActive = false;
+#endif
         const bool hideMouse =
-            m_mouseCaptureService.ShouldHideMouse(io.WantCaptureMouse) || clk::now() >= m_mouseHideTime + 2s;
+            !virtualCursorActive &&
+            (m_mouseCaptureService.ShouldHideMouse(io.WantCaptureMouse) || clk::now() >= m_mouseHideTime + 2s);
         if (hideMouse) {
             ImGui::SetMouseCursor(ImGuiMouseCursor_None);
         }
@@ -2291,14 +2392,21 @@ void App::RunEmulator() {
         // Start the Dear ImGui frame
         YMIR_UI_PHASE("ImGui new frame");
         m_graphicsService.ImGuiNewFrame();
+#if YMIR_PLATFORM_UWP
+        // Feed the virtual mouse cursor to ImGui before the frame starts, so the position and the
+        // button states are accounted for in this frame's widget hit testing.
+        UpdateVirtualMouse();
+#endif
         ImGui::NewFrame();
 
 #if YMIR_PLATFORM_UWP
         // Track whether the GUI is holding the gamepad. With the keyboard navigation disabled
         // (there is no keyboard on the Xbox) ImGui only reports WantCaptureKeyboard while a modal
         // dialog is open or a widget is being interacted with. The value lags one frame because
-        // ImGui computes it from the state of the previous frame.
-        m_gamepadGuiModalOpen = io.WantCaptureKeyboard;
+        // ImGui computes it from the state of the previous frame. The popup check catches the
+        // non-modal popups (drop-down lists, context menus) which also need the gamepad.
+        m_gamepadGuiModalOpen =
+            io.WantCaptureKeyboard || ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopup);
 #endif
 
 #if YMIR_PLATFORM_UWP
@@ -3431,6 +3539,12 @@ void App::RunEmulator() {
                 ImGui::TextUnformatted(m_gamepadGuiModalOpen ? "Gamepad: GUI (dialog)"
                                                              : m_gamepadGuiFocus ? "Gamepad: GUI"
                                                                                  : "Gamepad: Emulator");
+                if (GamepadDrivesGui()) {
+                    // Remind the user of the controls, the console has no mouse and no keyboard
+                    ImGui::TextUnformatted("R-stick: cursor   RB: click   LB: right click");
+                    ImGui::TextUnformatted("D-pad: navigate   A: select   B: back");
+                    ImGui::TextUnformatted("View: switch to the emulator");
+                }
             }
             ImGui::End();
         }

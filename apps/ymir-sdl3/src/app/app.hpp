@@ -75,6 +75,34 @@ private:
     bool GamepadDrivesGui() const {
         return m_gamepadGuiFocus || m_gamepadGuiModalOpen;
     }
+
+    /// @brief Position of the virtual mouse cursor, in ImGui display coordinates.
+    float m_virtualCursorX = 0.0f;
+
+    /// @brief Position of the virtual mouse cursor, in ImGui display coordinates.
+    float m_virtualCursorY = 0.0f;
+
+    /// @brief True once the virtual cursor has been placed inside the display bounds.
+    bool m_virtualCursorPlaced = false;
+
+    /// @brief State of the virtual left mouse button.
+    bool m_virtualMouseLeft = false;
+
+    /// @brief State of the virtual right mouse button.
+    bool m_virtualMouseRight = false;
+
+    /// @brief Feeds the virtual mouse cursor and its buttons to ImGui.
+    ///
+    /// The right analog stick moves the cursor and the shoulder buttons act as the mouse buttons,
+    /// so the whole ImGui layer becomes reachable without a physical mouse. The cursor is only
+    /// alive while the gamepad drives the GUI.
+    void UpdateVirtualMouse();
+
+    /// @brief Sets the state of one of the virtual mouse buttons.
+    ///
+    /// @param button One of the ImGuiMouseButton_* values.
+    /// @param down   True when the button is pressed, false when it is released.
+    void SetVirtualMouseButton(int button, bool down);
 #endif
 
     void RunEmulator();
