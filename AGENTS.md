@@ -6,7 +6,7 @@ Ymir is a Sega Saturn emulator (C++20, CMake). **This checkout is the `uwp/main`
 
 - `docs/uwp/README.md` — architecture, every design decision with its rationale, full map of the fork's delta. **Read this before touching port code.**
 - `docs/uwp/HANDOFF.md` — **the shared memory between the agents working on this port.** The `START HERE` block at the top is the canonical current state and is rewritten every session; the rest is the sequential Xbox runbook (build → sideload → verify checklist → troubleshooting T-01..T-18) plus the append-only session log. Section 0 lists the hard rules for the executor.
-- `docs/uwp/TESTING.md` — how to test on the Xbox without a mouse (IPL ROM and disc auto-load, hotkey bindings, the gamepad-cursor feature design).
+- `docs/uwp/TESTING.md` — how to test on the Xbox without a mouse (IPL ROM and disc auto-load, hotkey bindings, the gamepad navigation in the ImGui layer, the file picker on the console).
 - `docs/uwp/evidence/` — raw logs of the Xbox runs and what each one proves or does not prove.
 - `CONTRIBUTING.md` — coding, naming and architectural rules for Ymir itself.
 
@@ -31,7 +31,7 @@ Ymir is a Sega Saturn emulator (C++20, CMake). **This checkout is the `uwp/main`
 |---|---|
 | `docs/uwp/README.md` | Port architecture, every design decision with its rationale, fork delta map |
 | `docs/uwp/HANDOFF.md` | **Shared memory between the port agents**: canonical state at the top, then the sequential Xbox runbook (build → sideload → verify checklist → troubleshooting T-01..T-18) and the append-only session log |
-| `docs/uwp/TESTING.md` | Testing on the Xbox without a mouse: IPL ROM and disc auto-load, hotkey bindings, gamepad-cursor feature design |
+| `docs/uwp/TESTING.md` | Testing on the Xbox without a mouse: IPL ROM and disc auto-load, hotkey bindings, gamepad navigation in the ImGui layer, the file picker on the console |
 | `docs/uwp/evidence/` | Raw logs of the Xbox runs, with what each one proves and what it does not |
 | `docs/uwp/` (other) | Port-specific deep dives as they are written |
 | `docs/ymir/` | General developer documentation of Ymir itself: Saturn hardware primer, architecture, core, video, audio, CD/media, frontend, build, glossary |
@@ -105,6 +105,7 @@ Catch2, registered with CTest via `catch_discover_tests`. Two targets: `ymir-cor
 - **The Microsoft CRT under UWP closes a stream when `freopen` fails.** After that `fileno()` returns `-1` and a later `_dup2` trips a debug assertion in `dup2.cpp`. Redirect stdio at the **descriptor** level (`dup` + `open("NUL")` + `dup2`) and never close the stream. See `util::StdioSuppressor`.
 - **SDL's WASAPI audio path deadlocks on the Xbox**: `SDL_OpenAudioDeviceStream` waits on a no-timeout semaphore after `ActivateAudioInterfaceAsync`, and pumping the CoreWindow dispatcher does not unblock it. The UWP build uses its own **XAudio2** backend behind the `AudioBackend` interface; the desktop build keeps the SDL backend.
 - The emulator is already driven by the gamepad (default port 1 Control Pad bindings). Only the ImGui layer needs a mouse, and the Xbox has none — see `docs/uwp/TESTING.md` for the ways to test without one.
+- **The ImGui layer is navigable by gamepad on UWP**: the app enables `ImGuiConfigFlags_NavEnableGamepad` whenever a gamepad is present (gating it on `io.NavActive` is a logical deadlock, since `io.NavActive` only becomes true through the gamepad if the flag is already set) and turns the keyboard navigation off. Because the console has a single gamepad for both the GUI and the emulated Saturn, the input is routed: an open modal always takes the gamepad, otherwise the Saturn takes it, and the View button toggles the focus. See `docs/uwp/TESTING.md` §5.
 
 ## Xbox startup — read before touching boot, logging or threads
 

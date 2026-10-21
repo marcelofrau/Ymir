@@ -12,10 +12,11 @@
 > | **GUI (ImGui)** | ✅ Aparece, 1920x1080, `io.DisplaySize` correto |
 > | **Áudio** | ✅ XAudio2. O WASAPI do SDL **trava** no Xbox (deadlock no `SDL_OpenAudioDeviceStream`) |
 > | **Entrada no emulador** | ✅ O gamepad já dirige o Saturn pelas bindings padrão da porta 1 |
-> | **GUI navegável pelo gamepad** | ❌ A GUI é mouse+teclado e o console não tem mouse. Ver [TESTING.md](TESTING.md) |
+> | **GUI navegável pelo gamepad** | 🟡 **Implementado, ainda não testado no console.** Navegação nativa do ImGui 1.93 por gamepad + roteamento (View alterna GUI/Saturn, modal sempre captura). Ver [TESTING.md](TESTING.md) §5 |
+> | **File picker** | 🟡 Deve abrir (é a UI do sistema, navegável pelo controle). Filtros caem para "todos os arquivos". **Não verificado:** se o app consegue abrir por caminho um arquivo escolhido no armazenamento do console (`broadFileSystemAccess` não é suportado no Xbox) |
 > | **Emulação de verdade** | 🟡 Ainda não testada: falta IPL ROM (BIOS) e um disco |
 > | **Último run** | **09** (2026-10-21) — a GUI aparece. Log **não** capturado (relato do usuário) |
-> | **HEAD** | `8328de5c` em `uwp/main` |
+> | **HEAD** | ver `git log --oneline -3` em `uwp/main` |
 >
 > **Última atualização deste bloco:** 2026-10-21, pelo agente OpenCode.
 >
@@ -1029,6 +1030,71 @@ janela 1920x1080, `io.DisplaySize` 1920x1080), o quadro e:
 
 ---
 
+### Entrada do agente OpenCode #9 - 2026-10-21 (maquina de destino, COM Xbox, navegacao por gamepad + file picker)
+
+**Estado:** o run 09 (GUI aparece) segue de pe. Esta sessao implementou a **navegacao da GUI pelo gamepad** e
+investigou o **file picker** do Xbox. Nada disso foi testado no console ainda.
+
+#### 1. O deadlock logico que impedia a GUI de ser navegavel
+
+O app ligava a navegacao por gamepad do ImGui condicionalmente a `io.NavActive`:
+
+```cpp
+if (io.NavActive) { io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad; }
+else { io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableGamepad; }
+```
+
+Isso e um **deadlock logico**: no ImGui, `io.NavActive` e calculado como `nav_keyboard_active || nav_gamepad_active`, e
+`nav_gamepad_active` exige que `NavEnableGamepad` ja esteja ligado. No PC o teclado desempata; no Xbox nao ha
+teclado, entao **nenhum dos dois termos virava true** e a GUI ficava permanentemente inacessivel pelo controle.
+
+O ImGui 1.93 ja traz o modelo de navegacao de console inteiro (d-pad, stick, A/B/X/Y, Start/Back, L1/R1, L2/R2) e o
+backend vendorizado `imgui_impl_sdl3` ja alimenta o ImGui com esses botoes. **Faltava so a flag.**
+
+#### 2. O que foi feito nesta sessao
+
+- **Navegacao por gamepad no ImGui** (`apps/ymir-sdl3/src/app/app.cpp`): sob UWP a flag e ligada quando ha gamepad
+  conectado, e a navegacao por teclado e desligada (nao ha teclado). Desligar o teclado e o que torna
+  `io.WantCaptureKeyboard` um sinal confiavel de "ha modal aberto".
+- **Roteamento do gamepad** (o console tem **um** gamepad para a GUI e para o Saturn):
+  - modal aberto -> o gamepad vai para a GUI, o Saturn nao recebe nada (e o que torna o modal *Welcome* dispensavel);
+  - caso contrario -> o gamepad vai para o Saturn e a GUI ignora o input;
+  - botao **View** alterna o foco manualmente (util para chegar num menu sem modal na frente);
+  - um overlay no canto superior direito mostra quem esta com o gamepad (`Gamepad: Emulator` / `Gamepad: GUI` /
+    `Gamepad: GUI (dialog)`).
+  - Ao alternar, `inputContext.ResetAllGamepadInputs()` limpa o estado para nao vazar botao de um lado para o outro.
+- **File picker**: o `FileOpenPicker` do WinRT **deve abrir** no Xbox (e a UI do sistema, navegavel pelo controle);
+  o `FolderPicker` e o restrito. Os filtros caem para "todos os arquivos" (o `FileTypeFilter` do WinRT e uma lista
+  plana, sem grupos nomeados, e todo dialogo do Ymir tem uma entrada `*`). O `SuggestedStartLocation` agora e
+  defensivo: `TrySetStartLocation` engole a excecao, porque falha em ajustar o local **nao pode** impedir o picker de
+  abrir.
+  - **Ponto em aberto (unico):** o app abre o arquivo escolhido **por caminho**. `broadFileSystemAccess` nao e suportado
+    no Xbox, entao um arquivo do armazenamento do console ou de um USB pode nao abrir, mesmo tendo sido escolhido pelo
+    usuario. Arquivos dentro do `LocalState` do app sempre funcionam. Se falhar, a correcao e copiar o arquivo
+    escolhido para o `LocalState` (o `StorageFile` do picker pode ser lido pelas APIs do WinRT, que nao exigem acesso
+    bruto por caminho) e carregar de la.
+- **`docs/uwp/TESTING.md`**: reescrito. §5 agora documenta a navegacao por gamepad (implementada) e o cursor virtual
+  (nao implementado, provavelmente desnecessario); §6 documenta o file picker.
+
+#### 3. Pendencias
+
+1. **Rodar no console e testar a navegacao** (run 10): abrir o modal *Welcome* e dispensar com o controle; navegar nos
+   menus; conferir o overlay. Com a GUI no controle, da para escolher o IPL ROM e o disco pelo proprio picker.
+2. **Testar o file picker de verdade**: ele abre? o app consegue ler o arquivo escolhido?
+3. **Testar a emulacao**: IPL ROM em `roms/ipl/` e disco em `state/recent_discs.txt` (TESTING.md §2 e §3) — nao
+   depende do picker, e o caminho confiavel.
+4. **Remover a instrumentacao temporaria** depois que o boot estiver estavel: `YMIR_BOOT_TRACE`, `YMIR_PRESENT_TRACE`,
+   `YMIR_UI_PHASE`, o trace de geometria, o `StallWatchdog` e o trace de enhanced barriers. **Manter** o `Trace()` e
+   o check de init do ImGui.
+
+#### 4. Estado do repositorio
+
+- Branch `uwp/main`, HEAD `9f9e64ce` + os commits desta sessao.
+- Build local verde: `pwsh scripts/uwp/build.ps1 -Configuration Debug` (MSIX gerado).
+- O pull do Claude e **no-op**: os dois agentes dividem a mesma working tree (`F:\workspace\Ymir`).
+
+---
+
 ## 1. Estado atual (o que já está pronto e validado)
 
 Validado na máquina de origem em 2026-10-20 (VS Build Tools 2026 18.x, MSVC 14.51, Windows SDK 10.0.26100, CMake 4.3.2):
@@ -1061,8 +1127,9 @@ Ver **[TESTING.md](TESTING.md)** — o roteiro completo. Resumo do que importa:
   em `state/recent_discs.txt` com `RememberLastLoadedDisc = true` no `Ymir.toml` (dispensa o file picker).
 - Botões do gamepad podem ser ligados a ações do app direto no `Ymir.toml`, sem passar pela GUI:
   `ToggleFullScreen = ["GamepadGuide@0"]` na seção `[Hotkeys]`.
-- O "gamepad move o cursor do mouse" é uma feature real (design em TESTING.md §5), não um hack: ela entraria
-  injetando eventos de mouse sintéticos no SDL, que o ImGui já consome.
+- A navegação da GUI pelo gamepad foi **implementada** (navegação nativa do ImGui 1.93 + roteamento do gamepad entre a
+  GUI e o Saturn). O "gamepad move o cursor do mouse" continua **não implementado** e provavelmente não é necessário
+  (design em TESTING.md §5.3).
 
 ### 1.2 Resultado da regressão desktop
 ✅ Em 2026-10-20, depois do rebase pro upstream 0.4.2: o preset `Full-x86-64-AVX2-MSVC-Release` (Ninja + MSVC
@@ -1467,6 +1534,7 @@ Escolha **uma** das opções:
 | 2026-10-21 | 12 (target machine) | **PARTIAL** (run 07) | Debug, F5: the splash is dismissed (the main loop is reached, so XAudio2 works) and the screen stays black. No log kept. Instrumentation for run 08 added (section 0.1) |
 | 2026-10-21 | 12 (target machine) | **PARTIAL** (run 08) | Debug, F5: **the boot completes** (D3D12, ImGui, XAudio2, emulator thread, main loop, window 1920x1080 not minimized, `io.DisplaySize` 1920x1080). Then a **CRT assertion** (`dup2.cpp:67`, `((unsigned)target_fh < _NHANDLE_)`) in `util::StdioSuppressor::~StdioSuppressor()` during MIDI init. Root cause: `freopen` closes the stream when it fails, so `fileno()` returns -1. Fixed by redirecting at the descriptor level. Log: `docs/uwp/evidence/run-2026-10-21-08-midi-stdio-assert.raw.txt` |
 | 2026-10-21 | 12 (target machine) | **OK** (run 09) | Debug, F5: the CRT assertion is gone and **the Ymir GUI appears** on the console. The port is usable. Log not captured (user report). Open: the GUI is mouse-driven and the console has no mouse; the emulation itself is not tested yet (no IPL ROM, no disc) |
+| 2026-10-21 | 12 (target machine) | aguardando run 10 | Navegação da GUI por gamepad implementada (ImGui 1.93 + roteamento View/modal) e file picker revisado. Build local verde, MSIX gerado. Aguardando teste no console |
 | | | | |
 
 ---
@@ -1475,11 +1543,10 @@ Escolha **uma** das opções:
 
 Cada item tem um critério de aceite. Faça um item por vez, com commit próprio.
 
-- **B-01: UX só com controle.**
-  - Atalho no controle (ex.: segurar View + Menu) para abrir e fechar a barra de menu do ImGui e ativar
-    `ImGuiConfigFlags_NavEnableGamepad` com `io.NavActive`.
-  - Ponto de partida: `apps/ymir-sdl3/src/app/app.cpp`, procure "Selectively enable gamepad navigation".
-  - **Aceite:** dá pra carregar um jogo e mudar uma configuração sem teclado e mouse.
+- **B-01: UX só com controle.** — **parcialmente implementado** (2026-10-21, entrada #9)
+  - A navegação por gamepad do ImGui está ligada e o roteamento entre a GUI e o Saturn está feito (modal captura
+    sempre; o botão View alterna). Falta validar no console e ajustar o que estiver ruim.
+  - Documentação: [TESTING.md](TESTING.md) §5.
 - **B-02: Navegador de arquivos ImGui** como alternativa ao picker, navegável por controle. Lista drives `D:` a `Z:`
   e as pastas.
   - **Aceite:** abrir um `.cue` do USB só com o controle.
