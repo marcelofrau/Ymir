@@ -15,8 +15,8 @@
 > | **GUI navegável pelo gamepad** | 🟡 **Cursor virtual implementado, ainda não testado no console.** O ImGui só mostra o retângulo de foco do nav **depois** que uma direção é pressionada (`imgui.cpp:15070-15076`), então apertar A sem mover o foco não faz nada. Agora há cursor de mouse virtual: analógico **direito** move, **RB** = clique esquerdo, **LB** = clique direito; d-pad/stick esquerdo = nav do ImGui (A ativa, B volta). Ver [TESTING.md](TESTING.md) §5 |
 > | **File picker** | 🟡 Deve abrir (é a UI do sistema, navegável pelo controle). Filtros caem para "todos os arquivos". **Não verificado:** se o app consegue abrir por caminho um arquivo escolhido no armazenamento do console (`broadFileSystemAccess` não é suportado no Xbox) |
 > | **Emulação de verdade** | 🟡 Ainda não testada: falta IPL ROM (BIOS) e um disco |
-> | **Último run** | **09** (2026-10-21) — a GUI aparece, mas apertar A no *Welcome* não fez nada. Log **não** capturado (relato do usuário) |
-> | **Próximo run** | **11** — build com **traces do gamepad**. O cursor virtual **aparece mas não se move** (run 10). Suspeita principal: o controle do console **não está sendo reconhecido como gamepad** pelo SDL3-uwp (ver entrada #11). Testar: mande as linhas `[Ymir gamepad]` do Output |
+> | **Último run** | **11** (2026-10-21) — boot completo, **zero joysticks enumerados** (`joysticks=0 gamepads=0`). Causa-raiz achada: o driver **WGI é opt-in** no SDL e o app nunca ligou o hint `SDL_JOYSTICK_WGI` |
+> | **Próximo run** | **12** — build com `SDL_SetHint(SDL_HINT_JOYSTICK_WGI, "1")` antes do `SDL_Init`. Testar: o controle aparece no log? o cursor se move? o d-pad navega? |
 > | **HEAD** | ver `git log --oneline -3` em `uwp/main` |
 >
 > **Última atualização deste bloco:** 2026-10-21, pelo agente OpenCode.
@@ -1238,6 +1238,88 @@ Em `apps/ymir-sdl3/src/app/app.cpp`, so sob UWP:
   `SDL_GetJoystickFromID`, nunca `->instance_id`); `SDL_GetGamepadAxisName`/`SDL_GetGamepadButtonName` nao existem
   (usar `SDL_GetGamepadStringForAxis`/`SDL_GetGamepadStringForButton`); o enum do eixo termina em
   `SDL_GAMEPAD_AXIS_COUNT`, nao `_MAX`; `SDL_GetJoystickAxis` recebe `int`, nao um enum.
+
+### Entrada do agente OpenCode #12 - 2026-10-21 (o gamepad do console nao era visivel: WGI opt-in)
+
+**Estado:** o run 11 provou que o SDL **nao enumerava nenhum joystick** no console (`joysticks=0 gamepads=0`), e
+que o app **nao recebia nenhum evento** de joystick, gamepad, eixo ou botao. Isso explicava de uma vez os tres
+sintomas: o cursor virtual aparecia mas nao se mexia, o A no *Welcome* nao fazia nada, e o Saturn nao recebia
+nada do controle.
+
+#### 1. Causa-raiz (encontrada lendo o vendor depois do log)
+
+`vendor/SDL3-uwp/src/joystick/windows/SDL_windows_gaming_input.c:589`:
+
+```c
+if (!SDL_GetHintBoolean(SDL_HINT_JOYSTICK_WGI, false)) {
+    return true;
+}
+```
+
+O driver **Windows Gaming Input e opt-in** no SDL. O hint vale `"0"` por padrao
+(`vendor/SDL3-uwp/include/SDL3/SDL_hints.h:2408-2415`, "This hint should be set before SDL is initialized") e o
+app **nunca o ligou** — logo o subsistema de joystick subia, mas **sem driver nenhum**, e enumerava zero
+dispositivos. Nenhum evento, nenhum eixo, nenhum botao.
+
+Contexto que fecha o caso:
+
+- Sob UWP (`WINDOWS_STORE`) o SDL3-uwp **desliga XInput e HIDAPI** e deixa so o WGI
+  (`vendor/SDL3-uwp/CMakeLists.txt:2517-2543`).
+- O WGI **nao tem mapeamento proprio** (`WGI_JoystickGetGamepadMapping()` retorna `false`,
+  `SDL_windows_gaming_input.c:1027`): o mapeamento vem do banco do SDL, casado por GUID.
+- O GUID do WGI e montado com o **nome** do aparelho (`SDL_CreateJoystickGUID(bus, vendor, product, version,
+  NULL, name, 'w', type)`, `SDL_windows_gaming_input.c:484`), entao o casamento e sensivel ao nome.
+
+**O bug era de configuracao, nao de mapeamento.** A hipotese (b) da entrada #11 (ordem dos eixos crus) continua
+valendo como **segunda etapa**: so da para saber se o banco casa com o aparelho **depois** que o controle
+aparecer.
+
+#### 2. Correcao (commit `1f098a91`)
+
+Em `apps/ymir-sdl3/src/app/app.cpp`, junto com o hint que ja existia do botao B do Xbox:
+
+```cpp
+#if YMIR_PLATFORM_UWP
+    SDL_SetHint(SDL_HINT_WINRT_HANDLE_BACK_BUTTON, "1");
+    SDL_SetHint(SDL_HINT_JOYSTICK_WGI, "1");
+#endif
+```
+
+O hint tem que estar setado **antes** do `SDL_Init`, porque o driver le o hint enquanto o subsistema sobe.
+
+#### 3. Como ler o run 12
+
+| Linha | Diagnostico |
+|---|---|
+| `joysticks=0 gamepads=0` **ainda** | o WGI nao enxerga o aparelho: problema de permissao/capability no console, ou o controle nao esta conectado |
+| `joysticks=1 gamepads=0` + `isGamepad=NO` | o controle e enumerado mas **nao reconhecido como gamepad** → falta o casamento de GUID no banco → `gamecontrollerdb.txt` proprio do app |
+| `gamepads=1` + `isGamepad=yes` | **reconhecido**: o banco casou. A partir daqui o resto e testar o comportamento |
+| `raw axes: a0=.. a3=..` com `rightx=0` | o controle aparece, mas o banco mapeia `rightx:a3` e o aparelho tem outra ordem de eixos crus → `gamecontrollerdb.txt` proprio |
+| `axis rightx = -32768` (ou valor grande) | o stick direito responde: **o cursor virtual deve se mexer** |
+
+O trace de eixos passou a ser de 1 em 1 segundo (antes 4x/s, spam demais).
+
+#### 4. Pendencias
+
+1. **Rodar o run 12** e mandar as linhas `[Ymir gamepad]` do Output.
+2. **Se o controle aparecer** (`gamepads=1`): testar o cursor virtual (o stick direito move o cursor, **RB** = clique
+   esquerdo, **LB** = clique direito) e a navegacao por d-pad do ImGui.
+3. **Se o mapeamento do banco nao casar**: escrever um `gamecontrollerdb.txt` no profile do app e carregar com
+   `SDL_GameControllerDB` (o app ja tem `ROMService::LoadGameControllerDB` e um aviso no log quando o arquivo nao
+   existe — o aviso `Game controller database not found at ...\gamecontrollerdb.txt` ja aparece em todo run).
+4. **Testar a emulacao**: IPL ROM em `roms/ipl/` e disco em `state/recent_discs.txt` (TESTING.md 2 e 3).
+5. **Ruido de log conhecido**: o auto-scan de IPL ROM (`window_manager_service.cpp:282`, `kScanInterval`) repete
+   `Scanning for IPL ROMs` periodicamente e enche o log. Comportamento intencional (auto-load do IPL quando o
+   arquivo aparece), mas precisa ser dominado quando o log importar.
+6. **Remover a instrumentacao temporaria** quando o boot estiver estavel: `YMIR_BOOT_TRACE`, `YMIR_PRESENT_TRACE`,
+   `YMIR_UI_PHASE`, o trace de geometria, o `StallWatchdog` e o trace de enhanced barriers. **Manter** o `Trace()`,
+   o check de init do ImGui e os traces do gamepad.
+
+#### 5. Estado do repositorio
+
+- Branch `uwp/main`, HEAD `1f098a91`.
+- Build local verde: `pwsh scripts/uwp/build.ps1 -Configuration Debug` (MSIX gerado).
+- Evidencia do run 11: `docs/uwp/evidence/run-2026-10-21-11-no-gamepad-enumerated.raw.txt`.
 
 ---
 

@@ -1,0 +1,142 @@
+Ymir UWP - Xbox run 11 (2026-10-21)
+Build: commit 2f9f7a91 ("uwp: Trace the joystick and gamepad state on Xbox")
+Launcher: Visual Studio 2026, F5, deploy straight to the Xbox (Dev Mode)
+Source: the VS2026 Output window, pasted as-is. The module load noise is trimmed
+        away; every Ymir / SDL line is kept verbatim.
+
+--------------------------------------------------------------------------------
+[Decisive evidence]
+--------------------------------------------------------------------------------
+
+[Ymir gamepad] after SDL_Init: joysticks=0 gamepads=0
+
+[Ymir gamepad] no gamepad found: joysticks=0 gamepads=0      (repeated, ~4x per second,
+                                                                  throttled dump from the
+                                                                  virtual cursor update)
+
+There is NO "[Ymir gamepad] raw axes:" line and NO "[Ymir gamepad] axis ..." line:
+the app never receives a single joystick, gamepad, axis or button event.
+
+--------------------------------------------------------------------------------
+Boot sequence (all Ymir lines, in order)
+--------------------------------------------------------------------------------
+
+[Ymir boot] main() entered
+[Ymir boot] direct file write OK (before redirect)
+[Ymir boot] RedirectStdioToLogFile: fds read=4 write=5 stdout=1 stderr=2
+[Ymir boot] RedirectStdioToLogFile: _dup2 OK
+[Ymir boot] log redirection done: Q:\Users\UserMgr2\AppData\Local\Packages\Ymir.SaturnEmulator.UWP_d7c8pgvss6ysm\LocalState\StrikerX3\Ymir\ymir-uwp.log
+[Ymir boot] log pump thread started
+[Ymir boot] core window bounds set
+info  | VDP-Config       | Switched to Software VDP renderer
+debug | SWRender-VDP1    | Enabling threaded VDP1 rendering
+debug | SWRender-VDP2    | Enabling threaded VDP2 rendering
+[Ymir boot] App::Run() entered
+info  | App              | Ymir 0.4.2-dev
+info  | App              | DXGI adapters:
+info  | App              |   [00:00.0] SraKmd_arden (mem: 0.50 GiB VRAM, 0.00 GiB sys, 4.00 GiB shared)
+info  | App              | UWP profile path: Q:\Users\UserMgr2\AppData\Local\Packages\Ymir.SaturnEmulator.UWP_d7c8pgvss6ysm\LocalState\StrikerX3\Ymir\
+debug | App              | Profile directory: Q:\Users\UserMgr2\AppData\Local\Packages\Ymir.SaturnEmulator.UWP_d7c8pgvss6ysm\LocalState\StrikerX3\Ymir\
+debug | SMPC             | Setting area code to 4
+info  | App              | Scanning for IPL ROMs in ...\roms\ipl\...
+info  | App              | Found 0 images - 0 known, 0 unknown
+warn  | App              | No IPL ROM found
+info  | App              | Scanning for CD Block ROMs in ...\roms\cdb\...
+info  | App              | Found 0 images - 0 known, 0 unknown
+warn  | App              | No CD Block ROM found
+[Ymir gamepad] after SDL_Init: joysticks=0 gamepads=0
+info  | App              | Display 1 (Windows Simulator / Terminal Services Display) added
+Using Direct3D 12 Stock
+[Ymir gfx] D3D12 enhanced barriers reported: not supported; forced off on UWP
+[Ymir boot] creating software framebuffer texture
+info  | App              | Direct3D 12 graphics context initialized successfully
+info  | App              | Leaving full screen mode
+[Ymir boot] software framebuffer texture OK
+[Ymir boot] creating display texture
+[Ymir boot] display texture OK
+[Ymir boot] display texture OK, stbi logo load next
+[Ymir boot] ImGui backends initialized
+info  | GfxContext       | Dear ImGui backends initialized: yes
+[Ymir boot] initializing audio
+[Ymir audio] XAudio2 engine created
+[Ymir audio] XAudio2 mastering voice created (2 ch, 44100 Hz)
+[Ymir audio] XAudio2 source voice created
+[Ymir boot] starting audio stream
+[Ymir audio] XAudio2 playback started
+info  | App              | Audio stream opened: 44100 Hz, 2 channels, signed 16-bit little-endian integer PCM format
+info  | MIDI             | Initializing MIDI backend...
+warn  | StdioSuppress    | Cannot open 'NUL' to suppress output: errno 13
+info  | MIDI             | Using MIDI backend: dummy
+[Ymir boot] saturn reset OK
+[Ymir boot] starting emulator thread
+[Ymir boot] emulator thread started
+[Ymir boot] starting screenshot service
+[Ymir boot] screenshot service started
+[Ymir boot] showing window
+[Ymir boot] window shown
+[Ymir boot] reloading controller databases
+[Ymir boot] controller databases reloaded
+warn  | App              | Game controller database not found at D:\DevelopmentFiles\...\gamecontrollerdb.txt
+[Ymir boot] entering main loop
+warn  | App              | Game controller database not found at Q:\...\LocalState\StrikerX3\Ymir\gamecontrollerdb.txt
+debug | App              | Mouse 1 added
+[Ymir boot] frame 0: window 1920x1080 (1920x1080 pixels), flags 632 (hidden=false minimized=false occluded=false input focus=true), ImGui display 1920x1080, framebuffer scale 1x1
+info  | Emulator         | Internal backup memory image loaded from ...\state\bup-int.bin
+info  | Emulator         | Cartridge removed
+[Ymir present] Present() entered, frame=0 mode=0
+[Ymir present] swapchain->Present returned hr=00000000
+[Ymir present] Present() -> Ok
+... (frames 1..9, then the dump of the gamepad state every 250 ms) ...
+[Ymir present] Present() entered, frame=310 mode=0
+[Ymir present] Present() entered, frame=610 mode=0
+
+--------------------------------------------------------------------------------
+OS noise (present in every run, not Ymir errors)
+--------------------------------------------------------------------------------
+
+onecoreuap\xbox\devices\api\winrt\pnpdevice.cpp(552)\Windows.Gaming.Input.dll: ReturnHr(1) tid(108) 80070057 Parâmetro incorreto.
+onecoreuap\xbox\devices\api\winrt\gipdevice.cpp(1991)\Windows.Gaming.Input.dll: LogHr(1) tid(108) 80070005 Acesso negado.
+onecoreuap\windows\advcore\winrt\onecoreiwindow\corewindow\common\windowserver.cpp(3524)\Windows.UI.dll: ReturnHr(1) tid(708) 80070490 Elemento nao encontrado.
+    Msg:[The island for this CoreWindow has not been initialized.]
+WinRT: Using display resolution (gaming device unknown): 1920x1080
+Exception thrown at 0x00007FFF64F079DA in ymir-sdl3.exe: Microsoft C++ exception: _com_error at memory location 0x00000068428F3FF0.
+Exception thrown at 0x00007FFF64F079DA in ymir-sdl3.exe: Microsoft C++ exception: _com_error at memory location 0x00000068428F43C0.
+Exception thrown at 0x00007FFF64F079DA in ymir-sdl3.exe: Microsoft C++ exception: System::Runtime::InteropServices::COMException::Holder$ at memory location 0x00000068428F4128.
+onecoreuap\windows\moderncore\inputv2\inputhost\components\cursor\... 80070714
+onecoreuap\multimedia\gameoverlayux\gamepanel\gamepanelapi\common\lib\utils\gamebarsettings.cpp(88)\Windows.Gaming.UI.GameBar.dll: ReturnHr(1) tid(708) 80004005
+
+--------------------------------------------------------------------------------
+What this run proves
+--------------------------------------------------------------------------------
+
+PROVES:
+- The boot reaches the main loop on the console (frames 0..610 presented, hr=00000000).
+- The XAudio2 backend initializes and starts playback.
+- The D3D12 context, the software framebuffer and the display texture are all created.
+- The ImGui layer is initialized.
+- The app enumerates ZERO joysticks and ZERO gamepads, and receives no joystick,
+  gamepad, axis or button event at all.
+
+DOES NOT PROVE:
+- Anything about the gamepad mapping: there was never a device to map.
+- Whether the virtual cursor moves: the app has no axis to read.
+- Whether the Windows Gaming Input driver is functional on the console: the driver
+  was never enabled (see the root cause below), so the WGI enumeration was never
+  attempted.
+
+--------------------------------------------------------------------------------
+Root cause (found by reading the vendor after the run)
+--------------------------------------------------------------------------------
+
+vendor/SDL3-uwp/src/joystick/windows/SDL_windows_gaming_input.c:589
+
+    if (!SDL_GetHintBoolean(SDL_HINT_JOYSTICK_WGI, false)) {
+        return true;
+    }
+
+The WGI driver is opt-in in SDL. The hint defaults to "0"
+(vendor/SDL3-uwp/include/SDL3/SDL_hints.h:2408-2415) and the app never set it, so
+the joystick subsystem started with no working driver and enumerated nothing.
+
+Fix (commit 1f098a91): SDL_SetHint(SDL_HINT_JOYSTICK_WGI, "1") before SDL_Init, under
+#if YMIR_PLATFORM_UWP.
