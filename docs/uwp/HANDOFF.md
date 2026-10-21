@@ -12,10 +12,11 @@
 > | **GUI (ImGui)** | ✅ Aparece, 1920x1080, `io.DisplaySize` correto |
 > | **Áudio** | ✅ XAudio2. O WASAPI do SDL **trava** no Xbox (deadlock no `SDL_OpenAudioDeviceStream`) |
 > | **Entrada no emulador** | ✅ O gamepad já dirige o Saturn pelas bindings padrão da porta 1 |
-> | **GUI navegável pelo gamepad** | 🟡 **Implementado, ainda não testado no console.** Navegação nativa do ImGui 1.93 por gamepad + roteamento (View alterna GUI/Saturn, modal sempre captura). Ver [TESTING.md](TESTING.md) §5 |
+> | **GUI navegável pelo gamepad** | 🟡 **Cursor virtual implementado, ainda não testado no console.** O ImGui só mostra o retângulo de foco do nav **depois** que uma direção é pressionada (`imgui.cpp:15070-15076`), então apertar A sem mover o foco não faz nada. Agora há cursor de mouse virtual: analógico **direito** move, **RB** = clique esquerdo, **LB** = clique direito; d-pad/stick esquerdo = nav do ImGui (A ativa, B volta). Ver [TESTING.md](TESTING.md) §5 |
 > | **File picker** | 🟡 Deve abrir (é a UI do sistema, navegável pelo controle). Filtros caem para "todos os arquivos". **Não verificado:** se o app consegue abrir por caminho um arquivo escolhido no armazenamento do console (`broadFileSystemAccess` não é suportado no Xbox) |
 > | **Emulação de verdade** | 🟡 Ainda não testada: falta IPL ROM (BIOS) e um disco |
-> | **Último run** | **09** (2026-10-21) — a GUI aparece. Log **não** capturado (relato do usuário) |
+> | **Último run** | **09** (2026-10-21) — a GUI aparece, mas apertar A no *Welcome* não fez nada. Log **não** capturado (relato do usuário) |
+> | **Próximo run** | **10** — build com o cursor virtual. Testar: o cursor aparece? o d-pad move o foco? RB clica? |
 > | **HEAD** | ver `git log --oneline -3` em `uwp/main` |
 >
 > **Última atualização deste bloco:** 2026-10-21, pelo agente OpenCode.
@@ -1092,6 +1093,88 @@ backend vendorizado `imgui_impl_sdl3` ja alimenta o ImGui com esses botoes. **Fa
 - Branch `uwp/main`, HEAD `9f9e64ce` + os commits desta sessao.
 - Build local verde: `pwsh scripts/uwp/build.ps1 -Configuration Debug` (MSIX gerado).
 - O pull do Claude e **no-op**: os dois agentes dividem a mesma working tree (`F:\workspace\Ymir`).
+
+### Entrada do agente OpenCode #10 - 2026-10-21 (maquina de destino, COM Xbox, cursor virtual)
+
+**Estado:** o run 09 continua de pe (a GUI aparece). No run 09 o usuario apertou **A** no modal *Welcome* e **nao
+aconteceu nada**. Esta sessao descobriu **por que** e implementou o **cursor virtual** com RB/LB como clique.
+
+#### 1. Por que apertar A nao fez nada (leitura do codigo do ImGui, nao chute)
+
+O ImGui **so mostra o retangulo de foco da navegacao depois que uma direcao e pressionada**:
+
+```cpp
+// imgui.cpp:15070-15076
+if (g.NavMoveSubmitted && g.NavId == 0) {
+    g.NavInitRequest = g.NavInitRequestFromMove = true;
+    g.NavInitResult.ID = 0;
+    if (g.IO.ConfigNavCursorVisibleAuto)
+        g.NavCursorVisible = true;   // <-- so aqui o cursor de nav aparece
+}
+```
+
+E a ativacao depende do cursor estar visivel:
+
+```cpp
+// imgui.cpp:14847-14850
+if (g.NavId != 0 && g.NavCursorVisible && ...) {
+    const bool activate_down = ... IsKeyDown(ImGuiKey_NavGamepadActivate, ...);
+}
+```
+
+Com `g.NavId == 0` (nenhum item em foco ainda) e `g.NavCursorVisible == false`, **o A e ignorado**. Sem nenhuma
+direcao pressionada, o nav nunca inicializa o foco. **O primeiro input tem que ser uma direcao (d-pad), nao o A.**
+
+Consequencia pratica: **o nav do ImGui provavelmente funciona** — o usuario so nao testou o d-pad antes do A. O cursor
+virtual foi implementado em cima do nav justamente para nao depender dessa descoberta.
+
+#### 2. O que foi feito nesta sessao
+
+- **Cursor virtual** (`apps/ymir-sdl3/src/app/app.cpp`, `apps/ymir-sdl3/src/app/app.hpp`), so sob UWP:
+  - `App::UpdateVirtualMouse()` roda entre o `NewFrame` do backend ImGui e o `ImGui::NewFrame()`, entao
+    `io.DisplaySize` e `io.DeltaTime` ja valem;
+  - o **analógico direito** move o cursor (dead zone de 20%, velocidade 900 px/s, com rampa a partir da dead zone),
+    limitado aos limites da tela;
+  - a posicao vai para o ImGui por `io.AddMousePosEvent()` e os botoes por `io.AddMouseButtonEvent()`;
+  - **RB = clique esquerdo**, **LB = clique direito** (o que o usuario pediu). O `A`/`B` ficaram com o nav do ImGui e o
+    **d-pad / stick esquerdo** tambem, para o nav nao brigar com o cursor pelo mesmo eixo;
+  - `io.MouseDrawCursor = true` para o ImGui desenhar o cursor de software (sem isso o cursor nao aparece);
+  - os botoes virtuais sao **soltos** quando o gamepad volta para o Saturn, senao um bumper segurado deixaria o botao
+    do mouse travado;
+  - o app esconde o cursor do mouse depois de 2s de inatividade — esse caminho e pulado enquanto o cursor virtual esta
+    vivo, senao o cursor sumiria.
+- **Deteccao de popup melhorada**: alem de `io.WantCaptureKeyboard`, agora `ImGui::IsPopupOpen(nullptr,
+  ImGuiPopupFlags_AnyPopup)` tambem captura o gamepad (drop-downs e menus de contexto tambem precisam dele).
+- **`docs/uwp/TESTING.md` §5.3**: reescrito com o mapa de controles completo.
+
+#### 3. Como testar o run 10
+
+| Fazer | Esperado |
+|---|---|
+| Abrir o app | o modal *Welcome* aparece e o **cursor virtual aparece no centro da tela** |
+| Mover o **analógico direito** | o cursor se move |
+| Apertar o **d-pad** | o retangulo de foco do nav aparece e se move (este era o input que faltava no run 09) |
+| Apertar **A** com o foco em um botao | o botao e ativado |
+| Mover o cursor ate um botao e apertar **RB** | o botao e clicado |
+| Apertar **View** | alterna `Gamepad: Emulator` / `Gamepad: GUI` |
+| Apertar **LB** sobre um link | abre o menu de contexto |
+
+#### 4. Pendencias
+
+1. **Rodar o run 10** e conferir a tabela acima.
+2. **Testar o file picker** (se o modal *Select IPL ROM...* for clicavel): ele abre? o app le o arquivo escolhido?
+3. **Testar a emulacao**: IPL ROM em `roms/ipl/` e disco em `state/recent_discs.txt` (TESTING.md §2 e §3) — nao depende
+   do picker.
+4. **Remover a instrumentacao temporaria** quando o boot estiver estavel: `YMIR_BOOT_TRACE`, `YMIR_PRESENT_TRACE`,
+   `YMIR_UI_PHASE`, o trace de geometria, o `StallWatchdog` e o trace de enhanced barriers. **Manter** o `Trace()` e o
+   check de init do ImGui.
+
+#### 5. Estado do repositorio
+
+- Branch `uwp/main`, HEAD `76d55c5d` + os commits desta sessao.
+- Build local verde: `pwsh scripts/uwp/build.ps1 -Configuration Debug` (MSIX gerado).
+- O `LNK1201` (pdb travado) volta a aparecer quando o VS do usuario esta aberto: `Remove-Item` no `.pdb` resolve,
+  nunca matar o VS do usuario.
 
 ---
 

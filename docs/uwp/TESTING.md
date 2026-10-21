@@ -192,43 +192,62 @@ The rule implemented in `app.cpp` is:
 
 The modal detection uses `io.WantCaptureKeyboard`, which is only meaningful because the UWP build turns the keyboard
 navigation off: with no keyboard attached, ImGui reports `WantCaptureKeyboard` exactly while a modal is open or a
-widget is being interacted with.
+widget is being interacted with. Non-modal popups (drop-down lists, context menus) are caught by
+`ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopup)`, since those also need the gamepad.
 
 A small overlay in the top-right corner shows which side currently has the gamepad: *Gamepad: Emulator*,
-*Gamepad: GUI* or *Gamepad: GUI (dialog)*.
+*Gamepad: GUI* or *Gamepad: GUI (dialog)*, plus the control hints while the GUI has the gamepad.
 
-### 5.3 The virtual cursor (not implemented — probably not needed)
+### 5.3 The virtual cursor (implemented)
 
-The original idea for this lever was a virtual mouse cursor driven by the analog stick. It is **not** implemented, and
-it is most likely unnecessary: ImGui's own gamepad navigation is the native console way of driving a widget list, it
-covers the file picker's buttons and the *Welcome* modal, and it does not need a second, parallel mouse model.
+ImGui's own gamepad navigation only moves a *focus rectangle* between widgets. It is the native console way of
+driving a list of items, but it does not help with widgets that are only reachable with a pointer (the `TextLink`
+entries of the *Welcome* modal, sliders, scroll areas), and on the first Xbox run the focus rectangle was not even
+visible: ImGui only makes the navigation cursor visible **after a direction is pressed** (`imgui.cpp:15070-15076`),
+so pressing `A` out of the blue did nothing at all.
 
-If it is ever needed, the design is:
+The virtual cursor is therefore implemented on top of the navigation, and both coexist:
 
-**Where it goes.** `apps/ymir-sdl3/src/app/app.cpp` funnels every SDL event through `ImGui_ImplSDL3_ProcessEvent(&evt)`
-before dispatching it to the input context. ImGui therefore consumes SDL mouse events directly, and a virtual cursor
-must arrive as `SDL_EVENT_MOUSE_MOTION` / `SDL_EVENT_MOUSE_BUTTON_DOWN` / `SDL_EVENT_MOUSE_BUTTON_UP` events to be
-seen by ImGui.
+| Input | Action |
+|---|---|
+| **Right analog stick** | Moves the virtual mouse cursor |
+| **RB** (right bumper) | Left mouse button (click) |
+| **LB** (left bumper) | Right mouse button |
+| D-pad / left stick | ImGui navigation: moves the focus rectangle |
+| `A` | Activates the focused widget |
+| `B` | Goes back / cancels |
+| `View` | Switches the gamepad between the GUI and the Saturn |
 
-**How.** When the left stick is pushed past its deadzone, push a synthetic mouse-motion event per frame with the
-accumulated delta, and clamp the resulting position to the window. A/D (or the right stick) maps to left/right mouse
-button, and the right stick or the triggers act as a virtual scroll wheel.
+**How it works.** `App::UpdateVirtualMouse()` runs between the ImGui backend's `NewFrame` and `ImGui::NewFrame`, so
+`io.DisplaySize` and `io.DeltaTime` are already valid. The right stick deflection is rescaled past a 20% dead zone and
+applied to the cursor position at 900 pixels per second, clamped to the display bounds. The position is pushed to
+ImGui with `io.AddMousePosEvent()` and the buttons with `io.AddMouseButtonEvent()`.
 
-**Why synthetic events instead of talking to ImGui directly.** Everything that consumes the mouse — the ImGui layer,
-the mouse capture service, the light gun and shuttle mouse peripherals — already speaks SDL mouse events. Injecting
-at that level keeps the feature coherent instead of adding a second, parallel mouse model.
+The cursor is fed to ImGui directly instead of through synthetic SDL mouse events, because ImGui's public API is
+exactly that (`AddMousePosEvent` / `AddMouseButtonEvent`) and the app never consumes SDL mouse events on the console
+anyway. The light gun and the shuttle mouse peripherals are desktop-only and are not affected.
 
-**Why not SDL's own machinery.** SDL 3 has no built-in gamepad-to-cursor feature. It would have to be implemented
-inside `vendor/SDL3-uwp`, which the port rules forbid.
+Two details that are easy to get wrong:
+
+- `io.MouseDrawCursor` must be enabled, otherwise ImGui does not draw the software cursor at all. The app normally
+  hides the mouse cursor after two seconds of inactivity, so that path is skipped while the virtual cursor is alive.
+- The virtual buttons are released when the gamepad goes back to the Saturn, otherwise a held bumper would leave the
+  mouse button stuck down.
+
+**Why the right stick and not the left one.** The left stick and the d-pad are ImGui's navigation inputs, and the
+navigation is what makes the *focus* work. Using the right stick for the cursor keeps the two features from fighting
+over the same axis.
 
 **Open questions.**
 
-- Does the virtual cursor fight the *real* mouse on the PC build? It should be off by default there.
-- Should the emulator's own mouse input (light gun) also be driven by it? Probably not — the gamepad already drives
-  the Saturn's D-pad.
-- Is the stick-as-cursor an absolute or a relative mapping? Relative (like a trackpad) is the usual choice for ImGui,
-  but a hard "the cursor is at the edge" feel is easier to control.
-- Speed. A per-frame delta needs a gain factor, and probably an acceleration curve.
+- The virtual cursor is compiled in only under UWP, so it cannot fight the *real* mouse on the PC build.
+- The emulated Saturn's own mouse input (light gun, shuttle mouse) is not driven by the virtual cursor: the gamepad
+  already drives the Saturn's D-pad, and the light gun peripherals are desktop-only.
+- The mapping is relative, like a trackpad: the cursor keeps moving while the stick is pushed, at a speed that ramps
+  up from zero at the dead zone. An absolute mapping (the stick position maps directly to a screen position) was
+  rejected because it does not work with a 2-axis stick in a 16:9 display without an extra calibration step.
+- The speed is a constant 900 pixels per second at full deflection. An acceleration curve (slow for fine positioning,
+  fast for long travel) may be worth adding later.
 
 **Alternative worth considering first.** The Xbox controller supports a mouse-like pointer on the desktop shell, but
 not inside a UWP app. If a future SDL3-uwp exposes a virtual mouse device, the whole feature collapses to "open that
