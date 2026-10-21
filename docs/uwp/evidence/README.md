@@ -90,6 +90,40 @@ and the log says `Leaving full screen mode`), and audio sync (it can only stall 
 | `StallWatchdog`: the main loop marks each phase; a monitor thread logs `[Ymir watchdog] UI thread stalled for N ms in phase '...' (frame N)` after 3 s without progress | `platform/uwp/stall_watchdog.{hpp,cpp}`, `app.cpp` |
 | Window/ImGui geometry (size in DIPs and pixels, flags, `io.DisplaySize`, framebuffer scale) on the first frame and on every change | `app.cpp` |
 
+### Cross-check against other Xbox ports (2026-10-21, source reading only)
+
+Read in the user's workspace (`D:\workspace\_non_work_\`). The user's own ports: scummvm-uwp, dosbox-pure-uwp,
+sm64ex-uwp, xbox-uwp-lab. Others already in the workspace: XBSX2, RetroArch, SDL3-uwp, xenia-canary-uwp (UWP code
+only on `origin/Blades-UWP`), dolphin, ppsspp. Shallow-cloned for this purpose from the Emulation Revival list:
+xemu-uwp and Cemu-UWP (`uwp-d3d12` branches, DanP142), Azahar-UWP, flycast.
+
+| Hypothesis | What the working ports show |
+|---|---|
+| H1, debugger break | **Best supported.** No port breaks on D3D12 *warnings* by default. xenia, Dolphin and XBSX2 only break when validation is opted into, and XBSX2 additionally requires `IsDebuggerPresent()`; RetroArch and SDL3-uwp's D3D12 renderer break on ERROR only; xemu and Cemu only log. Most deny-list `CLEARRENDERTARGETVIEW_MISMATCHINGCLEARVALUE`, and XBSX2 also denies `INCOMPATIBLE_BARRIER_LAYOUT` because of a validation bug in the OS D3D12 (616). scummvm hit a real "debug layer breakpoint on Xbox" (commit `226d29f`) |
+| H2, `Present(1, 0)` blocks | **Weakened.** `Present(1, 0)` on a CoreWindow swap chain works on Xbox in RetroArch (UI thread), XBSX2, xemu, Cemu and SDL3-uwp, the latter also with the same present-then-fence-wait pattern |
+| H3, ImGui draws nothing | **`D3DCompile` itself is ruled out:** RetroArch (exactly vs_5_0/ps_5_0), Dolphin, XBSX2, flycast and xemu compile shaders at runtime on Xbox with the OS `d3dcompiler_47.dll`. A pipeline or init failure remains possible; xemu checks `ImGui_ImplDX12_Init`/`CreateDeviceObjects`, as Ymir now does |
+| H4, event pump blocks | Mechanism confirmed in SDL3-uwp, but not observed in any port |
+| H5, activation deadline | Not applicable under F5 (the debugger disables it, and it kills rather than freezes). Relevant for tile launches: scummvm's `docs/XBOX-TILE-LAUNCH-KILL.md` |
+
+**Differences between Ymir and every working port**, all aligned on UWP in the working tree (README §4, D17–D19):
+
+1. **Enhanced barriers.** XBSX2 forces them off on Xbox ("Not supported on Xbox"). Ymir used them whenever
+   `EnhancedBarriersSupported` was true, on every frame (back buffer transitions) and in the VDP HW renderer. Now
+   forced off on UWP; the reported value is traced (`[Ymir gfx] D3D12 enhanced barriers reported: ...`).
+2. **Waitable swap chain never waited on**, with `SetMaximumFrameLatency(3)`. SDL3-uwp dropped both on WinRT, RetroArch
+   defaults them off on WinRT, the others never use them or wait with a timeout. Now off on UWP.
+3. **Tearing.** xenia and SDL3-uwp turn it off on UWP. Now off for CoreWindow swap chains.
+4. **`DXGI_SCALING_NONE`.** xenia, Dolphin, XBSX2 and Cemu use STRETCH (xenia to fix a zoom bug). Now STRETCH on UWP.
+5. **Break on WARNING.** Now off on UWP (instrumentation section above).
+
+Not changed, noted for later: XBSX2 and xemu clear and present the back buffers right after creating the swap chain;
+XBSX2 caps the swap chain to 1440p on Series S ("if you try to make a 4K Swap Chain the application will crash"),
+which SDL3-uwp's `SDL_GetWindowSizeInPixels` already does.
+
+Because all five changes go into the same build, a working run 08 will not say which one fixed it. The traces keep
+what the console reports (enhanced barriers) and the debug layer still prints its messages, so bisecting later is
+possible by reverting them one at a time.
+
 ### How to read run 08
 
 | Output shows | Conclusion |

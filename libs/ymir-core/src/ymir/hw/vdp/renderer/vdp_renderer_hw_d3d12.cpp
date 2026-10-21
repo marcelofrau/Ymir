@@ -1273,6 +1273,11 @@ struct Direct3D12VDPRenderer::Impl {
         } else {
             features.enhancedBarriers = false;
         }
+#if YMIR_PLATFORM_UWP
+        // Enhanced barriers are not supported on Xbox, whatever the feature check says; XBSX2 forces them off there
+        // too (pcsx2/GS/Renderers/DX12/GSDevice12.cpp). Use the legacy resource barriers on UWP.
+        features.enhancedBarriers = false;
+#endif
         barrierTracker.UseEnhancedBarriers(features.enhancedBarriers);
 
         // Main command queue

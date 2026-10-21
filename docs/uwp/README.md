@@ -139,6 +139,9 @@ ymir-uwp_<ver>_x64_symbols.zip                      → .appxsym (símbolos pra 
 | D14 | `/sdl-` no UWP | Projetos WindowsStore do VS ligam `/sdl`, que transforma C4996 em erro no código vendorizado (stb) | `_CRT_SECURE_NO_WARNINGS` |
 | D15 | `AdapterID` no UWP = índice de enumeração DXGI | D3DKMT (endereço PCIe) é desktop-only; o Xbox tem uma GPU só | — |
 | D16 | AVX2 ligado no preset UWP | O Zen 2 do Series X|S suporta. O **Xbox One (Jaguar) não suporta AVX2** e também não tem D3D12 em modo App; fica fora do MVP | Preset SSE2 (dá pra adicionar depois) |
+| D17 | Enhanced barriers forced off on UWP (graphics context and VDP HW renderer), legacy `ResourceBarrier` used instead | XBSX2 hard-disables them on Xbox ("Not supported on Xbox", `pcsx2/GS/Renderers/DX12/GSDevice12.cpp`) regardless of the feature check, and Ymir's graphics context issues them on every frame for the back buffer. The legacy path already exists and is what older desktop GPUs use | Trusting `EnhancedBarriersSupported` |
+| D18 | CoreWindow swap chain without the frame latency waitable object, without `SetMaximumFrameLatency`, without tearing, and with `DXGI_SCALING_STRETCH` | Matches the swap chains known to work on Xbox: SDL3-uwp's own D3D12 renderer drops the waitable flag, the latency call and tearing on WinRT; RetroArch defaults waitable swap chains off on WinRT; xenia, Dolphin, XBSX2 and Cemu use STRETCH (xenia to fix a zoom bug). Ymir never waited on the waitable object anyway | The desktop settings (`SCALING_NONE`, waitable flag, tearing when supported) |
+| D19 | D3D12 debug layer does not break into the debugger on UWP; messages are only printed | Under F5 a single first-frame validation warning paused the app with a black screen. No Xbox port breaks on warnings by default: xenia/Dolphin/XBSX2 make breaking opt-in, RetroArch and SDL3-uwp break on ERROR only | Break on WARNING/ERROR/CORRUPTION as on desktop |
 
 ## 5. Macros e opções de CMake
 
@@ -186,6 +189,8 @@ ymir-uwp_<ver>_x64_symbols.zip                      → .appxsym (símbolos pra 
 - `include/ymir/gpu/d3d12/d3d12_swap_chain.hpp`:
   - novo `CreateForCoreWindow()`, com a lógica comum em `CreateImpl()`;
   - `SetFullscreenState` só em swap chain HWND.
+  - on UWP, CoreWindow swap chains have no tearing, and the waitable object is optional (D18).
+- `src/ymir/hw/vdp/renderer/vdp_renderer_hw_d3d12.cpp`: enhanced barriers forced off on UWP (D17).
 - `src/ymir/gpu/shaders/gpu_shaders_uwp.cpp` (novo).
 - `vendor/mio/include/mio/detail/mmap.ipp` (submódulo): ramos `MIO_WINAPI_APP`.
 

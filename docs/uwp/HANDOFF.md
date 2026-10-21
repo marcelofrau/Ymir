@@ -629,6 +629,19 @@ boot reaches the main loop**; what fails now is the first visible frame. Without
 Read the result with the table "How to read run 08" in `docs/uwp/evidence/README.md`. The fix is chosen from the
 data, not before.
 
+**Addendum (same day): cross-check against other Xbox ports, and alignment applied at the user's request.**
+- Sources: the user's ports (scummvm, dosbox-pure, sm64ex, xbox-uwp-lab) and the ones in the workspace (XBSX2,
+  RetroArch, SDL3-uwp, xenia Blades-UWP, Dolphin, PPSSPP).
+- Also shallow-cloned from the Emulation Revival list into `D:\workspace\_non_work_\`, read only: xemu-uwp,
+  Cemu-UWP, Azahar-UWP and flycast.
+- Conclusions are in `docs/uwp/evidence/README.md` → "Cross-check against other Xbox ports". H1 is the best-supported
+  hypothesis; `Present(1, 0)` and runtime `D3DCompile` are shown to work on Xbox.
+- The user chose to align everything now rather than wait for run 08. On UWP: enhanced barriers forced off (graphics
+  context and VDP HW renderer); swap chain without the waitable object, `SetMaximumFrameLatency` and tearing;
+  `DXGI_SCALING_STRETCH`. Decisions D17–D19 in `README.md` §4.
+- Built and verified: UWP Debug, UWP Release, desktop `ymir-sdl3`, and `ctest` 14/14.
+- Trade-off accepted: if run 08 works, it will not say which change fixed it. Revert them one at a time to bisect.
+
 ---
 
 ## 1. Estado atual (o que já está pronto e validado)

@@ -339,6 +339,15 @@ struct Direct3D12GraphicsContext::Impl {
         if (SUCCEEDED(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS12, &options12, sizeof(options12)))) {
             features.enhancedBarriers = options12.EnhancedBarriersSupported;
         }
+#if YMIR_PLATFORM_UWP
+        // Enhanced barriers are not supported on Xbox, whatever the feature check says; XBSX2 forces them off there
+        // too (pcsx2/GS/Renderers/DX12/GSDevice12.cpp). This context uses them on every frame for the back buffer
+        // transitions, so use the legacy resource barriers on UWP. What the console reports is still traced
+        // (TEMPORARY) so that the run log records whether the override changed anything.
+        ::platform::uwp::Trace(fmt::format("[Ymir gfx] D3D12 enhanced barriers reported: {}; forced off on UWP",
+                                           features.enhancedBarriers ? "supported" : "not supported"));
+        features.enhancedBarriers = false;
+#endif
 
         if (FAILED(cmdAllocOps.Create(device, D3D12_COMMAND_LIST_TYPE_DIRECT))) {
             return util::ErrorMessage{"Failed to create operations command allocator"};
@@ -370,8 +379,20 @@ struct Direct3D12GraphicsContext::Impl {
         swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
         swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
         swapChainDesc.SampleDesc.Count = 1;
+#if YMIR_PLATFORM_UWP
+        // Match the swap chains that are known to work on Xbox (xenia, Dolphin, XBSX2, SDL3-uwp's own D3D12
+        // renderer):
+        // - stretch scaling, which xenia adopted to fix a zoom bug on Xbox and which keeps the image on screen if the
+        //   buffer size and the CoreWindow size ever disagree;
+        // - no frame latency waitable object, which this context never waits on; SDL3-uwp drops it (and the
+        //   SetMaximumFrameLatency call) on WinRT, and RetroArch defaults it off there.
+        // Tearing is also left off for CoreWindow swap chains, see D3D12SwapChain::CreateForCoreWindow.
+        swapChainDesc.Scaling = DXGI_SCALING_STRETCH;
+        swapChainDesc.Flags = 0;
+#else
         swapChainDesc.Scaling = DXGI_SCALING_NONE;
         swapChainDesc.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+#endif
 #if YMIR_PLATFORM_UWP
         if (!swapchain.CreateForCoreWindow(dxgiFactoryFlags, cmdQueue.GetPointer(), swapChainDesc, coreWindow,
                                            kFrameCount)) {

@@ -98,6 +98,9 @@ private:
     bool m_tearingSupport = false;
     bool m_windowed = true; ///< `true` for HWND swap chains, `false` for CoreWindow swap chains
     HRESULT m_lastCreateHResult = S_OK; ///< result of the last DXGI swap chain creation attempt, for diagnostics
+#if YMIR_PLATFORM_UWP
+    bool m_usesWaitableObject = true; ///< `false` if the swap chain was created without a frame latency waitable
+#endif
 
     template <typename FnCreateSwapChain>
     bool CreateImpl(UINT dxgiFactoryFlags, DXGI_SWAP_CHAIN_DESC1 scDesc, UINT maxLatency,
@@ -112,6 +115,12 @@ private:
         BOOL allowTearing = FALSE;
         factory->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &allowTearing, sizeof(allowTearing));
         m_tearingSupport = allowTearing == TRUE;
+#if YMIR_PLATFORM_UWP
+        // CoreWindow swap chains are created without tearing on UWP, as xenia and SDL3-uwp do on Xbox
+        if (!m_windowed) {
+            m_tearingSupport = false;
+        }
+#endif
         if (m_tearingSupport) {
             scDesc.Flags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
         }
@@ -123,6 +132,14 @@ private:
         if (FAILED(swapChain1.copy_to(m_object.put()))) {
             return false;
         }
+#if YMIR_PLATFORM_UWP
+        // The frame latency waitable object (and SetMaximumFrameLatency) only exist for swap chains created with
+        // DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT, which the UWP graphics context leaves off
+        m_usesWaitableObject = (scDesc.Flags & DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT) != 0;
+        if (!m_usesWaitableObject) {
+            return true;
+        }
+#endif
         m_object->SetMaximumFrameLatency(maxLatency);
         m_waitableObject.reset(m_object->GetFrameLatencyWaitableObject());
 
@@ -138,6 +155,11 @@ private:
     }
 
     bool IsValidExt() const {
+#if YMIR_PLATFORM_UWP
+        if (!m_usesWaitableObject) {
+            return true;
+        }
+#endif
         return (bool)m_waitableObject;
     }
 };
