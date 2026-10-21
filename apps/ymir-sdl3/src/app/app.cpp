@@ -287,7 +287,7 @@ void App::UpdateVirtualMouse() {
     // Throttled dump of the state the cursor code actually reads, so a run that does not move the
     // cursor can say whether the gamepad is missing, unmapped or reporting zeroed axes.
     static auto lastCursorTrace = clk::now();
-    if ((clk::now() - lastCursorTrace) >= std::chrono::milliseconds(250)) {
+    if ((clk::now() - lastCursorTrace) >= std::chrono::seconds(1)) {
         lastCursorTrace = clk::now();
         if (primaryGamepad != nullptr) {
             TraceGamepadAxes(primaryGamepad);
@@ -798,6 +798,13 @@ void App::RunEmulator() {
 #if YMIR_PLATFORM_UWP
     // Mark the Xbox B button / system back requests as handled so that the app is not sent to the background
     SDL_SetHint(SDL_HINT_WINRT_HANDLE_BACK_BUTTON, "1");
+
+    // The console controller is only reachable through the Windows Gaming Input driver, and that
+    // driver is opt-in in SDL: with the hint left at its default the joystick subsystem starts
+    // fine but finds no driver, enumerates zero controllers and delivers no events at all, so
+    // neither the ImGui layer nor the emulated Saturn ever sees the gamepad. The hint has to be
+    // set before SDL is initialized, since the driver reads it while the subsystem starts.
+    SDL_SetHint(SDL_HINT_JOYSTICK_WGI, "1");
 #endif
 
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD | SDL_INIT_EVENTS)) {
