@@ -135,10 +135,21 @@ void WindowManagerService::CloseGenericModal() {
 }
 
 void WindowManagerService::OpenWelcomeModal(bool scanIPLROMs) {
+#if YMIR_PLATFORM_UWP
+    // On Xbox the user either picks the IPL ROM via the FileOpenPicker or drops it once via Device Portal;
+    // scanning the virtualized AppData folder every 400 ms wastes CPU and floods the devlog.
+    bool activeScanning = false;
+    (void)scanIPLROMs;
+#else
     bool activeScanning = scanIPLROMs;
+#endif
 
     using namespace std::chrono_literals;
+#if YMIR_PLATFORM_UWP
+    static constexpr auto kScanInterval = 5000ms;
+#else
     static constexpr auto kScanInterval = 400ms;
+#endif
     using clk = std::chrono::steady_clock;
 
     struct ROMSelectResult {
@@ -270,6 +281,7 @@ void WindowManagerService::OpenWelcomeModal(bool scanIPLROMs) {
                 m_settings.system.ipl.overrideImage = true;
                 m_settings.system.ipl.path = romSelectResult.path;
                 romService->LoadIPLROM();
+                m_context.EnqueueEvent(events::emu::HardReset());
                 m_closeGenericModal = true;
             }
         }

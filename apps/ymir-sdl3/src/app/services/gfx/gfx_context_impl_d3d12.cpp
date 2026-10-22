@@ -191,9 +191,9 @@ struct Direct3D12GraphicsContext::Impl {
     // TEMPORARY present-path trace rate limiting. Remove together with YMIR_PRESENT_TRACE.
 
     /// @brief Number of initial frames whose presentation is traced in full.
-    static constexpr uint64 kVerbosePresentFrames = 10;
+    static constexpr uint64 kVerbosePresentFrames = 3;
     /// @brief Interval between traced frames after the initial ones.
-    static constexpr std::chrono::seconds kPresentTraceInterval{5};
+    static constexpr std::chrono::seconds kPresentTraceInterval{60};
 
     uint64 presentCount = 0; ///< Number of Present() calls so far
     std::chrono::steady_clock::time_point lastPresentTrace{};
@@ -1324,6 +1324,10 @@ struct Direct3D12GraphicsContext::Impl {
         // Copy data to staging buffer
         fnUpdate(stagingBufferData, texture.rowPitch);
 
+#if YMIR_PLATFORM_UWP
+        // Record the upload on the current frame's command list to avoid stalling the CPU on fenceOps every frame.
+        ID3D12GraphicsCommandList *uploadCmdList = cmdListFrame.GetPointer();
+#else
         if (FAILED(fenceOps.Signal(cmdQueue, fenceValueOps))) {
             return util::ErrorMessage{"Failed to signal fence before executing operations"};
         }
@@ -1337,7 +1341,15 @@ struct Direct3D12GraphicsContext::Impl {
             return util::ErrorMessage{
                 fmt::format("Failed to reset operations command list, error code {:X}", (uint32)hr)};
         }
-        auto *enhCmdList = GetCommandListForEnhancedBarriers(cmdListOps);
+        ID3D12GraphicsCommandList *uploadCmdList = cmdListOps.GetPointer();
+#endif
+        auto *enhCmdList = GetCommandListForEnhancedBarriers(
+#if YMIR_PLATFORM_UWP
+            cmdListFrame
+#else
+            cmdListOps
+#endif
+        );
 
         // Indicate that data will be copied to the texture
         if (enhCmdList != nullptr) {
@@ -1378,7 +1390,7 @@ struct Direct3D12GraphicsContext::Impl {
                         .StateAfter = D3D12_RESOURCE_STATE_COPY_DEST,
                     },
             };
-            cmdListOps->ResourceBarrier(1, &barrier);
+            uploadCmdList->ResourceBarrier(1, &barrier);
         }
 
         // Copy buffer to texture
@@ -1392,7 +1404,7 @@ struct Direct3D12GraphicsContext::Impl {
             .Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
             .SubresourceIndex = 0,
         };
-        cmdListOps->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+        uploadCmdList->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
 
         // Transition texture back to pixel shading usage
         if (enhCmdList != nullptr) {
@@ -1433,11 +1445,13 @@ struct Direct3D12GraphicsContext::Impl {
                         .StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
                     },
             };
-            cmdListOps->ResourceBarrier(1, &barrier);
+            uploadCmdList->ResourceBarrier(1, &barrier);
         }
 
+#if !YMIR_PLATFORM_UWP
         cmdListOps->Close();
         cmdQueue->ExecuteCommandLists(1, cmdListOps.GetAddressOfBase());
+#endif
 
         return {};
     }
@@ -1819,7 +1833,13 @@ struct Direct3D12GraphicsContext::Impl {
 
         // Download texture to readback buffer if changed
         // TODO: mark dirty, copy on screenshot requests only
-        if (changed) {
+#if YMIR_PLATFORM_UWP
+        // shortcut: skip per-frame 1.4 MB readback on Xbox until screenshot support is wired to an on-demand copy
+        constexpr bool doReadback = false;
+#else
+        const bool doReadback = changed;
+#endif
+        if (doReadback) {
             // Transition texture to copy source
             if (auto *enhCmdList = GetCommandListForEnhancedBarriers(cmdListFrame)) {
                 D3D12_TEXTURE_BARRIER barrier{
@@ -1881,9 +1901,9 @@ struct Direct3D12GraphicsContext::Impl {
             D3D12_TEXTURE_BARRIER barrier{
                 .SyncBefore = D3D12_BARRIER_SYNC_COPY,
                 .SyncAfter = D3D12_BARRIER_SYNC_PIXEL_SHADING,
-                .AccessBefore = changed ? D3D12_BARRIER_ACCESS_COPY_SOURCE : D3D12_BARRIER_ACCESS_COPY_DEST,
+                .AccessBefore = doReadback ? D3D12_BARRIER_ACCESS_COPY_SOURCE : D3D12_BARRIER_ACCESS_COPY_DEST,
                 .AccessAfter = D3D12_BARRIER_ACCESS_COMMON,
-                .LayoutBefore = changed ? D3D12_BARRIER_LAYOUT_COPY_SOURCE : D3D12_BARRIER_LAYOUT_COPY_DEST,
+                .LayoutBefore = doReadback ? D3D12_BARRIER_LAYOUT_COPY_SOURCE : D3D12_BARRIER_LAYOUT_COPY_DEST,
                 .LayoutAfter = D3D12_BARRIER_LAYOUT_COMMON,
                 .pResource = texture->resource.GetPointer(),
                 .Subresources =
@@ -1911,7 +1931,7 @@ struct Direct3D12GraphicsContext::Impl {
                     {
                         .pResource = texture->resource.GetPointer(),
                         .Subresource = 0,
-                        .StateBefore = changed ? D3D12_RESOURCE_STATE_COPY_SOURCE : D3D12_RESOURCE_STATE_COPY_DEST,
+                        .StateBefore = doReadback ? D3D12_RESOURCE_STATE_COPY_SOURCE : D3D12_RESOURCE_STATE_COPY_DEST,
                         .StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
                     },
             };

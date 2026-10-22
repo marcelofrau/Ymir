@@ -90,11 +90,17 @@ public:
         return m_buffer.size();
     }
 
-    /// @brief Copies frames out of the ring buffer for the active backend.
-    ///
-    /// Always returns exactly `frameCount` frames, repeating whatever is available when the buffer has run dry.
-    /// This is the crude form of audio stretching used when the emulator runs slower than real time.
+    /// @brief Pulls frames from the owner and submits the buffer. Called when the pool runs dry.
     int FillFrames(Sample *out, int frameCount);
+
+#if YMIR_PLATFORM_UWP
+    uint32 TakeUnderrunCount() {
+        return m_underruns.exchange(0, std::memory_order_relaxed);
+    }
+    uint32 TakeOverrunCount() {
+        return m_overruns.exchange(0, std::memory_order_relaxed);
+    }
+#endif
 
 private:
     std::unique_ptr<AudioBackend> m_backend;
@@ -109,6 +115,10 @@ private:
 
     std::atomic_bool m_sync = true;
     std::atomic_bool m_silent = false;
+#if YMIR_PLATFORM_UWP
+    std::atomic_uint32_t m_underruns = 0;
+    std::atomic_uint32_t m_overruns = 0;
+#endif
 
     float m_gain = 0.8f;
     bool m_mute = false;

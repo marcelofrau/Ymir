@@ -76,6 +76,12 @@ private:
         return m_gamepadGuiFocus || m_gamepadGuiModalOpen;
     }
 
+    /// @brief Tracks the left thumbstick button (L3) press state for GUI toggle.
+    bool m_leftThumbPressed = false;
+
+    /// @brief Tracks the right thumbstick button (R3) press state for GUI toggle.
+    bool m_rightThumbPressed = false;
+
     /// @brief Position of the virtual mouse cursor, in ImGui display coordinates.
     float m_virtualCursorX = 0.0f;
 

@@ -1553,8 +1553,8 @@ struct Direct3D12VDPRenderer::Impl {
                                             D3D12_BARRIER_SYNC_COMPUTE_SHADING, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
 
             // Span prefix sums buffer
-            if (auto result = CreateStructuredBuffer<HLSLuint>(
-                    frameCtx.spanPrefixSumsBuffer, frameCtx.cpuSpanPrefixSums.size(),
+            if (auto result = CreatePrimitiveBuffer(
+                    frameCtx.spanPrefixSumsBuffer, DXGI_FORMAT_R32_UINT, frameCtx.cpuSpanPrefixSums.size(),
                     {
                         .srv = &frameCtx.spanPrefixSumsSRV,
                         .name = fmt::format("[Ymir-VDP1] Span prefix sums buffer #{}", i),
@@ -1581,8 +1581,8 @@ struct Direct3D12VDPRenderer::Impl {
                                             D3D12_BARRIER_SYNC_COMPUTE_SHADING, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
 
             // Internal sprite data output buffer
-            if (auto result = CreateStructuredBuffer<HLSLuint>(
-                    frameCtx.internalSpriteOutBuffer,
+            if (auto result = CreatePrimitiveBuffer(
+                    frameCtx.internalSpriteOutBuffer, DXGI_FORMAT_R32_UINT,
                     // Each entry in this buffer represents a logical output pixel.
                     // Entries are 32-bit, holding the sprite data in the 8 or 16 LSBs and the span index in the 16
                     // MSBsto enable parallel rendering with guaranteed pixel ordering.
@@ -1601,8 +1601,8 @@ struct Direct3D12VDPRenderer::Impl {
                                             D3D12_BARRIER_ACCESS_UNORDERED_ACCESS);
 
             // OIT fragments list heads buffer
-            if (auto result = CreateStructuredBuffer<HLSLuint>(
-                    frameCtx.oitListHeadsBuffer,
+            if (auto result = CreatePrimitiveBuffer(
+                    frameCtx.oitListHeadsBuffer, DXGI_FORMAT_R32_UINT,
                     // Each entry in this buffer represents a logical output pixel.
                     // Entries are 32-bit, holding the index of the head of the list.
                     // *2 for deinterlace alternate field

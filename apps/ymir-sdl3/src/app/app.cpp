@@ -270,35 +270,16 @@ void App::UpdateVirtualMouse() {
     float axisY = 0.0f;
     int gamepadCount = 0;
     SDL_JoystickID *gamepadIds = SDL_GetGamepads(&gamepadCount);
-    SDL_Gamepad *primaryGamepad = nullptr;
     if (gamepadIds != nullptr) {
         for (int i = 0; i < gamepadCount; ++i) {
             SDL_Gamepad *gamepad = SDL_GetGamepadFromID(gamepadIds[i]);
             if (gamepad != nullptr) {
-                primaryGamepad = gamepad;
                 axisX = static_cast<float>(SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_RIGHTX));
                 axisY = static_cast<float>(SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_RIGHTY));
                 break;
             }
         }
         SDL_free(gamepadIds);
-    }
-
-    // Throttled dump of the state the cursor code actually reads, so a run that does not move the
-    // cursor can say whether the gamepad is missing, unmapped or reporting zeroed axes.
-    static auto lastCursorTrace = clk::now();
-    if ((clk::now() - lastCursorTrace) >= std::chrono::seconds(1)) {
-        lastCursorTrace = clk::now();
-        if (primaryGamepad != nullptr) {
-            TraceGamepadAxes(primaryGamepad);
-        } else {
-            int joystickCount = 0;
-            SDL_GetJoysticks(&joystickCount);
-            int gamepadCount = 0;
-            SDL_GetGamepads(&gamepadCount);
-            ::platform::uwp::Trace(fmt::format("[Ymir gamepad] no gamepad found: joysticks={} gamepads={}",
-                                              joystickCount, gamepadCount));
-        }
     }
 
     float dirX = axisX / 32767.0f;
@@ -833,7 +814,10 @@ void App::RunEmulator() {
     // The keyboard navigation is turned off so that io.WantCaptureKeyboard only reports true while
     // a modal dialog is open or a widget is being interacted with, which is the signal used to
     // route the gamepad to the GUI. See the gamepad routing in the event loop below.
+    // NoMouseCursorChange is set because Xbox CoreWindow has no system cursor resources (SDL_SetCursor
+    // throws a WinRT COMException every frame otherwise); ImGui draws the virtual cursor in software.
     io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableKeyboard;
+    io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
 #endif
     // io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;  // Enable Gamepad Controls
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable; // Enable Docking
@@ -1761,6 +1745,18 @@ void App::RunEmulator() {
             }
 
             if (screen.videoSync) {
+#if YMIR_PLATFORM_UWP
+                // On UWP the DXGI swapchain Present(1, 0) + fence wait in MoveToNextFrame() already paces the UI
+                // thread to the hardware VBlank. Calling sleep_for() on top of Present(1, 0) suffers from Windows'
+                // 15.6 ms default timer granularity when timeBeginPeriod(1) is absent, oversleeping past VBlank
+                // every ~10 seconds (22-36 ms frame spikes and audio buffer swings). Only spin for the fine
+                // sub-millisecond audio drift adjustment when needed.
+                auto now = clk::now();
+                if (now < screen.nextFrameTarget && screen.nextFrameTarget - now <= 2ms) {
+                    while (clk::now() < screen.nextFrameTarget) {
+                    }
+                }
+#else
                 // Sleep until 1ms before the next frame presentation time, then spin wait for the deadline
                 bool skipDelay = false;
                 auto now = clk::now();
@@ -1777,6 +1773,7 @@ void App::RunEmulator() {
                     while (clk::now() < screen.nextFrameTarget) {
                     }
                 }
+#endif
             }
 
             // Update next frame target
@@ -1802,15 +1799,6 @@ void App::RunEmulator() {
         // Process SDL events
         YMIR_UI_PHASE("poll SDL events");
         SDL_Event evt{};
-#if YMIR_PLATFORM_UWP
-        // Throttle for the gamepad input tracing: the axis events arrive at the frame rate while a
-        // stick is pushed, and one line per event would bury the rest of the log.
-        static auto lastGamepadTrace = clk::now();
-        const bool traceGamepad = (clk::now() - lastGamepadTrace) >= std::chrono::milliseconds(250);
-        if (traceGamepad) {
-            lastGamepadTrace = clk::now();
-        }
-#endif
         while (SDL_PollEvent(&evt)) {
             ImGui_ImplSDL3_ProcessEvent(&evt);
             if (io.WantCaptureKeyboard != imguiWantedKeyboardInput) {
@@ -1964,11 +1952,6 @@ void App::RunEmulator() {
                 const int playerIndex = gamepadPlayerIndices.GetPlayerIndex(evt.gaxis.which);
                 const float value = evt.gaxis.value < 0 ? evt.gaxis.value / 32768.0f : evt.gaxis.value / 32767.0f;
 #if YMIR_PLATFORM_UWP
-                if (traceGamepad) {
-                    ::platform::uwp::Trace(fmt::format("[Ymir gamepad] axis {} = {}",
-                                                      SDL_GetGamepadStringForAxis((SDL_GamepadAxis)evt.gaxis.axis),
-                                                      evt.gaxis.value));
-                }
                 // The Xbox has a single gamepad that must drive either the ImGui layer or the
                 // emulated Saturn, never both: otherwise the console reacts to the button presses
                 // meant for the GUI. See GamepadDrivesGui().
@@ -1986,28 +1969,67 @@ void App::RunEmulator() {
             {
                 const int playerIndex = gamepadPlayerIndices.GetPlayerIndex(evt.gbutton.which);
 #if YMIR_PLATFORM_UWP
-                if (evt.gbutton.down) {
-                    ::platform::uwp::Trace(fmt::format("[Ymir gamepad] button {} pressed",
-                                                      SDL_GetGamepadStringForButton((SDL_GamepadButton)evt.gbutton.button)));
-                }
                 // The View button is not part of the Saturn control pad, so it is free to switch
                 // the gamepad over to the GUI. The emulated console inputs are reset on the switch
                 // so no stale button state leaks from one side to the other.
+                bool toggledGuiFocus = false;
                 if (evt.gbutton.button == SDL_GAMEPAD_BUTTON_BACK && evt.gbutton.down) {
                     m_gamepadGuiFocus = !m_gamepadGuiFocus;
+                    toggledGuiFocus = true;
+                }
+                // On Xbox, either thumbstick click (L3 or R3) toggles the gamepad focus between
+                // the GUI and the emulated Saturn.
+                if (evt.gbutton.button == SDL_GAMEPAD_BUTTON_LEFT_STICK) {
+                    m_leftThumbPressed = evt.gbutton.down;
+                    if (evt.gbutton.down) {
+                        m_gamepadGuiFocus = !m_gamepadGuiFocus;
+                        toggledGuiFocus = true;
+                    }
+                } else if (evt.gbutton.button == SDL_GAMEPAD_BUTTON_RIGHT_STICK) {
+                    m_rightThumbPressed = evt.gbutton.down;
+                    if (evt.gbutton.down) {
+                        m_gamepadGuiFocus = !m_gamepadGuiFocus;
+                        toggledGuiFocus = true;
+                    }
+                }
+                if (toggledGuiFocus) {
                     inputContext.ResetAllGamepadInputs();
+                    if (m_gamepadGuiFocus && !m_gamepadGuiModalOpen) {
+                        const ImGuiIO &io = ImGui::GetIO();
+                        m_virtualCursorX = 48.0f * m_imguiData.displayScale;
+                        m_virtualCursorY = 12.0f * m_imguiData.displayScale;
+                        m_virtualCursorPlaced = true;
+                        ImGui::GetIO().AddMousePosEvent(m_virtualCursorX, m_virtualCursorY);
+                    }
+                    ::platform::uwp::Trace(fmt::format("[Ymir gamepad] button {} toggled GUI focus -> {}",
+                                                      SDL_GetGamepadStringForButton((SDL_GamepadButton)evt.gbutton.button),
+                                                      m_gamepadGuiFocus ? "GUI" : "Emulator"));
                 }
                 if (GamepadDrivesGui()) {
                     // While the GUI has the gamepad, the shoulder buttons act as the virtual mouse
                     // buttons: the right shoulder is the left click and the left shoulder the right
-                    // click. The face buttons are left to ImGui's gamepad navigation, so a button
-                    // press is never handled by both the navigation and the mouse at once.
+                    // click. X opens Load Disc directly and Y opens Settings so the user does not
+                    // have to aim at the tiny top menu bar on a TV.
                     switch (evt.gbutton.button) {
                     case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER:
                         SetVirtualMouseButton(ImGuiMouseButton_Left, evt.gbutton.down);
                         break;
                     case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER:
                         SetVirtualMouseButton(ImGuiMouseButton_Right, evt.gbutton.down);
+                        break;
+                    case SDL_GAMEPAD_BUTTON_WEST:
+                        if (evt.gbutton.down && !m_gamepadGuiModalOpen) {
+                            m_discService.OpenLoadDiscDialog();
+                        }
+                        break;
+                    case SDL_GAMEPAD_BUTTON_NORTH:
+                        if (evt.gbutton.down && !m_gamepadGuiModalOpen) {
+                            auto &settingsWindow = m_windowManagerService.SettingsWindow();
+                            settingsWindow.Open = !settingsWindow.Open;
+                            if (settingsWindow.Open) {
+                                settingsWindow.RequestFocus();
+                            }
+                        }
                         break;
                     default:
                         break;
@@ -2384,6 +2406,17 @@ void App::RunEmulator() {
         auto now = clk::now();
         const auto timeDelta = now - prevTime;
         prevTime = now;
+#if YMIR_PLATFORM_UWP
+        static double uwpMaxFrameMs = 0.0;
+        static uint32 uwpStutterCount = 0;
+        const double uwpFrameMs = std::chrono::duration<double, std::milli>(timeDelta).count();
+        if (uwpFrameMs > uwpMaxFrameMs) {
+            uwpMaxFrameMs = uwpFrameMs;
+        }
+        if (uwpFrameMs > 22.0) {
+            ++uwpStutterCount;
+        }
+#endif
 
         // Calculate performance and update title bar
         {
@@ -2459,6 +2492,27 @@ void App::RunEmulator() {
                 screen.VDP1Frames = 0;
                 screen.VDP1DrawCalls = 0;
                 t = now;
+#if YMIR_PLATFORM_UWP
+                static uint32 perfLogTick = 0;
+                if (++perfLogTick >= 5) {
+                    perfLogTick = 0;
+                    const double frameIntervalSec = screen.frameInterval.count() * 0.000000001;
+                    const double currSpeed = screen.lastVDP2Frames * frameIntervalSec * 100.0;
+                    const uint32 audioCount = m_context.audioSystem.GetBufferCount();
+                    const uint32 audioCap = m_context.audioSystem.GetBufferCapacity();
+                    const uint32 audioUnderruns = m_context.audioSystem.TakeUnderrunCount();
+                    const uint32 audioOverruns = m_context.audioSystem.TakeOverrunCount();
+                    platform::uwp::Trace(fmt::format(
+                        "[Ymir perf] speed={:.1f}% vdp2={}fps vdp1={}fps({} draws) gui={:.1f}fps maxFrame={:.1f}ms stutters={} res={}x{} vsync={} hwVDP={} audio={}/{} ({:.0f}% u={} o={})\n",
+                        currSpeed, screen.lastVDP2Frames, screen.lastVDP1Frames, screen.lastVDP1DrawCalls,
+                        io.Framerate, uwpMaxFrameMs, uwpStutterCount, screen.width, screen.height,
+                        screen.videoSync ? "on" : "off",
+                        settings.video.useHardwareAcceleration.Get() ? "on" : "off", audioCount, audioCap,
+                        audioCap > 0 ? (100.0 * audioCount / audioCap) : 0.0, audioUnderruns, audioOverruns));
+                    uwpMaxFrameMs = 0.0;
+                    uwpStutterCount = 0;
+                }
+#endif
             }
         }
 
@@ -2516,12 +2570,13 @@ void App::RunEmulator() {
 
         // Start the Dear ImGui frame
         YMIR_UI_PHASE("ImGui new frame");
-        m_graphicsService.ImGuiNewFrame();
 #if YMIR_PLATFORM_UWP
-        // Feed the virtual mouse cursor to ImGui before the frame starts, so the position and the
-        // button states are accounted for in this frame's widget hit testing.
+        // Feed the virtual mouse cursor to ImGui BEFORE ImGui_ImplSDL3_NewFrame() so that
+        // ImGui_ImplSDL3_UpdateMouseCursor() sees io.MouseDrawCursor == true on the exact same frame
+        // and does not call SDL_SetCursor(), which throws a COMException every frame on Xbox.
         UpdateVirtualMouse();
 #endif
+        m_graphicsService.ImGuiNewFrame();
         ImGui::NewFrame();
 
 #if YMIR_PLATFORM_UWP
@@ -3655,20 +3710,21 @@ void App::RunEmulator() {
         {
             const ImGuiViewport *viewport = ImGui::GetMainViewport();
             const float scale = m_imguiData.displayScale;
-            ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x - 220.0f * scale,
+            ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x - 320.0f * scale,
                                             viewport->WorkPos.y + 4.0f * scale));
-            ImGui::SetNextWindowBgAlpha(0.0f);
+            ImGui::SetNextWindowBgAlpha(GamepadDrivesGui() ? 0.75f : 0.35f);
             if (ImGui::Begin("##gamepad_focus_indicator", nullptr,
                              ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
                                  ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings)) {
                 ImGui::TextUnformatted(m_gamepadGuiModalOpen ? "Gamepad: GUI (dialog)"
-                                                             : m_gamepadGuiFocus ? "Gamepad: GUI"
-                                                                                 : "Gamepad: Emulator");
+                                                             : m_gamepadGuiFocus ? "Gamepad: GUI [ACTIVE]"
+                                                                                 : "Gamepad: Emulator (L3/R3/View -> GUI)");
                 if (GamepadDrivesGui()) {
                     // Remind the user of the controls, the console has no mouse and no keyboard
+                    ImGui::TextUnformatted("X: Load disc   Y: Settings");
                     ImGui::TextUnformatted("R-stick: cursor   RB: click   LB: right click");
                     ImGui::TextUnformatted("D-pad: navigate   A: select   B: back");
-                    ImGui::TextUnformatted("View: switch to the emulator");
+                    ImGui::TextUnformatted("L3 / R3 / View: return to emulator");
                 }
             }
             ImGui::End();
@@ -3990,6 +4046,9 @@ void App::EmulatorThread() {
                 auto &path = std::get<std::filesystem::path>(evt.value);
                 // LoadDiscImage locks the disc mutex
                 if (m_discService.LoadDiscImage(path, true)) {
+#if YMIR_PLATFORM_UWP
+                    m_gamepadGuiFocus = false;
+#endif
                     m_saveStateService.LoadSaveStates();
                     m_saveStateService.LoadDebuggerState();
                     auto iplLoadResult = m_romService.LoadIPLROM();

@@ -1044,8 +1044,15 @@ void Settings::ResetToDefaults() {
     gui.showMessages = true;
     gui.showGameNameOnTitleBar = true;
     gui.showPerformanceOnTitleBar = true;
+#if YMIR_PLATFORM_UWP
+    // On Xbox there is no window title bar, so enable the on-screen FPS counter by default
+    // and place it on the top-left so it does not collide with the gamepad focus indicator on the top-right.
+    gui.showFrameRateOSD = true;
+    gui.frameRateOSDPosition = GUI::FrameRateOSDPosition::TopLeft;
+#else
     gui.showFrameRateOSD = false;
     gui.frameRateOSDPosition = GUI::FrameRateOSDPosition::TopRight;
+#endif
     gui.showSpeedIndicatorForAllSpeeds = false;
 
     system.internalBackupRAMImagePath = m_context.profile.GetPath(ProfilePath::PersistentState) / "bup-int.bin";
@@ -1120,7 +1127,14 @@ void Settings::ResetToDefaults() {
     video.rotation = Video::DisplayRotation::Normal;
     video.autoResizeWindow = false;
     video.displayVideoOutputInWindow = false;
+#if YMIR_PLATFORM_UWP
+    // On UWP the CoreWindow is always full-screen at the OS level even when video.fullScreen is false,
+    // so enable windowed video sync by default to lock the emulator thread to the GUI thread (zero-frame
+    // input/display latency instead of running decoupled on the 2048-sample audio ring buffer).
+    video.syncInWindowedMode = true;
+#else
     video.syncInWindowedMode = false;
+#endif
     video.syncInFullscreenMode = true;
     video.useFullRefreshRateWithVideoSync = false;
     video.reduceLatency = true;
@@ -1147,7 +1161,12 @@ void Settings::ResetToDefaults() {
 
     audio.interpolation = config::audio::SampleInterpolationMode::Linear;
 
+#if YMIR_PLATFORM_UWP
+    // Offload SCSP and the M68K sound CPU to a dedicated worker thread on Xbox.
+    audio.threadedSCSP = true;
+#else
     audio.threadedSCSP = false;
+#endif
 
     audio.stepGranularity = 0;
 
@@ -1618,6 +1637,10 @@ SettingsLoadResult Settings::Load(const std::filesystem::path &path) {
         Parse(tblVideo, "AutoResizeWindow", video.autoResizeWindow);
         Parse(tblVideo, "DisplayVideoOutputInWindow", video.displayVideoOutputInWindow);
         Parse(tblVideo, "SyncInWindowedMode", video.syncInWindowedMode);
+#if YMIR_PLATFORM_UWP
+        // Always synchronize video on UWP (CoreWindow is always borderless full-screen on Xbox).
+        video.syncInWindowedMode = true;
+#endif
         Parse(tblVideo, "SyncInFullscreenMode", video.syncInFullscreenMode);
         Parse(tblVideo, "UseFullRefreshRateWithVideoSync", video.useFullRefreshRateWithVideoSync);
         Parse(tblVideo, "ReduceLatency", video.reduceLatency);
@@ -2870,7 +2893,19 @@ Settings::InputMap &Settings::GetInputMapForContext(void *context) {
 }
 
 std::filesystem::path Settings::Proximate(ProfilePath base, std::filesystem::path path) const {
+    if (path.empty()) {
+        return "";
+    }
+#if YMIR_PLATFORM_UWP
+    // On UWP std::filesystem::proximate("", base) calls current_path(), which fails with EACCES
+    // in the AppContainer; also pass an error_code so cross-drive or unresolvable paths return path
+    // instead of throwing std::filesystem::filesystem_error.
+    std::error_code ec{};
+    auto prox = std::filesystem::proximate(path, m_context.profile.GetPath(base), ec);
+    return ec ? path : prox;
+#else
     return std::filesystem::proximate(path, m_context.profile.GetPath(base));
+#endif
 }
 
 std::filesystem::path Settings::Absolute(ProfilePath base, std::filesystem::path path) const {

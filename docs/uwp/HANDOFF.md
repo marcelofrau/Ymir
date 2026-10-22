@@ -12,14 +12,14 @@
 > | **GUI (ImGui)** | ✅ Aparece, 1920x1080, `io.DisplaySize` correto |
 > | **Áudio** | ✅ XAudio2. O WASAPI do SDL **trava** no Xbox (deadlock no `SDL_OpenAudioDeviceStream`) |
 > | **Entrada no emulador** | ✅ O gamepad já dirige o Saturn pelas bindings padrão da porta 1 |
-> | **GUI navegável pelo gamepad** | 🟡 **Cursor virtual implementado, ainda não testado no console.** O ImGui só mostra o retângulo de foco do nav **depois** que uma direção é pressionada (`imgui.cpp:15070-15076`), então apertar A sem mover o foco não faz nada. Agora há cursor de mouse virtual: analógico **direito** move, **RB** = clique esquerdo, **LB** = clique direito; d-pad/stick esquerdo = nav do ImGui (A ativa, B volta). Ver [TESTING.md](TESTING.md) §5 |
-> | **File picker** | 🟡 Deve abrir (é a UI do sistema, navegável pelo controle). Filtros caem para "todos os arquivos". **Não verificado:** se o app consegue abrir por caminho um arquivo escolhido no armazenamento do console (`broadFileSystemAccess` não é suportado no Xbox) |
-> | **Emulação de verdade** | 🟡 Ainda não testada: falta IPL ROM (BIOS) e um disco |
-> | **Último run** | **12** (2026-10-21) — **o controle funciona e a BIOS do Saturn boota no Xbox.** Problema aberto agora: **desempenho** (a emulação está lenta) |
-> | **Próximo run** | **13** — medir onde está o custo. **Pista principal: o VDP está em renderer *software*** (`UseHardwareAcceleration` é `false` por padrão). Testar: `UseHardwareAcceleration = true` no `Ymir.toml` e ver se aparece `Switched to Direct3D 12 VDP renderer` |
+> | **GUI navegável pelo gamepad** | ✅ **Funcionando no console.** Cursor virtual no analógico direito (`RB` = clique esquerdo, `LB` = clique direito), d-pad/stick esquerdo = nav do ImGui (`A` ativa, `B` volta). **L3, R3 ou View** alternam o foco entre `Emulator` e `GUI` (com salto automático para o menu `File` e atalhos `X` = Load disc, `Y` = Settings quando em modo GUI). Ver [TESTING.md](TESTING.md) §5 |
+> | **File picker** | ✅ **Funcionando no console** (inclusive abrindo BIOS e imagens `.cue`/`.chd` de pendrive USB `E:\`). Filtros agora ocultam o curinga `*` para listar apenas extensões suportadas (`.ccd`, `.chd`, `.cue`, `.iso`, `.mds`) |
+> | **Emulação de verdade** | ✅ **Validada em hardware real a 60 fps (`RelWithDebInfo`).** Testados: BIOS US v1.00, *Sonic Jam* (`.cue`), *Road Rash* (`.chd`) e *Sega Rally Championship Plus* (`.cue`) |
+> | **Último run** | **16** (2026-10-22) — Emulação a 60 fps (`100.1%`, `vdp2=60fps`), sem input lag (com `syncInWindowedMode = true`). No Hardware VDP (D3D12), o 2D aparecia mas o 3D (VDP1) sumia |
+> | **Próximo run** | **17** — Validar as duas correções já compiladas: (1) descritores `Buffer<uint>`/`RWBuffer<uint>` do VDP1 D3D12 corrigidos de `CreateStructuredBuffer` (`DXGI_FORMAT_UNKNOWN`) para `CreatePrimitiveBuffer(..., DXGI_FORMAT_R32_UINT, ...)` + `D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES` no `BarrierTracker` legado; (2) remoção do `sleep_for` redundante sobre `Present(1, 0)` no UWP para eliminar picos de 15.6 ms do timer do kernel e stutters de áudio |
 > | **HEAD** | ver `git log --oneline -3` em `uwp/main` |
 >
-> **Última atualização deste bloco:** 2026-10-21, pelo agente OpenCode.
+> **Última atualização deste bloco:** 2026-10-22, pelo agente OpenCode.
 >
 > ---
 >
@@ -1385,6 +1385,22 @@ No log do run 11 isso gerou **milhares de linhas** e um custo de CPU constante. 
 - Evidencia do run 11: `docs/uwp/evidence/run-2026-10-21-11-no-gamepad-enumerated.raw.txt`.
 - O run 12 nao tem log bruto salvo (relato do usuario): o run 13 deve ser capturado em arquivo.
 
+### Entrada do agente OpenCode #14 - 2026-10-22 (runs 13 a 16: 60 fps em RelWithDebInfo, Sonic Jam / Road Rash / Sega Rally rodando, fix de crash em std::filesystem::proximate, input lag e 3D do VDP1 D3D12)
+
+**Estado:** a emulacao no Xbox Series X/S agora roda a **60.0 fps (`100.1%`)** em `RelWithDebInfo`, abre jogos `.cue` e `.chd` direto do USB (`E:\`) pelo `FileOpenPicker` usando apenas o controle, sem input lag perceptivel.
+
+#### 1. O que os runs 13 a 16 provaram
+
+- **Causa principal da lentidao do run 12:** o VS 2026 estava rodando em `Debug` (`/Od` + `/RTC1`) e o `UpdateTexture` do D3D12 fazia `fenceOps.Signal` + `fenceOps.Wait(INFINITE)` sincrono na `cmdQueue` principal a cada frame do VDP software (`gfx_context_impl_d3d12.cpp:1327`).
+- **Gravacao direta no `cmdListFrame` + `RelWithDebInfo`:** no run 13 a BIOS ja subiu cravada em **59.95 fps** (`3598 frames` em `60.0s`).
+- **Excecao `Core::ApiException` (80070714) ao alternar foco L3/R3:** `ImGui_ImplSDL3_UpdateMouseCursor` chamava `SDL_SetCursor`/`SDL_ShowCursor` no CoreWindow do Xbox, que nao tem recursos de cursor no imagem. Resolvido ligando `ImGuiConfigFlags_NoMouseCursorChange` sob UWP e movendo `UpdateVirtualMouse()` para antes de `ImGuiNewFrame()`.
+- **Crash `std::filesystem::filesystem_error` em `Settings::Save()` logo apos carregar disco (run 14):** `Settings::Proximate` chamava `std::filesystem::proximate("", base)` para caminhos vazios (`cartridge.rom.imagePath`, `cdblock.romPath`), e `weakly_canonical("")` chama `current_path()`, que falha com `EACCES` no AppContainer UWP (alem de falhar entre drives `E:\` vs `Q:\`). Corrigido guardando `path.empty()` e passando `std::error_code` em `Settings::Proximate`, `rom_manager.cpp`, `ipl_settings_view.cpp` e `cdblock_settings_view.cpp`.
+- **Filtro de extensoes no `FileOpenPicker`:** o picker agora ignora o curinga `"*"` quando ha extensoes especificas no filtro, exibindo apenas `.ccd`, `.chd`, `.cue`, `.iso`, `.mds` ao abrir disco.
+- **Fim do input lag no Sonic Jam / Sega Rally (run 15 → run 16):** como `fullScreen` inicia `false` no Ymir e `syncInWindowedMode` era `false` por padrao, `screen.videoSync` ficava `false` no Xbox — deixando a emulacao correr 2048 samples (~46.4 ms, ~3 frames) adiantada no buffer de audio. Forcando `video.syncInWindowedMode = true` sob UWP e baixando `kFramesPerBuffer` do XAudio2 de 1024 para 512 frames, o nivel de audio passou a ficar em ~45–65% e o input lag sumiu.
+- **Causa do 3D (VDP1) invisivel no Hardware VDP D3D12 e dos micro-stutters de som (identificados apos o run 16):**
+  1. Em `vdp_renderer_hw_d3d12.cpp:1556,1584,1604`, `spanPrefixSumsBuffer`, `internalSpriteOutBuffer` e `oitListHeadsBuffer` sao declarados nos shaders HLSL como `Buffer<uint>` / `RWBuffer<uint>` (typed buffers), mas eram criados no C++ com `CreateStructuredBuffer<HLSLuint>` (`Format = DXGI_FORMAT_UNKNOWN`, `StructureByteStride = 4`). No driver D3D12 do Xbox (`umd12ddi_arden.dll`), descritor structured lido por instrucao typed retorna `0`, descartando 100% dos spans do VDP1 na linha 107 de `cs_vdp1_polydraw.hlsl`. Corrigido usando `CreatePrimitiveBuffer(..., DXGI_FORMAT_R32_UINT, ...)` + `D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES` no `BarrierTracker` legado (`d3d12_barrier_tracker.hpp:314`).
+  2. Em `app.cpp:1758`, com `videoSync = true`, a UI thread dormia em `std::this_thread::sleep_for` (granularidade de 15.625 ms no UWP sem `timeBeginPeriod(1)`) antes de bloquear novamente em `Present(1, 0)`, causando frames ocasionais de 23–36 ms e underruns no XAudio2. Removido o `sleep_for` redundante sob UWP e trocado o fallback de underrun em `audio_system.cpp` para segurar o ultimo sample (sem clique de fase).
+
 ---
 
 ## 1. Estado atual (o que já está pronto e validado)
@@ -1827,6 +1843,7 @@ Escolha **uma** das opções:
 | 2026-10-21 | 12 (target machine) | **PARTIAL** (run 08) | Debug, F5: **the boot completes** (D3D12, ImGui, XAudio2, emulator thread, main loop, window 1920x1080 not minimized, `io.DisplaySize` 1920x1080). Then a **CRT assertion** (`dup2.cpp:67`, `((unsigned)target_fh < _NHANDLE_)`) in `util::StdioSuppressor::~StdioSuppressor()` during MIDI init. Root cause: `freopen` closes the stream when it fails, so `fileno()` returns -1. Fixed by redirecting at the descriptor level. Log: `docs/uwp/evidence/run-2026-10-21-08-midi-stdio-assert.raw.txt` |
 | 2026-10-21 | 12 (target machine) | **OK** (run 09) | Debug, F5: the CRT assertion is gone and **the Ymir GUI appears** on the console. The port is usable. Log not captured (user report). Open: the GUI is mouse-driven and the console has no mouse; the emulation itself is not tested yet (no IPL ROM, no disc) |
 | 2026-10-21 | 12 (target machine) | aguardando run 10 | Navegação da GUI por gamepad implementada (ImGui 1.93 + roteamento View/modal) e file picker revisado. Build local verde, MSIX gerado. Aguardando teste no console |
+| 2026-10-22 | 12 (target machine) | **OK** (runs 13–16) | `RelWithDebInfo` + upload de textura direto no `cmdListFrame` + `syncInWindowedMode = true` + guarda de `std::filesystem::proximate` com `std::error_code`: BIOS, *Sonic Jam* (`.cue`), *Road Rash* (`.chd`) e *Sega Rally* (`.cue`) rodando a 60 fps (`100.1%`) direto do USB (`E:\`) sem input lag. Corrigidos também os descritores `DXGI_FORMAT_R32_UINT` do VDP1 D3D12 e o `sleep_for` redundante sob `Present(1, 0)` |
 | | | | |
 
 ---

@@ -114,9 +114,20 @@ int AudioSystem::FillFrames(Sample *out, int frameCount) {
     // Repeat from the start when the buffer did not hold enough frames. This is the crude stretching that sounds
     // acceptable when the emulator is not running at full speed.
     const int written = len1 + len2;
+#if YMIR_PLATFORM_UWP
+    if (written < frameCount) {
+        m_underruns.fetch_add(1, std::memory_order_relaxed);
+        // Hold the last played sample across an underrun instead of wrapping to out[0], which causes an audible phase pop.
+        const Sample hold = written > 0 ? out[written - 1] : m_buffer[(readPos + m_buffer.size() - 1) % m_buffer.size()];
+        for (int i = written; i < frameCount; ++i) {
+            out[i] = hold;
+        }
+    }
+#else
     for (int i = written; i < frameCount; ++i) {
         out[i] = out[i % (written > 0 ? written : 1)];
     }
+#endif
 
     m_readPos.store((readPos + len1 + len2) % m_buffer.size(), std::memory_order_release);
     m_bufferNotFullEvent.Set();
@@ -133,7 +144,11 @@ void AudioSystem::ReceiveSample(sint16 left, sint16 right) {
         if (count < m_buffer.size() - 1) {
             break;
         }
-
+#if YMIR_PLATFORM_UWP
+        // shortcut: on UWP videoSync paces the frame loop; drop 1 sample (0.02 ms) on overflow instead of blocking the SCSP/emulator thread and causing a 16.6 ms video stutter
+        m_overruns.fetch_add(1, std::memory_order_relaxed);
+        return;
+#else
         m_bufferNotFullEvent.Reset();
 
         const uint32 recheckReadPos = m_readPos.load(std::memory_order_acquire);
@@ -145,6 +160,7 @@ void AudioSystem::ReceiveSample(sint16 left, sint16 right) {
         }
 
         m_bufferNotFullEvent.Wait();
+#endif
     }
 
     const uint32 writePos = m_writePos.load(std::memory_order_relaxed);

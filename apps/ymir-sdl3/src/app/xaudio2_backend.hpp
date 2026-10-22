@@ -47,8 +47,9 @@ public:
     void SetMute(bool mute) override;
 
 private:
-    /// @brief Frames accumulated per submitted buffer. 1024 frames at 44.1 kHz is about 23 ms of audio.
-    static constexpr size_t kFramesPerBuffer = 1024;
+    /// @brief Frames accumulated per submitted buffer. 512 frames at 44.1 kHz is about 11.6 ms of audio,
+    /// matching the desktop SDL backend buffer size (512) for low audio/video sync latency.
+    static constexpr size_t kFramesPerBuffer = 512;
 
     /// @brief Buffers the source voice cycles through. Enough to absorb scheduling jitter without adding
     /// noticeable latency.

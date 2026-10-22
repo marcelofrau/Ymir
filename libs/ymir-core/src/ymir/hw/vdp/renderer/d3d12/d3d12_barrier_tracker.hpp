@@ -311,7 +311,7 @@ struct BarrierTracker {
                     .Transition =
                         {
                             .pResource = texture,
-                            .Subresource = 0,
+                            .Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
                             .StateBefore = oldState.state,
                             .StateAfter = newState.state,
                         },

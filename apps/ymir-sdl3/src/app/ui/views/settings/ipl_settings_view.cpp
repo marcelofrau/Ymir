@@ -161,7 +161,11 @@ void IPLSettingsView::Display() {
             ImGui::TableNextRow();
 
             if (ImGui::TableNextColumn()) {
-                std::filesystem::path relativePath = std::filesystem::relative(iplRom.path, iplRomsPath);
+                std::error_code ec{};
+                std::filesystem::path relativePath = std::filesystem::relative(iplRom.path, iplRomsPath, ec);
+                if (ec) {
+                    relativePath = iplRom.path;
+                }
                 ImGui::AlignTextToFramePadding();
                 ImGui::Text("%s", fmt::format("{}", relativePath).c_str());
             }

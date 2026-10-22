@@ -53,6 +53,14 @@ std::thread *g_logPumpThread = nullptr;
 /// @brief The log file written by the pump thread. Closed by ShutdownLogRedirect().
 FILE *g_logFile = nullptr;
 
+/// @brief Formats the current local date and time with millisecond precision (`[YYYY-MM-DD HH:MM:SS.mmm] `).
+std::string FormatLogTimestamp() {
+    SYSTEMTIME st{};
+    GetLocalTime(&st);
+    return fmt::format("[{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}.{:03d}] ", st.wYear, st.wMonth, st.wDay, st.wHour,
+                       st.wMinute, st.wSecond, st.wMilliseconds);
+}
+
 } // namespace
 
 // -----------------------------------------------------------------------------
@@ -181,6 +189,15 @@ std::filesystem::path RedirectStdioToLogFile() {
         std::string line{};
         line.reserve(512);
 
+        auto flushLine = [&](std::string_view text) {
+            const std::string stamped = FormatLogTimestamp() + std::string{text};
+            std::fwrite(stamped.data(), 1, stamped.size(), logFile);
+            std::fflush(logFile);
+            if (debugging) {
+                OutputDebugStringA(stamped.c_str());
+            }
+        };
+
         char buffer[1024];
         int count = 0;
         while ((count = _read(pipeRead, buffer, sizeof(buffer))) > 0) {
@@ -190,23 +207,15 @@ std::filesystem::path RedirectStdioToLogFile() {
 
                 // Mirror the message once a full line is available so that the debugger sees it promptly.
                 // Very long lines are flushed in chunks to keep memory bounded.
-                if (ch == '\n' || ch == '\r' || line.size() >= 4096) {
-                    std::fwrite(line.data(), 1, line.size(), logFile);
-                    std::fflush(logFile);
-                    if (debugging) {
-                        OutputDebugStringA(line.c_str());
-                    }
+                if (ch == '\n' || line.size() >= 4096) {
+                    flushLine(line);
                     line.clear();
                 }
             }
         }
 
         if (!line.empty()) {
-            std::fwrite(line.data(), 1, line.size(), logFile);
-            std::fflush(logFile);
-            if (debugging) {
-                OutputDebugStringA(line.c_str());
-            }
+            flushLine(line);
         }
         _close(pipeRead);
     }};
@@ -216,8 +225,9 @@ std::filesystem::path RedirectStdioToLogFile() {
 
 void Trace(std::string_view message) {
     // OutputDebugStringA needs a null-terminated string; the copy also lets the newline be appended
-    std::string line{message};
-    if (line.empty() || line.back() != '\n') {
+    std::string line = FormatLogTimestamp();
+    line.append(message);
+    if (line.back() != '\n') {
         line.push_back('\n');
     }
     OutputDebugStringA(line.c_str());
@@ -329,8 +339,7 @@ fire_and_forget ShowFileDialogAsync(SDL_FileDialogType type, SDL_DialogFileCallb
             std::vector<hstring> extensions{};
             for (const auto &filter : filters) {
                 if (filter.pattern != nullptr && std::string_view{filter.pattern} == "*") {
-                    extensions.clear();
-                    break;
+                    continue;
                 }
                 if (filter.pattern != nullptr) {
                     AppendExtensions(filter.pattern, extensions);

@@ -119,7 +119,11 @@ void CDBlockSettingsView::Display() {
             ImGui::TableNextRow();
 
             if (ImGui::TableNextColumn()) {
-                std::filesystem::path relativePath = std::filesystem::relative(cdbROM.path, cdbRomsPaths);
+                std::error_code ec{};
+                std::filesystem::path relativePath = std::filesystem::relative(cdbROM.path, cdbRomsPaths, ec);
+                if (ec) {
+                    relativePath = cdbROM.path;
+                }
                 ImGui::AlignTextToFramePadding();
                 ImGui::Text("%s", fmt::format("{}", relativePath).c_str());
             }
