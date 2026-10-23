@@ -12,15 +12,15 @@
 > | **GUI (ImGui)** | ✅ Aparece, 1920x1080, `io.DisplaySize` correto |
 > | **Áudio** | ✅ XAudio2. O WASAPI do SDL **trava** no Xbox (deadlock no `SDL_OpenAudioDeviceStream`) |
 > | **Entrada no emulador** | ✅ O gamepad já dirige o Saturn pelas bindings padrão da porta 1 |
-> | **Shell (GUI nova do Xbox)** | 🆕 **Compilada, ainda não rodou no console.** Interface própria orientada a gamepad, temática da BIOS do Saturn: arte real do usuário, LCD de matriz de pontos com marquee, **grid holográfico da biblioteca** sobre o céu (pastas escolhidas pelo folder picker, scan só sob demanda, capas por product code), esferas de ação no cockpit, **cubos reativos à BGM** nos ovos (verde/vermelho pastel), **BGM** de `<profile>/music/`, **overlays de configuração** (Sistema, Vídeo, Áudio, Controles, Biblioteca, Interface, Avançado, Sobre) e **menu de pausa** com save states (View no jogo), legenda com os botões do controle Xbox. Detalhes em [shell/README.md](shell/README.md) e [shell/PLAN.md](shell/PLAN.md) | Passa a ser a interface padrão no Xbox; a GUI desktop vira modo avançado. Código em `src/platform/uwp/shell/`, docs em [shell/README.md](shell/README.md), fases em [shell/PLAN.md](shell/PLAN.md), assets em [shell/ASSETS.md](shell/ASSETS.md), roteiro de teste em [TESTING.md](TESTING.md) §10 |
+> | **Shell (GUI nova do Xbox)** | ✅ **Já executada pelo usuário no Xbox.** Interface própria com wizard inicial, grid da biblioteca, menu de pausa e About personalizado. Ajustes visuais de About, wizard, esferas e Browse Games compilados em 2026-10-24; aguardam nova conferência visual no console. | Interface padrão no Xbox; GUI desktop fica como modo avançado. Código e documentação em `src/platform/uwp/shell/` e [shell/README.md](shell/README.md) |
 > | **GUI navegável pelo gamepad** | ✅ **Funcionando no console** (GUI desktop, agora modo avançado). Cursor virtual no analógico direito (`RB` = clique esquerdo, `LB` = clique direito), d-pad/stick esquerdo = nav do ImGui (`A` ativa, `B` volta). **L3, R3 ou View** alternam o foco entre `Emulator` e `GUI` (com salto automático para o menu `File` e atalhos `X` = Load disc, `Y` = Settings quando em modo GUI). Ver [TESTING.md](TESTING.md) §5 |
-> | **File picker** | ✅ **Funcionando no console** (inclusive abrindo BIOS e imagens `.cue`/`.chd` de pendrive USB `E:\`). Filtros agora ocultam o curinga `*` para listar apenas extensões suportadas (`.ccd`, `.chd`, `.cue`, `.iso`, `.mds`) |
+> | **File picker** | Shell tem navegador próprio com drives, pastas e filtros de imagem/BIOS. Enumeração de drives e pastas agora roda em background com estado de carregamento; compilado em 2026-10-24, falta validar responsividade no Xbox. Os diálogos da GUI desktop continuam separados |
 > | **Emulação de verdade** | ✅ **Validada em hardware real a 60 fps (`RelWithDebInfo`).** Testados: BIOS US v1.00, *Sonic Jam* (`.cue`), *Road Rash* (`.chd`) e *Sega Rally Championship Plus* (`.cue`) |
-> | **Último run** | **16** (2026-10-22) — Emulação a 60 fps (`100.1%`, `vdp2=60fps`), sem input lag (com `syncInWindowedMode = true`). No Hardware VDP (D3D12), o 2D aparecia mas o 3D (VDP1) sumia |
-> | **Próximo run** | **17** — (a) **Primeiro run da Shell (F0)**: checklist em [TESTING.md](TESTING.md) §10.2 (Home com estrelas, d-pad entre as esferas, Load Disc → jogo, View → Home, B → volta, Desktop UI e volta segurando View). Se precisar fugir da Shell sem controle: `Mode = "Desktop"` em `<profile>/shell.toml`. (b) Validar as duas correções já compiladas: (1) descritores `Buffer<uint>`/`RWBuffer<uint>` do VDP1 D3D12 corrigidos de `CreateStructuredBuffer` (`DXGI_FORMAT_UNKNOWN`) para `CreatePrimitiveBuffer(..., DXGI_FORMAT_R32_UINT, ...)` + `D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES` no `BarrierTracker` legado; (2) remoção do `sleep_for` redundante sobre `Present(1, 0)` no UWP para eliminar picos de 15.6 ms do timer do kernel e stutters de áudio |
+> | **Última validação da emulação** | **Run 16** (2026-10-22) — 60 fps (`100.1%`, `vdp2=60fps`), sem input lag (`syncInWindowedMode = true`). As capturas confirmam a Shell no Xbox; esta rodada de ajustes ainda não foi validada |
+> | **Próximo teste do usuário** | Instalar o Release de `out/dist/ymir-uwp_0.4.2.0_x64.zip` e validar About, wizard, posição das esferas, grid/tabs/card e navegação do picker em mídia lenta. Não considerar validado até receber o resultado |
 > | **HEAD** | ver `git log --oneline -3` em `uwp/main` |
 >
-> **Última atualização deste bloco:** 2026-10-23, pelo agente Claude (Shell: fases A, L e O).
+> **Última atualização deste bloco:** 2026-10-24, agente OpenCode (ajustes visuais, picker assíncrono e pacote Release).
 >
 > ---
 >
@@ -1519,11 +1519,11 @@ Validado na máquina de origem em 2026-10-20 (VS Build Tools 2026 18.x, MSVC 14.
 | Conteúdo do `.msix`: `ymir-sdl3.exe`, `SDL3.dll`, `Assets\*.png`, `resources.pri`, `AppxSignature.p7x` | ✅ conferido |
 | Shaders DXIL assinados (hash do container DXBC diferente de zero) | ✅ conferido |
 | Build desktop (preset `Full-x86-64-AVX2-MSVC-Release`) e testes continuam passando | ✅ 14/14 na 0.4.2 (seção 1.1) |
-| `scripts/uwp/package.ps1` → `out/dist/ymir-uwp_<ver>_x64.zip` (msix, cer, VCLibs, Install.ps1, INSTALL.md) + zip de símbolos | ✅ gerado e conferido |
+| `scripts/uwp/package.ps1` → `out/dist/ymir-uwp_<ver>_x64.zip` (msix, cer, VCLibs, Install.ps1, INSTALL.md) + zip de símbolos | ✅ build Release 0.4.2.0 em 2026-10-24: `ymir-uwp_0.4.2.0_x64.zip` (16.9 MiB) e symbols zip (17.9 MiB) |
 | CI/CD `.github/workflows/uwp.yml` (build, artifact, release por tag `uwp-v*`) | ✅ primeiro run verde em 2026-10-20 (runner `windows-2025` com **Visual Studio Enterprise 2026**, versão 0.4.0.2, artifacts `ymir-uwp-0.4.0.2` e `-symbols`; esse run foi antes do rebase pra 0.4.2). A publicação de release por tag ainda não foi exercitada (passo 15) |
 | Sincronizado com o upstream **0.4.2** (`8cdf0a53`) por rebase em 2026-10-20; build UWP Release limpo (`--fresh`, baseline nova do vcpkg) | ✅ |
 | Fallback VS 2022 (preset `UWP-x86-64-AVX2-MSVC-VS2022`) | ⚠️ configurado, mas **não compilado**: a máquina de origem e o runner do GitHub têm VS 2026 |
-| **Rodar o app** (PC ou Xbox) | ✅ **Xbox: o app roda** (run 09, 2026-10-21). Boot completo: D3D12, ImGui, XAudio2, thread do emulador, loop principal, frames apresentados, GUI 1920x1080. O assert do CRT no `StdioSuppressor` foi corrigido (`02b591d7`) e o run 09 passou dele. **Falta:** a GUI não é navegável pelo gamepad (é mouse+teclado) e a emulação em si ainda não foi testada (falta IPL ROM + disco) — ver [TESTING.md](TESTING.md). PC: não testado |
+| **Rodar o app** (PC ou Xbox) | ✅ Xbox: boot, GUI e emulação validados em runs anteriores (run 16, 2026-10-22). A Shell também foi aberta pelo usuário. O build Release atual ainda aguarda validação manual dos últimos ajustes; PC não testado |
 
 ### 1.1 Testar no Xbox sem mexer na GUI
 
@@ -1946,6 +1946,7 @@ Escolha **uma** das opções:
 | 2026-10-22 | 12 (target machine) | **OK** (runs 13–16) | `RelWithDebInfo` + upload de textura direto no `cmdListFrame` + `syncInWindowedMode = true` + guarda de `std::filesystem::proximate` com `std::error_code`: BIOS, *Sonic Jam* (`.cue`), *Road Rash* (`.chd`) e *Sega Rally* (`.cue`) rodando a 60 fps (`100.1%`) direto do USB (`E:\`) sem input lag. Corrigidos também os descritores `DXGI_FORMAT_R32_UINT` do VDP1 D3D12 e o `sleep_for` redundante sob `Present(1, 0)` |
 | 2026-10-23 | Shell fases V, A, L, O (máquina de origem) | OK (build) | Visual do mockup com a arte real, BGM + cubos reativos, biblioteca com folder picker e grid holográfico, overlays de configuração e menu de pausa. UWP RelWithDebInfo verde, desktop 47/47. Aguardando o run no console (TESTING.md §10.2, itens 1–11) |
 | 2026-10-23 | Shell F0 (máquina de origem) | OK (build) | Shell do Xbox (fase 0) compilada: UWP RelWithDebInfo verde, desktop 26/26. Ainda não rodou no console. Ver §0.1 (entrada de 2026-10-23) e `docs/uwp/shell/` |
+| 2026-10-24 | Shell UI + picker (máquina de origem) | OK (build); teste manual pendente | Ajustados About, textos do wizard, altura/posição do card, grid/tabs centralizadas e esferas mais baixas. Listagem de drives/pastas movida para worker para manter UI responsiva. Build UWP Release gerou o MSIX e `out/dist/ymir-uwp_0.4.2.0_x64.zip`; validar no Xbox ainda pendente |
 | | | | |
 
 ---

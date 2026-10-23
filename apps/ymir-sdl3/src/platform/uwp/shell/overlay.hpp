@@ -25,6 +25,7 @@ Only compiled when YMIR_PLATFORM_UWP is set.
 #include <functional>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace platform::uwp::shell {
@@ -36,6 +37,9 @@ struct OverlayRow {
     Kind kind = Kind::Info;
     std::string label;
     std::string help; // shown at the bottom of the panel while the row is focused
+    std::string icon; // optional Font Awesome 6 Solid UTF-8 glyph drawn before the label
+    ImU32 iconColor = IM_COL32(150, 230, 255, 255);
+    bool useNerdFont = false; // when true, draws the label with 3270 Nerd Font instead of dot-matrix
 
     std::function<void()> activate;         // Action
     std::function<std::string()> valueText; // Action and Info: text on the right; optional
@@ -81,6 +85,7 @@ struct OverlayRow {
 struct OverlayPage {
     std::string title;
     std::vector<OverlayRow> rows;
+    std::function<void(const DrawContext &ctx, Rect contentRect)> customDraw; // optional custom page renderer
 };
 
 /// @brief A screen of an overlay: a title and its pages.
@@ -100,7 +105,7 @@ public:
 
     /// @brief Replaces the top screen with a new version of it, keeping the selected page, for screens whose rows
     /// change (a removed list entry, for instance). Applied after the current frame.
-    void Replace(OverlayScreen screen);
+    void Replace(OverlayScreen screen, bool resetFocus = false);
 
     /// @brief Closes every screen.
     void CloseAll();
@@ -108,6 +113,14 @@ public:
     /// @brief Determines whether any screen is open.
     [[nodiscard]] bool IsOpen() const {
         return !m_stack.empty();
+    }
+
+    [[nodiscard]] std::string_view TopScreenTitle() const {
+        if (m_stack.empty() || m_closeRequests >= static_cast<int>(m_stack.size())) {
+            return {};
+        }
+        const std::size_t top = m_stack.size() - 1 - static_cast<std::size_t>(m_closeRequests);
+        return m_stack[top].screen.title;
     }
 
     /// @brief Draws the top screen and handles its input. Call once per frame after the shell window.
@@ -138,6 +151,7 @@ private:
     std::vector<State> m_stack;
     std::vector<OverlayScreen> m_pendingPushes; // Push() calls from inside row callbacks, applied after the frame
     std::optional<OverlayScreen> m_pendingReplace;
+    bool m_pendingReplaceResetFocus = false;
     bool m_drawing = false;
     bool m_hasFocus = false;
     bool m_focusWindow = false;

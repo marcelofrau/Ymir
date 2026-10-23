@@ -7,6 +7,7 @@
 
 #include "shell.hpp"
 
+#include "file_system.hpp"
 #include "shell_log.hpp"
 
 #include <app/events/emu_event_factory.hpp>
@@ -27,6 +28,8 @@
 
 #include <fmt/format.h>
 
+#include <algorithm>
+#include <cctype>
 #include <ctime>
 
 namespace platform::uwp::shell {
@@ -129,6 +132,17 @@ OverlayScreen Shell::BuildSettingsScreen() {
                 settings.general.rememberLastLoadedDisc = value;
                 settings.MakeDirty();
             }));
+        page.rows.push_back(OverlayRow::Action(
+            "Open Welcome / Setup Wizard",
+            "Re-open the initial setup screen to configure your BIOS and games library folder.", [this] {
+                m_config.wizardCompleted = false;
+                SaveConfig();
+                ShowMainMenu();
+            }));
+        page.rows.push_back(OverlayRow::Action(
+            "Reset all saved data...",
+            "Restore all settings, library folders, recent games, save states and backup memory to the initial state.",
+            [this] { m_overlay.Push(BuildResetConfirmScreen()); }));
         screen.pages.push_back(std::move(page));
     }
 
@@ -355,8 +369,7 @@ OverlayScreen Shell::BuildSettingsScreen() {
                 SaveConfig();
             }));
         page.rows.push_back(OverlayRow::Action(
-            "Desktop interface",
-            "Switch to the full desktop interface. Hold View for one second there to come back to the shell.",
+            "Original GUI", "Switch to the original desktop interface. Press View there to come back to the shell.",
             [this] { SwitchToDesktop(); }));
         screen.pages.push_back(std::move(page));
     }
@@ -388,16 +401,106 @@ OverlayScreen Shell::BuildSettingsScreen() {
     // ---------------------------------------------------------------- About
     {
         OverlayPage page{.title = "ABOUT", .rows = {}};
-        page.rows.push_back(OverlayRow::Info(
-            "Ymir", [] { return std::string{"v" Ymir_VERSION}; }, "Sega Saturn emulator. Xbox shell by the UWP port."));
-        page.rows.push_back(OverlayRow::Info("BIOS", [&ctx] {
-            return ctx.iplRomPath.empty() ? std::string{"not found"} : ToUtf8(ctx.iplRomPath.filename());
-        }));
-        page.rows.push_back(
-            OverlayRow::Info("Games in the library", [this] { return std::to_string(m_games.size()); }));
-        page.rows.push_back(OverlayRow::Info(
-            "Profile folder", [&ctx] { return ToUtf8(ctx.profile.GetPath(app::ProfilePath::Root)); },
-            "Reach it from the Device Portal file explorer to copy BIOS files, covers and music."));
+        page.customDraw = [this, &ctx](const DrawContext &dctx, Rect rect) {
+            ImFont *nerdFont = dctx.theme.GetFont() != nullptr ? dctx.theme.GetFont() : ImGui::GetFont();
+            ImFont *iconFont = dctx.theme.GetIconFont();
+            ImDrawList *dl = dctx.drawList;
+
+            const float pad = dctx.layout.Scale(22.0f);
+            float y = rect.pos.y + dctx.layout.Scale(8.0f);
+
+            // Top hero banner with the 3D Ymir planet icon + 3D YMIR wordmark logo
+            const Rect banner{{rect.pos.x, y}, {rect.size.x, dctx.layout.Scale(136.0f)}};
+            dl->AddRectFilled(ToImVec2(banner.pos), ImVec2(banner.pos.x + banner.size.x, banner.pos.y + banner.size.y),
+                              IM_COL32(8, 24, 52, 210), dctx.layout.Scale(12.0f));
+            dl->AddRect(ToImVec2(banner.pos), ImVec2(banner.pos.x + banner.size.x, banner.pos.y + banner.size.y),
+                        IM_COL32(90, 210, 255, 190), dctx.layout.Scale(12.0f), 0,
+                        std::max(1.0f, dctx.layout.Scale(1.8f)));
+
+            float textLeft = banner.pos.x + pad;
+            if (const ThemeAsset *icon = dctx.theme.Find("ymir_icon")) {
+                const float iconSz = dctx.layout.Scale(106.0f);
+                DrawAsset(dctx, *icon, {{textLeft, banner.pos.y + (banner.size.y - iconSz) * 0.5f}, {iconSz, iconSz}});
+                textLeft += iconSz + dctx.layout.Scale(22.0f);
+            }
+            if (const ThemeAsset *logo = dctx.theme.Find("ymir_logo")) {
+                const float logoH = dctx.layout.Scale(62.0f);
+                const float aspect = logo->FrameHeight() > 0.0f ? logo->FrameWidth() / logo->FrameHeight() : 3.8f;
+                const float logoW = logoH * aspect;
+                DrawAsset(dctx, *logo, {{textLeft, banner.pos.y + dctx.layout.Scale(16.0f)}, {logoW, logoH}});
+            } else {
+                DrawDotText(dctx, {textLeft, banner.pos.y + dctx.layout.Scale(22.0f)}, 5.2f, "YMIR",
+                            IM_COL32(150, 235, 255, 255));
+            }
+            DrawLabel(dctx, nerdFont, 24.0f, {textLeft, banner.pos.y + dctx.layout.Scale(88.0f)},
+                      IM_COL32(165, 225, 255, 255),
+                      "Sega Saturn Emulator  •  v" Ymir_VERSION "  •  Xbox / UWP Edition");
+
+            y += banner.size.y + dctx.layout.Scale(18.0f);
+
+            // Two-column credit cards: Left = Authors, Right = Special Thanks
+            const float colGap = dctx.layout.Scale(20.0f);
+            const float colW = (rect.size.x - colGap) * 0.5f;
+            const float cardH = dctx.layout.Scale(210.0f);
+
+            const auto drawCardFrame = [&](Rect card, std::string_view title, const char *faGlyph, ImU32 accent) {
+                dl->AddRectFilled(ToImVec2(card.pos), ImVec2(card.pos.x + card.size.x, card.pos.y + card.size.y),
+                                  IM_COL32(6, 18, 40, 205), dctx.layout.Scale(10.0f));
+                dl->AddRect(ToImVec2(card.pos), ImVec2(card.pos.x + card.size.x, card.pos.y + card.size.y), accent,
+                            dctx.layout.Scale(10.0f), 0, std::max(1.0f, dctx.layout.Scale(1.6f)));
+                float titleX = card.pos.x + dctx.layout.Scale(20.0f);
+                if (iconFont != nullptr && faGlyph != nullptr) {
+                    DrawLabel(dctx, iconFont, 22.0f, {titleX, card.pos.y + dctx.layout.Scale(16.0f)}, accent, faGlyph);
+                    titleX += dctx.layout.Scale(32.0f);
+                }
+                DrawDotText(dctx, {titleX, card.pos.y + dctx.layout.Scale(18.0f)}, 2.8f, title, accent);
+            };
+
+            // Left Card: Credits & Port Author
+            const Rect leftCard{{rect.pos.x, y}, {colW, cardH}};
+            drawCardFrame(leftCard, "AUTHORS & ARCHITECTURE", "\xEF\x84\x9B", IM_COL32(90, 215, 255, 230));
+            const float lx = leftCard.pos.x + dctx.layout.Scale(20.0f);
+            DrawLabel(dctx, nerdFont, 24.0f, {lx, leftCard.pos.y + dctx.layout.Scale(56.0f)},
+                      IM_COL32(255, 215, 110, 255), "Xbox / UWP Port Author: Marcelo (marcelofrau)");
+            DrawLabel(dctx, nerdFont, 20.0f, {lx, leftCard.pos.y + dctx.layout.Scale(86.0f)},
+                      IM_COL32(205, 228, 248, 255),
+                      "Saturn BIOS 3D shell, D3D12 compute/graphics port, XAudio2 backend & Xbox integration.",
+                      colW - dctx.layout.Scale(40.0f));
+            DrawLabel(dctx, nerdFont, 23.0f, {lx, leftCard.pos.y + dctx.layout.Scale(142.0f)},
+                      IM_COL32(130, 235, 255, 255), "Ymir Core Emulator: StrikerX3 & Contributors");
+            DrawLabel(dctx, nerdFont, 19.0f, {lx, leftCard.pos.y + dctx.layout.Scale(170.0f)},
+                      IM_COL32(175, 205, 235, 240), "High-accuracy Sega Saturn emulation core (GPLv3).");
+
+            // Right Card: Special Thanks
+            const Rect rightCard{{rect.pos.x + colW + colGap, y}, {colW, cardH}};
+            drawCardFrame(rightCard, "SPECIAL THANKS", "\xEF\x80\x84", IM_COL32(255, 185, 75, 235));
+            const float rx = rightCard.pos.x + dctx.layout.Scale(20.0f);
+            DrawLabel(dctx, nerdFont, 25.0f, {rx, rightCard.pos.y + dctx.layout.Scale(56.0f)},
+                      IM_COL32(255, 230, 140, 255), "MewLew   •   aloisious   •   DanP142");
+            DrawLabel(dctx, nerdFont, 21.0f, {rx, rightCard.pos.y + dctx.layout.Scale(94.0f)},
+                      IM_COL32(220, 238, 255, 255),
+                      "Thank you for all the support, great ideas, testing feedback, and inspiration to join and "
+                      "contribute to the Sega Saturn & Xbox emulation community!",
+                      colW - dctx.layout.Scale(40.0f));
+
+            y += cardH + dctx.layout.Scale(18.0f);
+
+            // Bottom System Summary Bar
+            const Rect sysCard{{rect.pos.x, y}, {rect.size.x, dctx.layout.Scale(126.0f)}};
+            drawCardFrame(sysCard, "SYSTEM & PROFILE STATUS", "\xEF\x8B\x9B", IM_COL32(80, 220, 165, 225));
+            const float sx = sysCard.pos.x + dctx.layout.Scale(20.0f);
+            const std::string biosStr =
+                ctx.iplRomPath.empty() ? std::string{"Not configured"} : ToUtf8(ctx.iplRomPath.filename());
+            const std::string line1 =
+                fmt::format("Active BIOS: {}   |   Games in Library: {}   |   Library Folders: {}", biosStr,
+                            m_games.size(), m_config.libraryFolders.size());
+            const std::string line2 =
+                fmt::format("Profile Path: {}", ToUtf8(ctx.profile.GetPath(app::ProfilePath::Root)));
+            DrawLabel(dctx, nerdFont, 22.0f, {sx, sysCard.pos.y + dctx.layout.Scale(54.0f)},
+                      IM_COL32(235, 245, 255, 255), line1, sysCard.size.x - dctx.layout.Scale(40.0f));
+            DrawLabel(dctx, nerdFont, 19.0f, {sx, sysCard.pos.y + dctx.layout.Scale(86.0f)},
+                      IM_COL32(165, 205, 235, 240), line2, sysCard.size.x - dctx.layout.Scale(40.0f));
+        };
         screen.pages.push_back(std::move(page));
     }
 
@@ -416,6 +519,10 @@ OverlayScreen Shell::BuildPauseScreen() {
     };
 
     page.rows.push_back(OverlayRow::Action("Resume", "Back to the game.", [this] { EnterGame(); }));
+    page.rows.push_back(
+        OverlayRow::Action("Main menu", "Return to the main menu; the game stays paused.", [this] { ShowMainMenu(); }));
+    page.rows.push_back(OverlayRow::Action("Game library", "Open the game library grid; the game stays paused.",
+                                           [this] { ShowGameLibrary(); }));
 
     std::vector<std::string> slots;
     for (std::size_t i = 0; i < saveStates.GetSlotCount(); ++i) {
@@ -457,10 +564,221 @@ OverlayScreen Shell::BuildPauseScreen() {
         OverlayRow::Action("Change disc", "Load another disc image with the file picker.", [this] { OpenLoadDisc(); }));
     page.rows.push_back(OverlayRow::Action("Settings", "System, video, audio, controls and more.",
                                            [this] { m_overlay.Push(BuildSettingsScreen()); }));
-    page.rows.push_back(
-        OverlayRow::Action("Game library", "Back to the home screen; the game stays paused.", [this] { ShowHome(); }));
-    page.rows.push_back(OverlayRow::Action("Desktop interface", "Switch to the full desktop interface.",
+    page.rows.push_back(OverlayRow::Action("Original GUI",
+                                           "Switch to the original desktop interface. Press View to return.",
                                            [this] { SwitchToDesktop(); }));
+    screen.pages.push_back(std::move(page));
+    return screen;
+}
+
+OverlayScreen Shell::BuildResetConfirmScreen() {
+    OverlayScreen screen{.title = "RESET SAVED DATA", .pages = {}};
+    OverlayPage page{.title = "CONFIRM", .rows = {}};
+    page.rows.push_back(OverlayRow::Action(
+        "Cancel", "Keep your current settings, library, save states and backup memory.", [this] { m_overlay.Pop(); }));
+    page.rows.push_back(OverlayRow::Action(
+        "Reset all saved data",
+        "Delete saved settings, library cache, save states and backup memory, returning Ymir to its initial state.",
+        [this] { ResetAllSavedData(); }));
+    screen.pages.push_back(std::move(page));
+    return screen;
+}
+
+OverlayScreen Shell::BuildFilePickerScreen() {
+    const char *screenTitle = m_pickerMode == FilePickerMode::Disc   ? "LOAD DISC IMAGE"
+                              : m_pickerMode == FilePickerMode::Bios ? "SELECT SATURN BIOS (IPL ROM)"
+                                                                     : "SELECT GAMES LIBRARY FOLDER";
+    OverlayScreen screen{.title = screenTitle, .pages = {}};
+
+    const std::string pageTitle = m_pickerDir.empty() ? std::string{"DRIVES & SHORTCUTS"} : ToUtf8(m_pickerDir);
+    OverlayPage page{.title = pageTitle, .rows = {}};
+
+    const auto navigateTo = [this](std::filesystem::path dir) {
+        m_pickerDir = std::move(dir);
+        StartPickerLoad(m_pickerDir);
+        m_overlay.Replace(BuildFilePickerScreen(), true);
+    };
+
+    const auto formatSize = [](std::uint64_t bytes) -> std::string {
+        if (bytes >= 1024ull * 1024 * 1024) {
+            return fmt::format("{:.2f} GB", static_cast<double>(bytes) / (1024.0 * 1024.0 * 1024.0));
+        }
+        if (bytes >= 1024ull * 1024) {
+            return fmt::format("{:.1f} MB", static_cast<double>(bytes) / (1024.0 * 1024.0));
+        }
+        if (bytes >= 1024ull) {
+            return fmt::format("{} KB", bytes / 1024ull);
+        }
+        return fmt::format("{} B", bytes);
+    };
+
+    const auto matchesFileFilter = [mode = m_pickerMode](const std::filesystem::path &path) {
+        if (mode == FilePickerMode::Folder) {
+            return false;
+        }
+        std::string ext = path.extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (mode == FilePickerMode::Disc) {
+            return ext == ".cue" || ext == ".chd" || ext == ".iso" || ext == ".ccd" || ext == ".mds";
+        }
+        // Bios mode: accept common Saturn BIOS extensions (.bin, .rom, .ic17, .bios)
+        return ext == ".bin" || ext == ".rom" || ext == ".ic17" || ext == ".bios" || ext.empty();
+    };
+
+    if (m_pickerDir.empty()) {
+        // Root view: list all accessible drives + quick shortcuts into the app profile
+        const std::filesystem::path profileRoot = m_context.profile.GetPath(app::ProfilePath::Root);
+        const std::filesystem::path iplFolder = m_context.profile.GetPath(app::ProfilePath::IPLROMImages);
+
+        if (!profileRoot.empty()) {
+            OverlayRow row = OverlayRow::Action(
+                "App Data (LocalState)", "Browse Ymir's LocalState profile directory (" + ToUtf8(profileRoot) + ").",
+                [navigateTo, profileRoot] { navigateTo(profileRoot); }, [] { return std::string{"PROFILE"}; });
+            row.icon = "\xEF\x80\x95"; // fa-house (U+F015)
+            row.iconColor = IM_COL32(90, 225, 255, 255);
+            row.useNerdFont = true;
+            page.rows.push_back(std::move(row));
+        }
+        if (!iplFolder.empty()) {
+            OverlayRow row = OverlayRow::Action(
+                "IPL ROMs Folder (roms/ipl)", "Browse the default Sega Saturn BIOS folder (" + ToUtf8(iplFolder) + ").",
+                [navigateTo, iplFolder] { navigateTo(iplFolder); }, [] { return std::string{"BIOS DIR"}; });
+            row.icon = "\xEF\x8B\x9B"; // fa-microchip (U+F2DB)
+            row.iconColor = IM_COL32(255, 180, 65, 255);
+            row.useNerdFont = true;
+            page.rows.push_back(std::move(row));
+        }
+
+        for (const fs::DirectoryEntry &drive : m_pickerEntries) {
+            const std::string driveStr = ToUtf8(drive.path);
+            OverlayRow row = OverlayRow::Action(
+                "Drive " + driveStr, "Browse storage volume " + driveStr + " (USB / Dev Drive / Local storage).",
+                [navigateTo, drivePath = drive.path] { navigateTo(drivePath); }, [] { return std::string{"DRIVE"}; });
+            row.icon = "\xEF\x82\xA0"; // fa-hard-drive (U+F0A0)
+            row.iconColor = IM_COL32(130, 230, 175, 255);
+            row.useNerdFont = true;
+            page.rows.push_back(std::move(row));
+        }
+
+        if (m_pickerLoading) {
+            page.rows.push_back(OverlayRow::Info(
+                "Loading available drives", [] { return std::string{"PLEASE WAIT"}; },
+                "Checking accessible storage volumes in the background."));
+        } else if (m_pickerReadFailed) {
+            page.rows.push_back(OverlayRow::Info(
+                "Drives could not be read", [] { return std::string{"UNAVAILABLE"}; },
+                "Browse App Data or the IPL ROM folder, or try again later."));
+        }
+
+        screen.pages.push_back(std::move(page));
+        return screen;
+    }
+
+    // Inside a directory:
+    // 1. In Folder mode, top action confirms the current directory
+    if (m_pickerMode == FilePickerMode::Folder) {
+        const std::filesystem::path currentDir = m_pickerDir;
+        OverlayRow selectRow = OverlayRow::Action(
+            "[ Select this folder ]", "Use " + ToUtf8(currentDir) + " as a games library directory.",
+            [this, currentDir] {
+                {
+                    std::scoped_lock lock{m_pickMutex};
+                    m_pickedFolder = currentDir;
+                }
+                m_overlay.Pop();
+            },
+            [] { return std::string{"CONFIRM"}; });
+        selectRow.icon = "\xEF\x81\x98"; // fa-circle-check (U+F058)
+        selectRow.iconColor = IM_COL32(60, 235, 145, 255);
+        selectRow.useNerdFont = true;
+        page.rows.push_back(std::move(selectRow));
+    }
+
+    // 2. Up one folder (`..`) and back to Drives root
+    {
+        const std::filesystem::path parent = m_pickerDir.parent_path();
+        const bool hasDistinctParent = !parent.empty() && parent != m_pickerDir;
+        const std::filesystem::path target = hasDistinctParent ? parent : std::filesystem::path{};
+        OverlayRow upRow = OverlayRow::Action(
+            "[ .. ]  Parent folder",
+            hasDistinctParent ? ("Go up to " + ToUtf8(parent)) : "Return to the Drives & Shortcuts list.",
+            [navigateTo, target] { navigateTo(target); }, [] { return std::string{"UP"}; });
+        upRow.icon = "\xEF\x81\xA2"; // fa-arrow-up (U+F062)
+        upRow.iconColor = IM_COL32(120, 215, 255, 255);
+        upRow.useNerdFont = true;
+        page.rows.push_back(std::move(upRow));
+    }
+    {
+        OverlayRow drivesRow = OverlayRow::Action(
+            "[ Drives & Shortcuts ]", "Jump back to the list of storage drives (USB E:\\, D:\\, Q:\\, LocalState).",
+            [navigateTo] { navigateTo({}); }, [] { return std::string{"DRIVES"}; });
+        drivesRow.icon = "\xEF\x82\xA0"; // fa-hard-drive (U+F0A0)
+        drivesRow.iconColor = IM_COL32(130, 230, 175, 255);
+        drivesRow.useNerdFont = true;
+        page.rows.push_back(std::move(drivesRow));
+    }
+
+    if (m_pickerLoading) {
+        page.rows.push_back(OverlayRow::Info(
+            "Loading folder contents", [] { return std::string{"PLEASE WAIT"}; },
+            "Reading this folder in the background; the Shell remains responsive."));
+        screen.pages.push_back(std::move(page));
+        return screen;
+    }
+    if (m_pickerReadFailed) {
+        page.rows.push_back(OverlayRow::Info(
+            "Folder could not be read", [] { return std::string{"ACCESS DENIED"}; },
+            "Choose another drive or folder, or use Parent folder to go back."));
+    }
+
+    // 3. List subdirectories and matching files
+    std::vector<fs::DirectoryEntry> dirs;
+    std::vector<fs::DirectoryEntry> files;
+    for (const fs::DirectoryEntry &entry : m_pickerEntries) {
+        if (entry.isDirectory) {
+            dirs.push_back(entry);
+        } else if (matchesFileFilter(entry.path)) {
+            files.push_back(entry);
+        }
+    }
+
+    for (const fs::DirectoryEntry &dir : dirs) {
+        const std::filesystem::path dirPath = dir.path;
+        const std::string name = ToUtf8(dirPath.filename());
+        OverlayRow row = OverlayRow::Action(
+            name, "Open folder " + ToUtf8(dirPath), [navigateTo, dirPath] { navigateTo(dirPath); },
+            [] { return std::string{"DIR"}; });
+        row.icon = "\xEF\x81\xBB"; // fa-folder (U+F07B)
+        row.iconColor = IM_COL32(255, 205, 85, 255);
+        row.useNerdFont = true;
+        page.rows.push_back(std::move(row));
+    }
+
+    for (const fs::DirectoryEntry &file : files) {
+        const std::filesystem::path filePath = file.path;
+        const std::string name = ToUtf8(filePath.filename());
+        const std::string sizeStr = formatSize(file.size);
+        const bool isDisc = m_pickerMode == FilePickerMode::Disc;
+        OverlayRow row = OverlayRow::Action(
+            name, ToUtf8(filePath),
+            [this, filePath, isDisc] {
+                m_overlay.Pop();
+                if (isDisc) {
+                    m_music.PlaySfx(Sfx::Select);
+                    LaunchGame(filePath);
+                } else {
+                    std::scoped_lock lock{m_pickMutex};
+                    m_pickedBios = filePath;
+                }
+            },
+            [sizeStr] { return sizeStr; });
+        row.icon = isDisc ? "\xEF\x94\x9F" : "\xEF\x8B\x9B"; // fa-compact-disc / fa-microchip
+        row.iconColor = isDisc ? IM_COL32(90, 210, 255, 255) : IM_COL32(255, 175, 70, 255);
+        row.useNerdFont = true;
+        page.rows.push_back(std::move(row));
+    }
+
     screen.pages.push_back(std::move(page));
     return screen;
 }

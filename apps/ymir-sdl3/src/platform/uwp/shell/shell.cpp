@@ -26,11 +26,13 @@
 #include <SDL3/SDL_events.h>
 
 #include <imgui.h>
+#include <imgui_internal.h>
 
 #include <fmt/format.h>
 
 #include <algorithm>
 #include <array>
+#include <thread>
 
 namespace platform::uwp::shell {
 
@@ -98,12 +100,14 @@ void Shell::Init() {
     const std::filesystem::path musicFolder = root / "music";
     fs::CreateDirectories(coversFolder);
     fs::CreateDirectories(musicFolder);
-    m_covers = std::make_unique<CoverCache>(coversFolder);
+    m_covers = std::make_unique<CoverCache>(coversFolder, m_context.profile.GetPath(app::ProfilePath::PersistentState) /
+                                                              "shell_metadata.toml");
     m_music.Start(musicFolder, m_config.musicShuffle);
     m_music.SetVolume(m_config.musicVolume);
 
     if (IsActive()) {
         ShowHome();
+        m_music.PlaySfx(Sfx::Boot);
     }
 }
 
@@ -111,21 +115,15 @@ void Shell::Init() {
 // Input
 
 void Shell::OnGamepadButton(SDL_GamepadButton button, bool down, std::uint64_t timestampNs) {
-    if (button != SDL_GAMEPAD_BUTTON_BACK) {
-        return;
-    }
-
+    (void)timestampNs;
     if (!IsActive()) {
-        // Desktop mode: holding View for a second brings the shell back. The desktop interface also toggles its
-        // gamepad focus on the press, which is harmless since the shell takes the gamepad over right after
-        if (down) {
-            m_viewDownTimestamp = timestampNs;
-        } else if (m_viewDownTimestamp && timestampNs - *m_viewDownTimestamp >= kHoldToReturnNs) {
+        // Desktop mode (Original GUI): pressing View returns to the Xbox shell
+        if (button == SDL_GAMEPAD_BUTTON_BACK && down) {
             m_viewDownTimestamp.reset();
+            m_music.PlaySfx(Sfx::Scroll);
+            m_lastScrollSfxTime = m_time;
             SetMode(UIMode::Shell);
             ShowHome();
-        } else {
-            m_viewDownTimestamp.reset();
         }
         return;
     }
@@ -134,13 +132,29 @@ void Shell::OnGamepadButton(SDL_GamepadButton button, bool down, std::uint64_t t
         return;
     }
 
-    // View opens the pause menu in game and closes it again; on the home screen it goes back to a started game. The
-    // Saturn control pad has no button for it, so no game input is lost
+    // Any button pressed while the shell owns the gamepad plays the scroll/button sound
+    if (m_screen != Screen::InGame) {
+        m_music.PlaySfx(Sfx::Scroll);
+        m_lastScrollSfxTime = m_time;
+    }
+
+    const bool isMenuButton = button == SDL_GAMEPAD_BUTTON_BACK || button == SDL_GAMEPAD_BUTTON_LEFT_STICK ||
+                              button == SDL_GAMEPAD_BUTTON_RIGHT_STICK;
+    if (!isMenuButton) {
+        return;
+    }
+
+    // View, L3 or R3 opens the pause menu in game and closes it again; on the home screen View goes back to a started
+    // game. None of these buttons exist on the 8-button Saturn control pad, so no game input is lost
     switch (m_screen) {
-    case Screen::InGame: OpenPause(); break;
+    case Screen::InGame:
+        m_music.PlaySfx(Sfx::Scroll);
+        m_lastScrollSfxTime = m_time;
+        OpenPause();
+        break;
     case Screen::Paused: EnterGame(); break;
     case Screen::Home:
-        if (m_sessionStarted && !m_overlay.IsOpen()) {
+        if (button == SDL_GAMEPAD_BUTTON_BACK && m_sessionStarted && !m_overlay.IsOpen()) {
             EnterGame();
         }
         break;
@@ -172,6 +186,16 @@ void Shell::ShowHome() {
     m_starfield.Warp();
     m_music.SetPlaying(m_config.musicEnabled);
     PauseEmulation();
+}
+
+void Shell::ShowMainMenu() {
+    m_home.ShowSpheres();
+    ShowHome();
+}
+
+void Shell::ShowGameLibrary() {
+    m_home.ShowLibrary();
+    ShowHome();
 }
 
 void Shell::OpenPause() {
@@ -215,19 +239,90 @@ void Shell::SaveConfig() const {
     }
 }
 
+void Shell::ResetAllSavedData() {
+    // Stop any background library scan before deleting files in the profile
+    m_library.reset();
+
+    const auto clearDirectoryContents = [](const std::filesystem::path &dir) {
+        std::error_code ec;
+        if (!std::filesystem::exists(dir, ec)) {
+            return;
+        }
+        for (const auto &entry : std::filesystem::directory_iterator(dir, ec)) {
+            std::error_code removeEc;
+            std::filesystem::remove_all(entry.path(), removeEc);
+        }
+    };
+
+    clearDirectoryContents(m_context.profile.GetPath(app::ProfilePath::PersistentState));
+    clearDirectoryContents(m_context.profile.GetPath(app::ProfilePath::SaveStates));
+    clearDirectoryContents(m_context.profile.GetPath(app::ProfilePath::BackupMemory));
+
+    std::error_code folderEc;
+    m_context.profile.CreateFolders(folderEc);
+
+    auto &settings = m_context.serviceLocator.GetRequired<app::Settings>();
+    settings.ResetToDefaults();
+    settings.Save();
+
+    m_config = ShellConfig{};
+    SaveConfig();
+    m_music.SetVolume(m_config.musicVolume);
+
+    {
+        std::unique_lock lock{m_context.locks.disc};
+        m_context.state.recentDiscs.clear();
+    }
+
+    m_library = std::make_unique<GameLibrary>(m_context.profile.GetPath(app::ProfilePath::PersistentState) /
+                                              "shell_library.toml");
+    m_library->LoadCache();
+    m_libraryVersion = 0;
+    m_games.clear();
+    m_recent.clear();
+    if (m_covers != nullptr) {
+        m_covers->Clear();
+    }
+
+    m_sessionStarted = false;
+    auto &romService = m_context.serviceLocator.GetRequired<app::services::ROMService>();
+    romService.ScanIPLROMs();
+    if (!romService.LoadIPLROM().succeeded) {
+        m_context.iplRomPath.clear();
+    }
+    m_context.EnqueueEvent(app::events::emu::EjectDisc());
+    m_context.EnqueueEvent(app::events::emu::FactoryReset());
+
+    ShowMainMenu();
+    m_marquee.Post("All saved data reset to initial state");
+}
+
 // -----------------------------------------------------------------------------
 // Actions
 
 void Shell::HandleHomeAction(const HomeResult &result) {
     switch (result.action) {
     case HomeAction::None: break;
-    case HomeAction::Start: EnterGame(); break;
+    case HomeAction::BrowseGames: m_starfield.Warp(); break;
+    case HomeAction::Start:
+        m_music.PlaySfx(Sfx::Select);
+        EnterGame();
+        break;
     case HomeAction::LoadDisc: OpenLoadDisc(); break;
-    case HomeAction::LaunchGame: LaunchGame(result.game); break;
+    case HomeAction::LaunchGame:
+        m_music.PlaySfx(Sfx::Select);
+        LaunchGame(result.game);
+        break;
     case HomeAction::AddFolder: OpenFolderPicker(); break;
     case HomeAction::Rescan: StartLibraryScan(); break;
     case HomeAction::SelectBios: OpenBiosPicker(); break;
     case HomeAction::RescanBios: RescanBios(); break;
+    case HomeAction::CompleteWizard:
+        m_config.wizardCompleted = true;
+        SaveConfig();
+        m_starfield.Warp();
+        ShowMainMenu();
+        break;
     case HomeAction::Settings: m_overlay.Push(BuildSettingsScreen()); break;
     case HomeAction::Desktop: SwitchToDesktop(); break;
     case HomeAction::Quit: Quit(); break;
@@ -240,25 +335,80 @@ void Shell::LaunchGame(const std::filesystem::path &path) {
     m_context.EnqueueEvent(app::events::emu::LoadDisc(path));
 }
 
+void Shell::OpenFilePicker(FilePickerMode mode, std::filesystem::path initialDir) {
+    m_pickerMode = mode;
+    m_pickerDir = std::move(initialDir);
+    StartPickerLoad(m_pickerDir);
+    m_overlay.Push(BuildFilePickerScreen());
+}
+
+void Shell::StartPickerLoad(std::filesystem::path directory) {
+    auto state = std::make_shared<PickerLoadState>();
+    m_pickerLoad = state;
+    m_pickerEntries.clear();
+    m_pickerLoading = true;
+    m_pickerReadFailed = false;
+
+    // The worker owns its shared result, so closing the picker never makes the UI thread wait for slow removable media.
+    std::thread([state = std::move(state), directory = std::move(directory)] {
+        std::vector<fs::DirectoryEntry> entries;
+        bool succeeded = true;
+        if (directory.empty()) {
+            for (const std::filesystem::path &drive : fs::ListDrives()) {
+                entries.push_back({.path = drive, .isDirectory = true});
+            }
+        } else {
+            succeeded = fs::ListDirectory(directory, entries);
+            std::sort(entries.begin(), entries.end(), [](const fs::DirectoryEntry &a, const fs::DirectoryEntry &b) {
+                if (a.isDirectory != b.isDirectory) {
+                    return a.isDirectory;
+                }
+                return a.path.filename().native() < b.path.filename().native();
+            });
+        }
+
+        std::scoped_lock lock{state->mutex};
+        state->entries = std::move(entries);
+        state->succeeded = succeeded;
+        state->complete = true;
+    }).detach();
+}
+
+void Shell::ProcessPickerLoad() {
+    const std::shared_ptr<PickerLoadState> state = m_pickerLoad;
+    if (!state) {
+        return;
+    }
+
+    {
+        std::scoped_lock lock{state->mutex};
+        if (!state->complete) {
+            return;
+        }
+        m_pickerEntries = std::move(state->entries);
+        m_pickerReadFailed = !state->succeeded;
+    }
+    m_pickerLoad.reset();
+    m_pickerLoading = false;
+
+    const std::string_view expectedTitle = m_pickerMode == FilePickerMode::Disc   ? "LOAD DISC IMAGE"
+                                           : m_pickerMode == FilePickerMode::Bios ? "SELECT SATURN BIOS (IPL ROM)"
+                                                                                  : "SELECT GAMES LIBRARY FOLDER";
+    if (m_overlay.TopScreenTitle() == expectedTitle) {
+        m_overlay.Replace(BuildFilePickerScreen(), true);
+    }
+}
+
 void Shell::OpenLoadDisc() {
-    // The shell switches to the game once the emulator thread reports the disc as loaded
-    m_context.serviceLocator.GetRequired<app::services::DiscService>().OpenLoadDiscDialog();
+    // Open the custom shell file picker starting in the first library folder (or the drives root)
+    const std::filesystem::path startDir =
+        !m_config.libraryFolders.empty() ? m_config.libraryFolders.front() : std::filesystem::path{};
+    OpenFilePicker(FilePickerMode::Disc, startDir);
 }
 
 void Shell::OpenBiosPicker() {
-    auto &fileDialog = m_context.serviceLocator.GetRequired<app::services::FileDialogService>();
-    fileDialog.InvokeOpenFileDialog({
-        .dialogTitle = "Select IPL ROM",
-        .defaultPath = m_context.profile.GetPath(app::ProfilePath::IPLROMImages),
-        .filters = {{"ROM files (*.bin, *.rom)", "bin;rom"}, {"All files (*.*)", "*"}},
-        .userdata = this,
-        .callback =
-            [](void *userdata, const char *const *filelist, int) {
-                // May run on a thread other than the GUI thread; the selection is applied on the next frame
-                auto &shell = *static_cast<Shell *>(userdata);
-                StorePick(shell.m_pickMutex, shell.m_pickedBios, filelist);
-            },
-    });
+    // Open the custom shell file picker at the drives & shortcuts view so the user can browse USB or LocalState
+    OpenFilePicker(FilePickerMode::Bios, {});
 }
 
 void Shell::ProcessPickedBios() {
@@ -271,21 +421,36 @@ void Shell::ProcessPickedBios() {
         return;
     }
 
-    // Same sequence as the desktop Welcome dialog: validate the file, make it the configured IPL ROM, load it and
-    // restart the Saturn with it
-    const ::util::ROMLoadResult result = ::util::LoadIPLROM(*picked, *m_context.saturn.instance);
+    // Copy the picked BIOS into <profile>/roms/ipl/ when chosen from an external drive so it stays in LocalState
+    std::filesystem::path targetPath = *picked;
+    const std::filesystem::path iplDir = m_context.profile.GetPath(app::ProfilePath::IPLROMImages);
+    if (!iplDir.empty() && !picked->filename().empty()) {
+        const std::filesystem::path localCopy = iplDir / picked->filename();
+        std::error_code ec{};
+        if (!std::filesystem::equivalent(*picked, localCopy, ec)) {
+            if (fs::CopyFileTo(*picked, localCopy, 4ull * 1024 * 1024)) {
+                targetPath = localCopy;
+            }
+        }
+    }
+
+    // Validate the file, make it the configured IPL ROM, load it and restart the Saturn with it
+    const ::util::ROMLoadResult result = ::util::LoadIPLROM(targetPath, *m_context.saturn.instance);
     if (!result.succeeded) {
+        m_marquee.Post("Invalid BIOS file: " + ToUtf8(targetPath.filename()));
         m_context.serviceLocator.GetRequired<app::services::WindowManagerService>().OpenSimpleErrorModal(
-            fmt::format("The file {} is not a valid IPL ROM: {}", *picked, result.errorMessage));
+            fmt::format("The file {} is not a valid IPL ROM: {}", targetPath, result.errorMessage));
         return;
     }
 
     auto &settings = m_context.serviceLocator.GetRequired<app::Settings>();
     settings.system.ipl.overrideImage = true;
-    settings.system.ipl.path = *picked;
+    settings.system.ipl.path = targetPath;
     settings.MakeDirty();
+    m_context.serviceLocator.GetRequired<app::services::ROMService>().ScanIPLROMs();
     m_context.serviceLocator.GetRequired<app::services::ROMService>().LoadIPLROM();
     m_context.EnqueueEvent(app::events::emu::HardReset());
+    m_marquee.Post("BIOS configured: " + ToUtf8(targetPath.filename()));
     m_home.RequestFocus();
 }
 
@@ -294,24 +459,16 @@ void Shell::RescanBios() {
     romService.ScanIPLROMs();
     if (romService.LoadIPLROM().succeeded) {
         m_context.EnqueueEvent(app::events::emu::HardReset());
+        m_marquee.Post("BIOS found: " + ToUtf8(m_context.iplRomPath.filename()));
         m_home.RequestFocus();
     } else {
+        m_marquee.Post("No IPL ROM found in ROMs folder");
         m_context.DisplayMessage("No IPL ROM found");
     }
 }
 
 void Shell::OpenFolderPicker() {
-    auto &fileDialog = m_context.serviceLocator.GetRequired<app::services::FileDialogService>();
-    fileDialog.InvokeSelectFolderDialog({
-        .dialogTitle = "Add a folder with disc images",
-        .defaultPath = {},
-        .userdata = this,
-        .callback =
-            [](void *userdata, const char *const *filelist, int) {
-                auto &shell = *static_cast<Shell *>(userdata);
-                StorePick(shell.m_pickMutex, shell.m_pickedFolder, filelist);
-            },
-    });
+    OpenFilePicker(FilePickerMode::Folder, {});
 }
 
 void Shell::ProcessPickedFolder() {
@@ -406,8 +563,11 @@ void Shell::RefreshLibrary() {
 HomeModel Shell::BuildHomeModel(bool inputEnabled) {
     HomeModel model{};
     model.biosMissing = m_context.iplRomPath.empty();
+    model.showWizard = model.biosMissing || !m_config.wizardCompleted;
     model.sessionActive = m_sessionStarted;
+    model.biosName = model.biosMissing ? std::string{} : ToUtf8(m_context.iplRomPath.filename());
     model.iplFolder = fmt::format("{}", m_context.profile.GetPath(app::ProfilePath::IPLROMImages));
+    model.folderCount = m_config.libraryFolders.size();
     model.games = &m_games;
     model.recent = &m_recent;
     model.scanning = m_library != nullptr && m_library->Scanning();
@@ -445,15 +605,28 @@ void Shell::Draw() {
     }
     ProcessPickedBios();
     ProcessPickedFolder();
+    ProcessPickerLoad();
     RefreshLibrary();
 
     switch (m_screen) {
-    case Screen::InGame: DrawInGameHint(); break;
+    case Screen::InGame:
+        m_lastFocusId = 0;
+        DrawInGameHint();
+        break;
     case Screen::Paused: DrawPaused(); break;
     case Screen::Home:
         m_starfield.Update(io.DeltaTime);
         DrawHome();
         break;
+    }
+
+    if (m_screen != Screen::InGame) {
+        const ImGuiID focusId = ImGui::GetFocusID();
+        if (focusId != 0 && m_lastFocusId != 0 && focusId != m_lastFocusId && m_time - m_lastScrollSfxTime > 0.08) {
+            m_music.PlaySfx(Sfx::Scroll);
+            m_lastScrollSfxTime = m_time;
+        }
+        m_lastFocusId = focusId;
     }
 }
 
@@ -502,13 +675,15 @@ void Shell::DrawHome() {
             m_covers->BeginFrame();
         }
 
-        // Back to front: the sky, the screen contents floating in it, the two dashboards framing it with the
-        // audio-reactive cubes on the pods, and the scanline finish over everything
+        // Back to front: the sky, the bottom and top dashboards, the audio-reactive cubes on the pods, the home
+        // screen contents (spheres, wizard or library + game details card) in front of the bottom dashboard, and the
+        // legend/version/scanline finish over everything
         DrawSpaceBackground(ctx, m_starfield, m_starScratch);
-        result = m_home.Draw(ctx, model);
         DrawBottomDashboard(ctx);
         DrawCubes(ctx);
-        DrawTopDashboard(ctx, kVersionText, m_marquee);
+        DrawTopDashboard(ctx, m_marquee);
+        result = m_home.Draw(ctx, model);
+        DrawVersionLabel(ctx, kVersionText);
         if (!overlayOpen) {
             legend = m_home.Legend(model);
             DrawLegend(ctx, legend);
@@ -529,9 +704,9 @@ void Shell::DrawHome() {
         return;
     }
 
-    // B goes back to the game. Only while the shell window has the focus, so B still closes a desktop window or
-    // dialog opened on top of the shell
-    if (result.action == HomeAction::None && windowFocused && m_sessionStarted &&
+    // B goes back to the game from the sphere menu. Only while the shell window has the focus, so B still closes a
+    // desktop window or dialog opened on top of the shell
+    if (result.action == HomeAction::None && windowFocused && m_sessionStarted && !m_home.InLibraryView() &&
         ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false)) {
         result.action = HomeAction::Start;
     }
@@ -636,7 +811,7 @@ void Shell::UpdateMarquee(const DrawContext &ctx, const HomeModel &model) {
 
     // The marquee is measured in LCD dot columns and moves a whole column at a time
     constexpr float kColumnsPerSecond = 22.0f;
-    m_marquee.Update(ctx.deltaTime, static_cast<float>(MarqueeColumns(ctx, kVersionText)), kColumnsPerSecond,
+    m_marquee.Update(ctx.deltaTime, static_cast<float>(MarqueeColumns(ctx)), kColumnsPerSecond,
                      [](std::string_view text) { return static_cast<float>(dotmatrix::TextColumns(text)); });
 }
 

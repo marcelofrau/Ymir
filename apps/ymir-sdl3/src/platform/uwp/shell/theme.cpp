@@ -6,6 +6,8 @@
 
 #include <cmrc/cmrc.hpp>
 
+#include <imgui.h>
+
 #include <stb_image.h>
 
 #include <toml++/toml.hpp>
@@ -25,6 +27,8 @@ namespace platform::uwp::shell {
 namespace {
 
     constexpr const char *kManifestName = "theme.toml";
+    constexpr const char *kDefaultFontName = "3270NerdFont-Regular.ttf";
+    constexpr const char *kIconFontName = "fa-solid-900.ttf";
 
     /// @brief Reads a theme file, preferring the override directory over the embedded copy.
     /// @param[in] overrideDir the override directory; may not exist
@@ -119,6 +123,9 @@ namespace {
         if (ReadNumbers(section["legend"], point)) {
             layout.legend = {point[0], point[1]};
         }
+        if (ReadNumbers(section["version"], point)) {
+            layout.versionPos = {point[0], point[1]};
+        }
     }
 
 } // namespace
@@ -167,6 +174,29 @@ void Theme::Load(app::services::GraphicsService &graphicsService, const std::fil
     const toml::table &manifest = parseResult.table();
 
     ReadLayout(manifest, m_layout);
+
+    const std::string fontName = manifest["font"].value_or(std::string{kDefaultFontName});
+    if (std::optional<std::string> fontBytes = ReadThemeFile(overrideDir, fontName)) {
+        m_fontData = std::move(*fontBytes);
+        ImFontConfig fontConfig{};
+        fontConfig.FontDataOwnedByAtlas = false;
+        std::snprintf(fontConfig.Name, sizeof(fontConfig.Name), "3270 Nerd Font");
+        m_font = ImGui::GetIO().Fonts->AddFontFromMemoryTTF(m_fontData.data(), static_cast<int>(m_fontData.size()),
+                                                            16.0f, &fontConfig);
+    } else {
+        devlog::warn<grp::shell>("Theme font {} not found; using default font", fontName);
+    }
+
+    if (std::optional<std::string> iconBytes = ReadThemeFile(overrideDir, kIconFontName)) {
+        m_iconFontData = std::move(*iconBytes);
+        ImFontConfig iconConfig{};
+        iconConfig.FontDataOwnedByAtlas = false;
+        std::snprintf(iconConfig.Name, sizeof(iconConfig.Name), "Font Awesome 6 Solid");
+        m_iconFont = ImGui::GetIO().Fonts->AddFontFromMemoryTTF(
+            m_iconFontData.data(), static_cast<int>(m_iconFontData.size()), 32.0f, &iconConfig);
+    } else {
+        devlog::warn<grp::shell>("Icon font {} not found", kIconFontName);
+    }
 
     const toml::table *assets = manifest["assets"].as_table();
     if (assets == nullptr) {

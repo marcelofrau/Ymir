@@ -100,11 +100,17 @@ void DeformMesh(std::vector<Vec3> &positions, float amount, float time) {
     }
     for (Vec3 &p : positions) {
         const Vec3 d = Normalize(p);
-        // Two crossing waves over the surface, drifting at different speeds so the pattern never repeats exactly
-        const float wave = std::sin(d.x * 3.1f + time * 4.3f) * std::cos(d.y * 2.7f - time * 3.1f) +
-                           0.5f * std::sin(d.z * 4.0f + time * 5.7f);
-        const float factor = 1.0f + amount * wave / 1.5f;
-        p = {p.x * factor, p.y * factor, p.z * factor};
+        // Gentle surface waves plus subtle squash-and-stretch and torsional twist driven by the audio wobble
+        const float wave = std::sin(d.x * 3.4f + time * 5.0f) * std::cos(d.y * 3.0f - time * 4.0f) +
+                           0.5f * std::sin(d.z * 4.0f + time * 6.2f);
+        const float factor = 1.0f + amount * wave * 0.58f;
+        const float stretchY = 1.0f + amount * 0.16f * std::sin(time * 6.8f + d.y * 1.6f);
+        const float twist = d.y * amount * 0.28f * std::sin(time * 4.5f);
+        const float ct = std::cos(twist);
+        const float st = std::sin(twist);
+        const float rx = p.x * ct - p.z * st;
+        const float rz = p.x * st + p.z * ct;
+        p = {rx * factor, p.y * factor * stretchY, rz * factor};
     }
 }
 

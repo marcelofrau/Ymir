@@ -45,9 +45,12 @@ namespace {
     /// @brief Fraction of the pitch covered by a dot; the rest is the gap that makes the grid visible.
     constexpr float kDotFill = 0.78f;
 
-    /// @brief Dot pitch of the legend labels and glyph radius of the legend, in reference units.
-    constexpr float kLegendPitch = 3.4f;
-    constexpr float kLegendGlyphRadius = 19.0f;
+    /// @brief Font size of the legend labels and glyph radius of the legend, in reference units.
+    constexpr float kLegendFontSize = 26.0f;
+    constexpr float kLegendGlyphRadius = 15.5f;
+
+    /// @brief Font size of the subtle version text in the bottom-right corner, in reference units.
+    constexpr float kVersionFontSize = 20.0f;
 
     /// @brief The dot-matrix grid of the top dashboard LCD, in display coordinates.
     struct LcdGrid {
@@ -55,13 +58,11 @@ namespace {
         float pitch;      // distance between dots, in display pixels
         int columns;      // dots per row
         int rows;         // dots per column
-        int titleRow;     // first row of the double-size title
-        int versionCol;   // first column of the version
+        int textRow;      // vertical center row of the single-scale text
         int marqueeStart; // first column of the marquee
-        bool doubleTitle; // whether the title fits at double size
     };
 
-    LcdGrid ComputeLcd(const DrawContext &ctx, std::string_view version) {
+    LcdGrid ComputeLcd(const DrawContext &ctx) {
         const ThemeLayout &anchors = ctx.theme.GetLayout();
         const float refPitch = std::max(anchors.lcdPitch, 1.0f);
         LcdGrid grid{};
@@ -75,14 +76,9 @@ namespace {
         grid.origin = {std::round(origin.x), std::round(origin.y)};
         grid.pitch = ctx.layout.Scale(refPitch);
 
-        // "YMIR" at double size (every glyph dot is a 2x2 block of LCD dots) when the LCD is tall enough
-        grid.doubleTitle = grid.rows >= dotmatrix::kGlyphHeight * 2;
-        const int titleScale = grid.doubleTitle ? 2 : 1;
-        grid.titleRow = (grid.rows - dotmatrix::kGlyphHeight * titleScale) / 2;
-        const int titleColumns = dotmatrix::TextColumns("YMIR") * titleScale;
-        grid.versionCol = 1 + titleColumns + 3;
-        const int versionColumns = dotmatrix::TextColumns(version);
-        grid.marqueeStart = grid.versionCol + versionColumns + (versionColumns > 0 ? 6 : 3);
+        grid.textRow = (grid.rows - dotmatrix::kGlyphHeight) / 2;
+        const int titleColumns = dotmatrix::TextColumns("YMIR");
+        grid.marqueeStart = 2 + titleColumns + 6;
         return grid;
     }
 
@@ -282,7 +278,7 @@ void DrawBottomDashboard(const DrawContext &ctx) {
     }
 }
 
-void DrawTopDashboard(const DrawContext &ctx, std::string_view version, const Marquee &marquee) {
+void DrawTopDashboard(const DrawContext &ctx, const Marquee &marquee) {
     const ThemeLayout &anchors = ctx.theme.GetLayout();
 
     if (const ThemeAsset *dash = ctx.theme.Find("dash_top")) {
@@ -297,7 +293,7 @@ void DrawTopDashboard(const DrawContext &ctx, std::string_view version, const Ma
                                     IM_COL32(40, 205, 200, 255), bar.size.y * 0.5f);
     }
 
-    const LcdGrid grid = ComputeLcd(ctx, version);
+    const LcdGrid grid = ComputeLcd(ctx);
 
     // Every dot of the display, unlit, so the bar reads as a dot-matrix LCD even where there is no text
     const float ghostSize = grid.pitch * kDotFill;
@@ -310,16 +306,11 @@ void DrawTopDashboard(const DrawContext &ctx, std::string_view version, const Ma
     }
 
     const int lastColumn = grid.columns - 1;
-    const int titleScale = grid.doubleTitle ? 2 : 1;
-    PlotLcdText(ctx, grid, "YMIR", 1, grid.titleRow, titleScale, kLcdLitColor, 0, lastColumn);
+    PlotLcdText(ctx, grid, "YMIR", 2, grid.textRow, 1, kLcdLitColor, 0, lastColumn);
 
-    // The version sits on the baseline of the title
-    const int versionRow = grid.titleRow + dotmatrix::kGlyphHeight * titleScale - dotmatrix::kGlyphHeight;
-    PlotLcdText(ctx, grid, version, grid.versionCol, versionRow, 1, kLcdLitColor, 0, lastColumn);
-
-    // A divider between the fixed text and the marquee
+    // A divider between the fixed title and the marquee
     const int dividerColumn = grid.marqueeStart - 3;
-    for (int row = 1; row < grid.rows - 1; ++row) {
+    for (int row = 2; row < grid.rows - 2; ++row) {
         PlotLcdDot(ctx, grid, dividerColumn, row, WithAlpha(kLcdLitColor, 0.55f));
     }
 
@@ -327,14 +318,27 @@ void DrawTopDashboard(const DrawContext &ctx, std::string_view version, const Ma
     const std::string_view text = marquee.Current();
     if (!text.empty()) {
         const int column = grid.marqueeStart + static_cast<int>(std::floor(marquee.Offset()));
-        const int row = (grid.rows - dotmatrix::kGlyphHeight) / 2;
-        PlotLcdText(ctx, grid, text, column, row, 1, kLcdLitColor, grid.marqueeStart, lastColumn);
+        PlotLcdText(ctx, grid, text, column, grid.textRow, 1, kLcdLitColor, grid.marqueeStart, lastColumn);
     }
 }
 
-int MarqueeColumns(const DrawContext &ctx, std::string_view version) {
-    const LcdGrid grid = ComputeLcd(ctx, version);
+int MarqueeColumns(const DrawContext &ctx) {
+    const LcdGrid grid = ComputeLcd(ctx);
     return std::max(grid.columns - grid.marqueeStart, 1);
+}
+
+void DrawVersionLabel(const DrawContext &ctx, std::string_view version) {
+    if (version.empty()) {
+        return;
+    }
+    const app::YmirImGuiData *imguiData = app::GetYmirImGuiData();
+    ImFont *font = ctx.theme.GetFont() != nullptr ? ctx.theme.GetFont() : imguiData->fonts.monospace.regular;
+    const Vec2 anchor = ctx.layout.CanvasPoint(ctx.theme.GetLayout().versionPos);
+    const Vec2 size = MeasureLabel(ctx, font, kVersionFontSize, version);
+    const Vec2 pos{anchor.x - size.x, anchor.y - size.y};
+    const float shadow = std::max(1.0f, ctx.layout.Scale(1.0f));
+    DrawLabel(ctx, font, kVersionFontSize, {pos.x + shadow, pos.y + shadow}, IM_COL32(0, 0, 0, 120), version);
+    DrawLabel(ctx, font, kVersionFontSize, pos, IM_COL32(190, 210, 235, 135), version);
 }
 
 void DrawScanlines(const DrawContext &ctx) {
@@ -540,14 +544,17 @@ void DrawLegend(const DrawContext &ctx, std::span<const ButtonHint> hints) {
         return;
     }
 
-    const float glyphLabelGap = ctx.layout.Scale(12.0f);
-    const float hintGap = ctx.layout.Scale(42.0f);
+    const app::YmirImGuiData *imguiData = app::GetYmirImGuiData();
+    ImFont *legendFont = ctx.theme.GetFont() != nullptr ? ctx.theme.GetFont() : imguiData->fonts.monospace.regular;
+
+    const float glyphLabelGap = ctx.layout.Scale(10.0f);
+    const float hintGap = ctx.layout.Scale(32.0f);
 
     // Measure everything first so the legend can be centered on its anchor
     float totalWidth = 0.0f;
     float labelHeight = 0.0f;
     for (const ButtonHint &hint : hints) {
-        const Vec2 labelSize = MeasureDotText(ctx, kLegendPitch, hint.label);
+        const Vec2 labelSize = MeasureLabel(ctx, legendFont, kLegendFontSize, hint.label);
         totalWidth += GlyphHalfWidth(ctx, hint.glyph, kLegendGlyphRadius) * 2.0f + glyphLabelGap + labelSize.x;
         labelHeight = std::max(labelHeight, labelSize.y);
     }
@@ -556,8 +563,8 @@ void DrawLegend(const DrawContext &ctx, std::span<const ButtonHint> hints) {
     // A dark pill behind the legend keeps it readable over the bright cockpit floor
     const Vec2 center = ctx.layout.CanvasPoint(ctx.theme.GetLayout().legend);
     const float glyphRadius = ctx.layout.Scale(kLegendGlyphRadius);
-    const float padX = ctx.layout.Scale(30.0f);
-    const float halfH = std::max(glyphRadius, labelHeight * 0.5f) + ctx.layout.Scale(11.0f);
+    const float padX = ctx.layout.Scale(24.0f);
+    const float halfH = std::max(glyphRadius, labelHeight * 0.5f) + ctx.layout.Scale(8.0f);
     const ImVec2 p0(center.x - totalWidth * 0.5f - padX, center.y - halfH);
     const ImVec2 p1(center.x + totalWidth * 0.5f + padX, center.y + halfH);
     ctx.drawList->AddRectFilled(p0, p1, IM_COL32(8, 12, 28, 190), halfH);
@@ -569,8 +576,9 @@ void DrawLegend(const DrawContext &ctx, std::span<const ButtonHint> hints) {
         DrawGlyph(ctx, hint.glyph, {x + halfWidth, center.y}, kLegendGlyphRadius);
         x += halfWidth * 2.0f + glyphLabelGap;
 
-        const Vec2 labelSize = MeasureDotText(ctx, kLegendPitch, hint.label);
-        DrawDotText(ctx, {x, center.y - labelSize.y * 0.5f}, kLegendPitch, hint.label, IM_COL32(225, 238, 255, 255));
+        const Vec2 labelSize = MeasureLabel(ctx, legendFont, kLegendFontSize, hint.label);
+        DrawLabel(ctx, legendFont, kLegendFontSize, {x, center.y - labelSize.y * 0.5f}, IM_COL32(225, 238, 255, 255),
+                  hint.label);
         x += labelSize.x + hintGap;
     }
 }
@@ -578,7 +586,7 @@ void DrawLegend(const DrawContext &ctx, std::span<const ButtonHint> hints) {
 // -----------------------------------------------------------------------------
 // 3D shapes
 
-void DrawFlatShaded(const DrawContext &ctx, std::span<const ProjectedQuad> quads, ImU32 color) {
+void DrawFlatShaded(const DrawContext &ctx, std::span<const ProjectedQuad> quads, ImU32 color, bool drawEdges) {
     const ImVec4 base = ImGui::ColorConvertU32ToFloat4(color);
     const float edgeThickness = std::max(1.0f, ctx.layout.Scale(1.0f));
     for (const ProjectedQuad &quad : quads) {
@@ -588,14 +596,20 @@ void DrawFlatShaded(const DrawContext &ctx, std::span<const ProjectedQuad> quads
         const float bleach = std::max(0.0f, quad.light - 0.82f) * 2.4f;
         const ImVec4 fill(std::min(base.x * shade + bleach, 1.0f), std::min(base.y * shade + bleach, 1.0f),
                           std::min(base.z * shade + bleach, 1.0f), base.w);
+        const ImU32 fillColor = ImGui::ColorConvertFloat4ToU32(fill);
         const std::array<ImVec2, 4> points{ImVec2(quad.x[0], quad.y[0]), ImVec2(quad.x[1], quad.y[1]),
                                            ImVec2(quad.x[2], quad.y[2]), ImVec2(quad.x[3], quad.y[3])};
-        ctx.drawList->AddConvexPolyFilled(points.data(), 4, ImGui::ColorConvertFloat4ToU32(fill));
+        ctx.drawList->AddConvexPolyFilled(points.data(), 4, fillColor);
 
-        // Thin darker edges show the polygon structure
-        const ImVec4 edge(fill.x * 0.55f, fill.y * 0.55f, fill.z * 0.55f, 0.5f * base.w);
-        ctx.drawList->AddPolyline(points.data(), 4, ImGui::ColorConvertFloat4ToU32(edge), ImDrawFlags_Closed,
-                                  edgeThickness);
+        if (drawEdges) {
+            // Thin darker edges show the polygon structure
+            const ImVec4 edge(fill.x * 0.55f, fill.y * 0.55f, fill.z * 0.55f, 0.5f * base.w);
+            ctx.drawList->AddPolyline(points.data(), 4, ImGui::ColorConvertFloat4ToU32(edge), ImDrawFlags_Closed,
+                                      edgeThickness);
+        } else {
+            // Seal anti-aliased seams between adjacent quads of the same face without visible stroke lines
+            ctx.drawList->AddPolyline(points.data(), 4, fillColor, ImDrawFlags_Closed, 1.0f);
+        }
     }
 }
 
@@ -609,7 +623,7 @@ namespace {
     /// @return the drawn rectangle, lifted while focused
     Rect HologramFrame(const DrawContext &ctx, const char *id, Rect rect, int seed, TileState &state, bool &pressed) {
         ImGui::SetCursorScreenPos(ToImVec2(rect.pos));
-        pressed = ImGui::InvisibleButton(id, ToImVec2(rect.size));
+        pressed = ImGui::InvisibleButton(id, ToImVec2(rect.size), ImGuiButtonFlags_EnableNav);
         const bool focused = ImGui::IsItemFocused();
 
         constexpr float kFocusRate = 12.0f;
@@ -733,12 +747,38 @@ bool HologramTile(const DrawContext &ctx, const char *id, Rect rect, std::string
     }
     DrawHoloScanlines(ctx, art, 1.0f - state.focus * 0.6f);
 
-    // Title in dot-matrix, shortened to the tile width
-    constexpr float kTitlePitch = 2.6f;
-    const std::string shownTitle = FitDotText(title, drawn.size.x - pad * 2.0f, ctx.layout.Scale(kTitlePitch));
-    DrawDotTextCentered(ctx, {drawn.pos.x + drawn.size.x * 0.5f, drawn.pos.y + drawn.size.y - pad - titleHeight * 0.5f},
-                        kTitlePitch, shownTitle,
-                        LerpColor(IM_COL32(170, 225, 255, 230), IM_COL32(255, 255, 255, 255), state.focus));
+    // Title in 3270 Nerd Font (size 16), with horizontal marquee when the tile is focused and the title overflows
+    if (state.focus > 0.5f) {
+        state.marqueeTime += ctx.deltaTime;
+    } else {
+        state.marqueeTime = 0.0f;
+    }
+    ImFont *titleFont = ctx.theme.GetFont() != nullptr ? ctx.theme.GetFont() : ImGui::GetFont();
+    constexpr float kTitleFontSize = 16.0f;
+    const float availWidth = std::max(1.0f, drawn.size.x - pad * 2.0f);
+    const Vec2 textSize = MeasureLabel(ctx, titleFont, kTitleFontSize, title);
+    const float titleCenterY = drawn.pos.y + drawn.size.y - pad * 0.7f - titleHeight * 0.5f;
+    const float textY = titleCenterY - textSize.y * 0.5f;
+    const ImU32 textColor = LerpColor(IM_COL32(170, 225, 255, 230), IM_COL32(255, 255, 255, 255), state.focus);
+
+    ctx.drawList->PushClipRect(ImVec2(drawn.pos.x + pad, drawn.pos.y + drawn.size.y - pad - titleHeight),
+                               ImVec2(drawn.pos.x + drawn.size.x - pad, drawn.pos.y + drawn.size.y), true);
+    if (textSize.x <= availWidth) {
+        DrawLabel(ctx, titleFont, kTitleFontSize,
+                  {drawn.pos.x + (drawn.size.x - textSize.x) * 0.5f, textY}, textColor, title);
+    } else if (state.focus > 0.5f) {
+        const float gap = ctx.layout.Scale(36.0f);
+        const float cycle = textSize.x + gap;
+        const float scrollSpeed = ctx.layout.Scale(58.0f);
+        const float activeTime = std::max(0.0f, state.marqueeTime - 0.45f);
+        const float offset = std::fmod(activeTime * scrollSpeed, cycle);
+        const float startX = drawn.pos.x + pad - offset;
+        DrawLabel(ctx, titleFont, kTitleFontSize, {startX, textY}, textColor, title);
+        DrawLabel(ctx, titleFont, kTitleFontSize, {startX + cycle, textY}, textColor, title);
+    } else {
+        DrawLabel(ctx, titleFont, kTitleFontSize, {drawn.pos.x + pad, textY}, textColor, title);
+    }
+    ctx.drawList->PopClipRect();
     return pressed;
 }
 
@@ -759,41 +799,51 @@ void DrawAudioCube(const DrawContext &ctx, const PodAnchor &pod, const AudioCube
     const float podRadius = ctx.layout.Scale(pod.radius);
     const Vec2 podCenter = ctx.layout.CanvasPoint(pod.center);
 
-    // Hover above the middle of the pod, bobbing slowly
-    const Vec2 center{podCenter.x, podCenter.y - podRadius * 0.12f + std::sin(time * 1.3f + phase) * podRadius * 0.05f};
+    // Hover above the middle of the pod, bobbing and bouncing moderately with the audio
+    const float level = cube.Level();
+    const float wobble = cube.Wobble();
+    const float bounce = std::sin(time * 7.0f + phase) * wobble * podRadius * 0.09f - level * podRadius * 0.05f;
+    const Vec2 center{podCenter.x,
+                      podCenter.y - podRadius * 0.12f + std::sin(time * 1.3f + phase) * podRadius * 0.05f + bounce};
     const float radius = podRadius * 0.48f * cube.Scale();
 
-    // A glow on the pod under the cube, brighter with the music, and a soft contact shadow
-    const float level = cube.Level();
+    // A glow on the pod under the cube, brighter with the music, and a soft blurred contact shadow
     for (int i = 0; i < 4; ++i) {
         const float t = static_cast<float>(i) / 4.0f;
-        ctx.drawList->AddCircleFilled(ToImVec2(center), radius * (1.15f + t * 0.5f),
-                                      WithAlpha(color, (0.10f + 0.22f * level) * (1.0f - t)), 40);
+        ctx.drawList->AddCircleFilled(ToImVec2(center), radius * (1.15f + t * 0.55f),
+                                      WithAlpha(color, (0.10f + 0.28f * level) * (1.0f - t)), 40);
     }
-    ctx.drawList->AddEllipseFilled(ImVec2(podCenter.x, podCenter.y + podRadius * 0.55f),
-                                   ImVec2(radius * 0.9f, radius * 0.22f), IM_COL32(0, 0, 0, 70));
+    const ImVec2 shadowCenter(podCenter.x, podCenter.y + podRadius * 0.55f);
+    constexpr int kShadowLayers = 10;
+    for (int i = 0; i < kShadowLayers; ++i) {
+        const float t = 1.0f - static_cast<float>(i) / static_cast<float>(kShadowLayers);
+        const float spread = 0.25f + 1.15f * t;
+        const int layerAlpha = static_cast<int>(18.0f * (1.0f - t * 0.65f));
+        ctx.drawList->AddEllipseFilled(shadowCenter, ImVec2(radius * 0.95f * spread, radius * 0.24f * spread),
+                                       IM_COL32(0, 0, 0, layerAlpha), 0.0f, 32);
+    }
 
     ShapeCache &shapes = ctx.shapes;
     ShapeMesh(shapes.cubeMesh, cube.Morph(), radius, shapes.positions);
-    DeformMesh(shapes.positions, cube.Wobble(), time + phase);
+    DeformMesh(shapes.positions, wobble, time + phase);
     MeshView view{};
     view.yaw = cube.Spin() + phase;
-    view.pitch = 0.55f + 0.15f * std::sin(time * 0.7f + phase);
+    view.pitch = 0.55f + 0.15f * std::sin(time * 0.7f + phase) + 0.18f * wobble * std::cos(time * 5.0f + phase);
     view.centerX = center.x;
     view.centerY = center.y;
     view.cameraDistance = 4.5f;
     view.lightLevels = 6;
     ProjectMesh(shapes.cubeMesh, shapes.positions, radius, view, shapes.quads);
-    DrawFlatShaded(ctx, shapes.quads, color);
+    DrawFlatShaded(ctx, shapes.quads, color, false);
 }
 
-bool SphereButton(const DrawContext &ctx, const char *id, std::string_view assetKey, Vec2 center, float refRadius,
-                  ImU32 color, SphereState &state) {
+bool SphereButton(const DrawContext &ctx, const char *id, std::string_view assetKey, std::string_view iconGlyph,
+                  Vec2 center, float refRadius, ImU32 color, SphereState &state) {
     const float idleRadius = ctx.layout.Scale(refRadius);
     const float hitHalf = idleRadius * 1.3f;
 
     ImGui::SetCursorScreenPos(ImVec2(center.x - hitHalf, center.y - hitHalf));
-    const bool pressed = ImGui::InvisibleButton(id, ImVec2(hitHalf * 2.0f, hitHalf * 2.0f));
+    const bool pressed = ImGui::InvisibleButton(id, ImVec2(hitHalf * 2.0f, hitHalf * 2.0f), ImGuiButtonFlags_EnableNav);
     const bool focused = ImGui::IsItemFocused();
 
     // Ease the focus animation in and out; the rate makes the transition take about 150 ms
@@ -839,9 +889,43 @@ bool SphereButton(const DrawContext &ctx, const char *id, std::string_view asset
         view.centerX = center.x;
         view.centerY = center.y;
         view.cameraDistance = 4.5f;
-        view.lightLevels = 6;
+        view.lightLevels = 16;
         ProjectMesh(shapes.sphereMesh, shapes.positions, radius, view, shapes.quads);
-        DrawFlatShaded(ctx, shapes.quads, color);
+        DrawFlatShaded(ctx, shapes.quads, color, false);
+    }
+
+    // Saturn BIOS-style emblem glyph floating in front of the sphere: solid interior with a crisp white stroke
+    ImFont *iconFont = ctx.theme.GetIconFont();
+    if (iconFont == nullptr) {
+        iconFont = ctx.theme.GetFont();
+    }
+    if (iconFont != nullptr && !iconGlyph.empty()) {
+        const float iconSize = radius * 0.88f;
+        const ImVec2 glyphSize =
+            iconFont->CalcTextSizeA(iconSize, FLT_MAX, 0.0f, iconGlyph.data(), iconGlyph.data() + iconGlyph.size());
+        const ImVec2 basePos(center.x - glyphSize.x * 0.5f, center.y - glyphSize.y * 0.5f);
+
+        // Soft drop shadow on the sphere surface
+        const float shadowOffset = std::max(1.5f, ctx.layout.Scale(3.5f));
+        ctx.drawList->AddText(iconFont, iconSize, ImVec2(basePos.x, basePos.y + shadowOffset), IM_COL32(0, 0, 0, 155),
+                              iconGlyph.data(), iconGlyph.data() + iconGlyph.size());
+
+        // Crisp white stroke around the solid glyph
+        const float stroke = std::max(1.5f, ctx.layout.Scale(2.4f));
+        constexpr int kStrokeSteps = 12;
+        for (int i = 0; i < kStrokeSteps; ++i) {
+            const float angle = static_cast<float>(i) * (6.2831853f / static_cast<float>(kStrokeSteps));
+            const ImVec2 offsetPos(basePos.x + std::cos(angle) * stroke, basePos.y + std::sin(angle) * stroke);
+            ctx.drawList->AddText(iconFont, iconSize, offsetPos, IM_COL32(255, 255, 255, 250), iconGlyph.data(),
+                                  iconGlyph.data() + iconGlyph.size());
+        }
+
+        // Solid interior tinted to complement the sphere color
+        const ImU32 fillColor =
+            LerpColor(LerpColor(IM_COL32(18, 26, 48, 255), color, 0.42f), LerpColor(color, IM_COL32_WHITE, 0.25f),
+                      state.focus * 0.65f);
+        ctx.drawList->AddText(iconFont, iconSize, basePos, fillColor, iconGlyph.data(),
+                              iconGlyph.data() + iconGlyph.size());
     }
 
     return pressed;

@@ -28,6 +28,8 @@ Every asset is looked up in this order:
 #include <unordered_map>
 #include <vector>
 
+struct ImFont;
+
 namespace app::services {
 
 class GraphicsService;
@@ -91,6 +93,16 @@ public:
         return m_layout;
     }
 
+    /// @brief Retrieves the shell font (`3270 Nerd Font`), or `nullptr` if unavailable.
+    [[nodiscard]] ImFont *GetFont() const {
+        return m_font;
+    }
+
+    /// @brief Retrieves the embedded Font Awesome Solid icon font, or `nullptr` if unavailable.
+    [[nodiscard]] ImFont *GetIconFont() const {
+        return m_iconFont;
+    }
+
 private:
     /// @brief Decoded RGBA pixels of a texture. They are kept alive because the graphics service re-uploads them
     /// whenever the graphics backend is recreated.
@@ -103,6 +115,10 @@ private:
     std::unordered_map<std::string, ThemeAsset> m_assets;
     ThemeLayout m_layout;
     std::vector<std::unique_ptr<PixelData>> m_pixels;
+    std::string m_fontData;
+    ImFont *m_font = nullptr;
+    std::string m_iconFontData;
+    ImFont *m_iconFont = nullptr;
 };
 
 } // namespace platform::uwp::shell

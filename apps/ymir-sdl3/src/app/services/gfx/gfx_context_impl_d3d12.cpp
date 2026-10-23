@@ -1169,7 +1169,11 @@ struct Direct3D12GraphicsContext::Impl {
         D3D12_RESOURCE_DESC desc = texture.resource->GetDesc();
         device->GetCopyableFootprints(&desc, 0, 1, 0, &texture.footprint, &texture.numRows, &texture.rowSizeBytes,
                                       &texture.uploadBufferSize);
+#if YMIR_PLATFORM_UWP
+        texture.rowPitch = texture.footprint.Footprint.RowPitch;
+#else
         texture.rowPitch = PixelFormatUnitSize(spec.format) * spec.width;
+#endif
 
         if (!reserved) {
             // In D3D12, textures cannot be directly written to by the CPU - a staging buffer is always needed.

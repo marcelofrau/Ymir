@@ -27,6 +27,26 @@ namespace {
 
 } // namespace
 
+std::vector<std::filesystem::path> ListDrives() {
+    std::vector<std::filesystem::path> drives;
+    const DWORD mask = GetLogicalDrives();
+    for (int i = 0; i < 26; ++i) {
+        if ((mask & (1u << i)) == 0) {
+            continue;
+        }
+        wchar_t root[4]{static_cast<wchar_t>(L'A' + i), L':', L'\\', L'\0'};
+        const std::wstring pattern = std::wstring{root} + L"*";
+        WIN32_FIND_DATAW data{};
+        const HANDLE find =
+            FindFirstFileExFromAppW(pattern.c_str(), FindExInfoBasic, &data, FindExSearchNameMatch, nullptr, 0);
+        if (find != INVALID_HANDLE_VALUE) {
+            FindClose(find);
+            drives.emplace_back(root);
+        }
+    }
+    return drives;
+}
+
 bool ListDirectory(const std::filesystem::path &directory, std::vector<DirectoryEntry> &out) {
     out.clear();
     const std::wstring pattern = (directory / L"*").wstring();
@@ -83,6 +103,38 @@ std::optional<std::string> ReadWholeFile(const std::filesystem::path &path, std:
         offset += read;
     }
     return data;
+}
+
+bool WriteWholeFile(const std::filesystem::path &path, std::string_view data) {
+    if (path.has_parent_path()) {
+        CreateDirectories(path.parent_path());
+    }
+    CREATEFILE2_EXTENDED_PARAMETERS params{};
+    params.dwSize = sizeof(params);
+    params.dwFileAttributes = FILE_ATTRIBUTE_NORMAL;
+    const HandleCloser file{
+        CreateFile2FromAppW(path.wstring().c_str(), GENERIC_WRITE, 0, CREATE_ALWAYS, &params)};
+    if (file.handle == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+    std::size_t offset = 0;
+    while (offset < data.size()) {
+        const DWORD chunk = static_cast<DWORD>((std::min)(data.size() - offset, std::size_t{1} << 24));
+        DWORD written = 0;
+        if (!WriteFile(file.handle, data.data() + offset, chunk, &written, nullptr) || written == 0) {
+            return false;
+        }
+        offset += written;
+    }
+    return true;
+}
+
+bool CopyFileTo(const std::filesystem::path &src, const std::filesystem::path &dst, std::uint64_t maxBytes) {
+    const std::optional<std::string> data = ReadWholeFile(src, maxBytes);
+    if (!data) {
+        return false;
+    }
+    return WriteWholeFile(dst, *data);
 }
 
 bool CreateDirectories(const std::filesystem::path &directory) {

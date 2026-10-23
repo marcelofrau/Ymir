@@ -62,7 +62,7 @@
 
   <Capabilities>
     <!-- No codeGeneration: Ymir's CPU cores are interpreters and never allocate executable memory -->
-    <!-- No network capabilities: update checks and Discord Rich Presence are compiled out on UWP -->
+    <Capability Name="internetClient" />
     <uap:Capability Name="removableStorage" />
     <rescap:Capability Name="runFullTrust" />
     <rescap:Capability Name="broadFileSystemAccess" />

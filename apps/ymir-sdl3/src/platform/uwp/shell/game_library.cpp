@@ -101,7 +101,11 @@ void GameLibrary::LoadCache() {
             }
             game.title = (*tbl)["title"].value_or(std::string{});
             game.productCode = (*tbl)["product"].value_or(std::string{});
+            game.makerId = (*tbl)["maker"].value_or(std::string{});
+            game.version = (*tbl)["version"].value_or(std::string{});
+            game.deviceInfo = (*tbl)["device"].value_or(std::string{});
             game.region = (*tbl)["region"].value_or(std::string{});
+            game.peripherals = (*tbl)["peripherals"].value_or(std::string{});
             game.releaseDate = (*tbl)["date"].value_or(std::string{});
             game.size = static_cast<std::uint64_t>((*tbl)["size"].value_or(std::int64_t{0}));
             game.lastWrite = static_cast<std::uint64_t>((*tbl)["mtime"].value_or(std::int64_t{0}));
@@ -151,9 +155,11 @@ void GameLibrary::ScanThread(std::stop_token stopToken, std::vector<std::filesys
         }
         ++m_scanProgress;
 
+        // Reuse known entry only if it already has the extended header fields populated
         const std::string key = ToUtf8(image.path);
         if (auto it = known.find(key);
-            it != known.end() && it->second.size == image.size && it->second.lastWrite == image.lastWrite) {
+            it != known.end() && it->second.size == image.size && it->second.lastWrite == image.lastWrite &&
+            !it->second.makerId.empty()) {
             games.push_back(it->second);
             continue;
         }
@@ -173,7 +179,11 @@ void GameLibrary::ScanThread(std::stop_token stopToken, std::vector<std::filesys
             game.title = ToUtf8(image.path.stem());
         }
         game.productCode = Trim(header.productNumber);
+        game.makerId = Trim(header.makerID);
+        game.version = Trim(header.version);
+        game.deviceInfo = Trim(header.deviceInfo);
         game.region = Trim(header.rawCompatAreaCode);
+        game.peripherals = Trim(header.rawCompatPeripherals);
         game.releaseDate = Trim(header.releaseDate);
         game.size = image.size;
         game.lastWrite = image.lastWrite;
@@ -198,7 +208,11 @@ void GameLibrary::SaveCache(const std::vector<GameEntry> &games) const {
             {"path", ToUtf8(game.path)},
             {"title", game.title},
             {"product", game.productCode},
+            {"maker", game.makerId},
+            {"version", game.version},
+            {"device", game.deviceInfo},
             {"region", game.region},
+            {"peripherals", game.peripherals},
             {"date", game.releaseDate},
             {"size", static_cast<std::int64_t>(game.size)},
             {"mtime", static_cast<std::int64_t>(game.lastWrite)},

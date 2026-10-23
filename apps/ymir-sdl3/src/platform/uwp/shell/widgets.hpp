@@ -39,7 +39,7 @@ namespace platform::uwp::shell {
 
 /// @brief Meshes and scratch buffers reused by the widgets from frame to frame, owned by the shell.
 struct ShapeCache {
-    QuadMesh sphereMesh = BuildCubeMesh(4);
+    QuadMesh sphereMesh = BuildCubeMesh(7);
     QuadMesh cubeMesh = BuildCubeMesh(6);
     std::vector<Vec3> positions;
     std::vector<ProjectedQuad> quads;
@@ -67,7 +67,8 @@ struct ButtonHint {
 
 /// @brief Animation state of a grid tile, kept by the screen across frames.
 struct TileState {
-    float focus = 0.0f; // eases from 0 (idle) to 1 (focused)
+    float focus = 0.0f;       // eases from 0 (idle) to 1 (focused)
+    float marqueeTime = 0.0f; // seconds spent focused, drives the title marquee when the name overflows
 };
 
 /// @brief Animation state of a sphere button, kept by the screen across frames.
@@ -93,15 +94,17 @@ void DrawSpaceBackground(const DrawContext &ctx, const Starfield &starfield, std
 /// @brief Draws the bottom dashboard, the cockpit with the two pods (`dash_bottom` asset, or a placeholder panel).
 void DrawBottomDashboard(const DrawContext &ctx);
 
-/// @brief Draws the top dashboard (`dash_top` asset, or a placeholder bar) with its dot-matrix LCD: the title and
-/// the version on the left, the marquee after them.
+/// @brief Draws the top dashboard (`dash_top` asset, or a placeholder bar) with its dot-matrix LCD: the title on the
+/// left, the marquee after it.
 /// @param[in] ctx the draw context
-/// @param[in] version the version shown next to the title
 /// @param[in] marquee the scrolling messages; its offset is in LCD columns
-void DrawTopDashboard(const DrawContext &ctx, std::string_view version, const Marquee &marquee);
+void DrawTopDashboard(const DrawContext &ctx, const Marquee &marquee);
 
-/// @brief Retrieves how many LCD columns the marquee has, after the title and the version.
-[[nodiscard]] int MarqueeColumns(const DrawContext &ctx, std::string_view version);
+/// @brief Retrieves how many LCD columns the marquee has, after the title.
+[[nodiscard]] int MarqueeColumns(const DrawContext &ctx);
+
+/// @brief Draws the subtle version label in the bottom-right corner using the shell font at size 20.
+void DrawVersionLabel(const DrawContext &ctx, std::string_view version);
 
 /// @brief Draws a faint scanline pass over the whole display, the CRT finish of the shell.
 void DrawScanlines(const DrawContext &ctx);
@@ -176,11 +179,12 @@ void DrawLegend(const DrawContext &ctx, std::span<const ButtonHint> hints);
 // -----------------------------------------------------------------------------
 // 3D shapes
 
-/// @brief Draws projected quads in flat colors derived from a base color, with thin polygon edges.
+/// @brief Draws projected quads in flat colors derived from a base color.
 /// @param[in] ctx the draw context
 /// @param[in] quads the projected quads, back to front
 /// @param[in] color the base color
-void DrawFlatShaded(const DrawContext &ctx, std::span<const ProjectedQuad> quads, ImU32 color);
+/// @param[in] drawEdges whether to draw darker wireframe edges over each quad
+void DrawFlatShaded(const DrawContext &ctx, std::span<const ProjectedQuad> quads, ImU32 color, bool drawEdges = true);
 
 /// @brief Draws an audio-reactive cube floating over a pod of the bottom dashboard.
 ///
@@ -244,7 +248,7 @@ bool HologramActionTile(const DrawContext &ctx, const char *id, Rect rect, std::
 /// @param[in] color the color of the procedural sphere
 /// @param[in,out] state the animation state of this sphere
 /// @return `true` on the frame the sphere is activated
-bool SphereButton(const DrawContext &ctx, const char *id, std::string_view assetKey, Vec2 center, float refRadius,
-                  ImU32 color, SphereState &state);
+bool SphereButton(const DrawContext &ctx, const char *id, std::string_view assetKey, std::string_view iconGlyph,
+                  Vec2 center, float refRadius, ImU32 color, SphereState &state);
 
 } // namespace platform::uwp::shell

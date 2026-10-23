@@ -75,8 +75,8 @@ public:
     }
 
 private:
-    Envelope m_level{0.03f, 0.35f};
-    Envelope m_bass{0.02f, 0.25f};
+    Envelope m_level{0.030f, 0.30f};
+    Envelope m_bass{0.022f, 0.22f};
     float m_spin = 0.0f;
 };
 

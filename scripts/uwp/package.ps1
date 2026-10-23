@@ -71,12 +71,13 @@ Sega Saturn emulator for Xbox Series X|S (Dev Mode) and Windows 10/11.
 3. Add the dependency $depNames -> **Start**.
 4. In Dev Home, select the Ymir tile -> **View** button -> *View details* -> **App type: Game**.
    (The default "App" type limits the app to 1 GB of RAM and part of the GPU.)
-5. BIOS: create a folder named ``Ymir`` at the root of an NTFS USB drive with ``roms\ipl\`` inside and copy the
-   Saturn BIOS there. The drive needs permissions for UWP apps; on a PC, as admin:
+5. Launch Ymir from its tile and use the Welcome screen to select the Saturn BIOS and games folder. A BIOS selected
+   from another drive is copied into the app profile. Alternatively, create ``Ymir\roms\ipl\`` at the root of an
+   NTFS USB drive and put the BIOS there. The drive needs permissions for UWP apps; on a PC, as admin:
    ``icacls E:\ /grant "*S-1-15-2-1:(OI)(CI)F" /T`` (replace ``E:`` with the drive letter).
    Without a USB ``Ymir`` folder, the profile is stored in the app's LocalState folder, reachable through the
    Device Portal file explorer: ``LocalAppData\<package family>\LocalState\StrikerX3\Ymir\``.
-6. Launch Ymir from its tile. A USB keyboard and mouse are recommended for the menus for now.
+6. The Shell menus are gamepad-navigable; no mouse or keyboard is required. Press A to select and B to go back.
 7. Optional: Settings -> Video -> enable **Use hardware acceleration** (Direct3D 12 renderer).
 
 Log file: ``LocalState\StrikerX3\Ymir\ymir-uwp.log``.

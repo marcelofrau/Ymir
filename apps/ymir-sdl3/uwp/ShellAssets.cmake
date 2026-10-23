@@ -9,6 +9,8 @@ file(GLOB_RECURSE Ymir_SHELL_ASSET_FILES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/uwp/shell/assets/*.toml"
     "${CMAKE_CURRENT_SOURCE_DIR}/uwp/shell/assets/*.png"
     "${CMAKE_CURRENT_SOURCE_DIR}/uwp/shell/assets/*.jpg"
+    "${CMAKE_CURRENT_SOURCE_DIR}/uwp/shell/assets/*.ttf"
+    "${CMAKE_CURRENT_SOURCE_DIR}/uwp/shell/assets/*.mp3"
 )
 
 cmrc_add_resource_library(ymir-sdl3-shell-rc
