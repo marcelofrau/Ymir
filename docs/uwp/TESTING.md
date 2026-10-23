@@ -8,6 +8,9 @@ mouse, and the notes on the gamepad routing between the GUI and the emulated Sat
 
 Read [HANDOFF.md](HANDOFF.md) for the current port state.
 
+> **The console now starts in the Xbox shell** (§10), a controller-only interface themed after the Saturn BIOS. The
+> desktop interface described in §5 is still available as an advanced mode.
+
 ---
 
 ## 1. The key distinction: the emulator is already gamepad-driven
@@ -352,3 +355,71 @@ The app presents frames through the swapchain; the `[Ymir present]` trace prints
 `YMIR_PRESENT_TRACE` instrumentation is on. A frame counter over a fixed wall-clock window gives the frame rate, and
 the same measurement with the *Welcome* modal closed separates the scan cost from the VDP cost.
 
+
+---
+
+## 10. The Xbox shell (gamepad-first interface)
+
+Since the shell landed, the console starts in the **shell**, a full-screen controller-only interface themed after
+the Saturn BIOS, instead of the desktop ImGui interface described in §5. Architecture and decisions:
+[shell/README.md](shell/README.md). The desktop interface (§5, with the virtual cursor and the L3/R3/View routing) is
+still there as an advanced mode.
+
+### 10.1 Controls
+
+| Where | Button | Does |
+|---|---|---|
+| Home | D-pad / left stick | Move between the game tiles and the spheres |
+| Home | A | Play the focused game / choose the focused sphere |
+| Home | X | Add a library folder (folder picker) |
+| Home | Y | Scan the library again |
+| Home | LB / RB | All games / Recent tabs |
+| Home | B or View | Back to the game (once a game has been started) |
+| In game | View | Open the pause menu; the emulation pauses |
+| Pause menu, settings | D-pad up/down, A, left/right, LB/RB, B | Rows, activate, adjust, pages, back/close |
+| Desktop interface | Hold View for 1 s | Back to the shell |
+
+### 10.2 What to check on a run
+
+1. The app opens on the home screen: the space backdrop with the galaxy, the two dashboards framing it, faint stars
+   drifting (they streak briefly when the screen changes), five faceted spheres in the sky, the controller legend on
+   the cockpit floor and faint scanlines. The cyan bar is a dot-matrix display with "YMIR", the version and a
+   scrolling marquee. With no IPL ROM, a *BIOS NOT FOUND* panel and the *Select BIOS* / *Scan Again* spheres
+   instead.
+2. The d-pad moves the focus between the spheres: the focused one grows, spins faster, gets a dotted halo with
+   orbiting pixel blocks and shows its name and description. The LCD text sits inside the cyan area, and the marquee
+   is clipped at the right end of the bar.
+3. *Load Disc* opens the system file picker; choosing a disc starts the game straight away.
+4. In game, *View* returns to the home screen (the game pauses, the first sphere reads *Resume*); *B* or *Resume*
+   go back to the game. After loading a disc or resetting, the marquee shows the app message (for example
+   *Hard reset triggered*) before going back to the disc title and the tips.
+5. *Settings* opens the desktop settings window on top of the shell; closing it gives the focus back to the spheres.
+6. *Desktop UI* switches to the desktop interface; holding *View* for one second comes back.
+7. The log has `UWP-Shell | Interface mode: shell` and `Loaded 3 theme assets`.
+8. **Library**: X opens the folder picker; after choosing a folder (for example on `E:\`) the tab shows
+   `SCANNING n` and then the hologram tiles; A on a tile starts the game. Covers appear for files in
+   `<profile>/covers/`.
+9. **Music and cubes**: with tracks in `<profile>/music/`, the music fades in on the home screen and the marquee shows
+   `♪ <track>`; the cubes swell, spin and round off with the music, each with its own channel; they settle back into
+   still cubes in silence and when the game starts.
+10. **Settings**: the Settings sphere opens the settings overlay; LB/RB switch pages; changing *Hardware rendering* or
+    the volume takes effect right away and survives a restart.
+11. **Pause menu**: View in game opens it over the frozen game; save to a slot, load it back, B resumes.
+
+### 10.3 Switching the interface without the controller
+
+The interface mode lives in `<profile>/shell.toml` (written on first launch):
+
+```toml
+[Shell]
+Mode = "Shell"   # or "Desktop"
+SafeArea = 0.05  # fraction of the screen kept free on each side for TV overscan
+```
+
+Edit it with the Device Portal and restart the app. `SafeArea` is the knob to try if the edges of the shell are cut
+off by the TV.
+
+### 10.4 Trying artwork without rebuilding
+
+Upload PNGs and a `theme.toml` to `<profile>/shell-theme/` with the Device Portal and restart the app; they override
+the embedded ones. The asset ids and rules are in [shell/ASSETS.md](shell/ASSETS.md).

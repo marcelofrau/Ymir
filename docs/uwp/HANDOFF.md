@@ -12,14 +12,15 @@
 > | **GUI (ImGui)** | ✅ Aparece, 1920x1080, `io.DisplaySize` correto |
 > | **Áudio** | ✅ XAudio2. O WASAPI do SDL **trava** no Xbox (deadlock no `SDL_OpenAudioDeviceStream`) |
 > | **Entrada no emulador** | ✅ O gamepad já dirige o Saturn pelas bindings padrão da porta 1 |
-> | **GUI navegável pelo gamepad** | ✅ **Funcionando no console.** Cursor virtual no analógico direito (`RB` = clique esquerdo, `LB` = clique direito), d-pad/stick esquerdo = nav do ImGui (`A` ativa, `B` volta). **L3, R3 ou View** alternam o foco entre `Emulator` e `GUI` (com salto automático para o menu `File` e atalhos `X` = Load disc, `Y` = Settings quando em modo GUI). Ver [TESTING.md](TESTING.md) §5 |
+> | **Shell (GUI nova do Xbox)** | 🆕 **Compilada, ainda não rodou no console.** Interface própria orientada a gamepad, temática da BIOS do Saturn: arte real do usuário, LCD de matriz de pontos com marquee, **grid holográfico da biblioteca** sobre o céu (pastas escolhidas pelo folder picker, scan só sob demanda, capas por product code), esferas de ação no cockpit, **cubos reativos à BGM** nos ovos (verde/vermelho pastel), **BGM** de `<profile>/music/`, **overlays de configuração** (Sistema, Vídeo, Áudio, Controles, Biblioteca, Interface, Avançado, Sobre) e **menu de pausa** com save states (View no jogo), legenda com os botões do controle Xbox. Detalhes em [shell/README.md](shell/README.md) e [shell/PLAN.md](shell/PLAN.md) | Passa a ser a interface padrão no Xbox; a GUI desktop vira modo avançado. Código em `src/platform/uwp/shell/`, docs em [shell/README.md](shell/README.md), fases em [shell/PLAN.md](shell/PLAN.md), assets em [shell/ASSETS.md](shell/ASSETS.md), roteiro de teste em [TESTING.md](TESTING.md) §10 |
+> | **GUI navegável pelo gamepad** | ✅ **Funcionando no console** (GUI desktop, agora modo avançado). Cursor virtual no analógico direito (`RB` = clique esquerdo, `LB` = clique direito), d-pad/stick esquerdo = nav do ImGui (`A` ativa, `B` volta). **L3, R3 ou View** alternam o foco entre `Emulator` e `GUI` (com salto automático para o menu `File` e atalhos `X` = Load disc, `Y` = Settings quando em modo GUI). Ver [TESTING.md](TESTING.md) §5 |
 > | **File picker** | ✅ **Funcionando no console** (inclusive abrindo BIOS e imagens `.cue`/`.chd` de pendrive USB `E:\`). Filtros agora ocultam o curinga `*` para listar apenas extensões suportadas (`.ccd`, `.chd`, `.cue`, `.iso`, `.mds`) |
 > | **Emulação de verdade** | ✅ **Validada em hardware real a 60 fps (`RelWithDebInfo`).** Testados: BIOS US v1.00, *Sonic Jam* (`.cue`), *Road Rash* (`.chd`) e *Sega Rally Championship Plus* (`.cue`) |
 > | **Último run** | **16** (2026-10-22) — Emulação a 60 fps (`100.1%`, `vdp2=60fps`), sem input lag (com `syncInWindowedMode = true`). No Hardware VDP (D3D12), o 2D aparecia mas o 3D (VDP1) sumia |
-> | **Próximo run** | **17** — Validar as duas correções já compiladas: (1) descritores `Buffer<uint>`/`RWBuffer<uint>` do VDP1 D3D12 corrigidos de `CreateStructuredBuffer` (`DXGI_FORMAT_UNKNOWN`) para `CreatePrimitiveBuffer(..., DXGI_FORMAT_R32_UINT, ...)` + `D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES` no `BarrierTracker` legado; (2) remoção do `sleep_for` redundante sobre `Present(1, 0)` no UWP para eliminar picos de 15.6 ms do timer do kernel e stutters de áudio |
+> | **Próximo run** | **17** — (a) **Primeiro run da Shell (F0)**: checklist em [TESTING.md](TESTING.md) §10.2 (Home com estrelas, d-pad entre as esferas, Load Disc → jogo, View → Home, B → volta, Desktop UI e volta segurando View). Se precisar fugir da Shell sem controle: `Mode = "Desktop"` em `<profile>/shell.toml`. (b) Validar as duas correções já compiladas: (1) descritores `Buffer<uint>`/`RWBuffer<uint>` do VDP1 D3D12 corrigidos de `CreateStructuredBuffer` (`DXGI_FORMAT_UNKNOWN`) para `CreatePrimitiveBuffer(..., DXGI_FORMAT_R32_UINT, ...)` + `D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES` no `BarrierTracker` legado; (2) remoção do `sleep_for` redundante sobre `Present(1, 0)` no UWP para eliminar picos de 15.6 ms do timer do kernel e stutters de áudio |
 > | **HEAD** | ver `git log --oneline -3` em `uwp/main` |
 >
-> **Última atualização deste bloco:** 2026-10-22, pelo agente OpenCode.
+> **Última atualização deste bloco:** 2026-10-23, pelo agente Claude (Shell: fases A, L e O).
 >
 > ---
 >
@@ -1401,6 +1402,105 @@ No log do run 11 isso gerou **milhares de linhas** e um custo de CPU constante. 
   1. Em `vdp_renderer_hw_d3d12.cpp:1556,1584,1604`, `spanPrefixSumsBuffer`, `internalSpriteOutBuffer` e `oitListHeadsBuffer` sao declarados nos shaders HLSL como `Buffer<uint>` / `RWBuffer<uint>` (typed buffers), mas eram criados no C++ com `CreateStructuredBuffer<HLSLuint>` (`Format = DXGI_FORMAT_UNKNOWN`, `StructureByteStride = 4`). No driver D3D12 do Xbox (`umd12ddi_arden.dll`), descritor structured lido por instrucao typed retorna `0`, descartando 100% dos spans do VDP1 na linha 107 de `cs_vdp1_polydraw.hlsl`. Corrigido usando `CreatePrimitiveBuffer(..., DXGI_FORMAT_R32_UINT, ...)` + `D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES` no `BarrierTracker` legado (`d3d12_barrier_tracker.hpp:314`).
   2. Em `app.cpp:1758`, com `videoSync = true`, a UI thread dormia em `std::this_thread::sleep_for` (granularidade de 15.625 ms no UWP sem `timeBeginPeriod(1)`) antes de bloquear novamente em `Present(1, 0)`, causando frames ocasionais de 23–36 ms e underruns no XAudio2. Removido o `sleep_for` redundante sob UWP e trocado o fallback de underrun em `audio_system.cpp` para segurar o ultimo sample (sem clique de fase).
 
+### Entrada do agente Claude — 2026-10-23 (Shell do Xbox, fase 0: GUI própria orientada a gamepad)
+
+**Pedido do usuário:** uma GUI única para o Xbox, orientada a gamepad (estilo XBSX2/RetroArch), inspirada na BIOS do
+Saturn (céu estrelado em warp, painel da nave, esferas como opções, grid de jogos, janelas em overlay), **sem
+tocar/quebrar a GUI atual** e sem atrapalhar os rebases do upstream. O usuário está preparando os assets.
+
+**Decisões (detalhes e alternativas em [shell/README.md](shell/README.md) §5 e README.md D24):**
+
+- Módulo novo `src/platform/uwp/shell/` (namespace `platform::uwp::shell`), só UWP. A GUI desktop fica intacta e
+  acessível como modo avançado.
+- Ganchos de 1 a 3 linhas em `app.hpp`/`app.cpp`, todos sob `YMIR_PLATFORM_UWP`; só dois tocam linhas do upstream
+  (o `OpenWelcomeModal` ganhou um `if` e o `drawMainMenu` um `return false`). Lista completa em shell/README.md §3.
+- Camada de widgets própria (não portei o `ImGuiFullscreen` do XBSX2), navegação nativa do ImGui sobre
+  `InvisibleButton` + draw list, config em `<profile>/shell.toml` (fora do `settings.cpp`).
+- Assets por manifesto `theme.toml`; `<profile>/shell-theme/` sobrescreve os embutidos (troca de arte pelo Device
+  Portal sem recompilar); asset ausente vira placeholder procedural, então a Shell funciona sem arte nenhuma.
+- **View** alterna jogo ↔ Shell (o Control Pad do Saturn não tem esse botão); a Shell pausa a emulação nas telas
+  dela. No modo desktop, **segurar View 1 s** volta para a Shell.
+
+**O que foi feito (F0):** Home com Start/Resume, Load Disc, Settings (abre a janela desktop por enquanto), Desktop UI
+e Quit; painel "BIOS NOT FOUND" com Select BIOS e Scan Again; starfield em warp; rodapé com os botões; dica "VIEW ·
+Ymir menu" ao entrar no jogo. Testes Catch2 do layout e do starfield em `tests/ymir-sdl3-tests`.
+
+**Verificado:**
+- Build UWP `RelWithDebInfo` verde, MSIX `0.4.2.0` gerado. **Atenção:** com `app.hpp` alterado, o
+  `build.ps1` (`/m` sem limite) estourou memória (`C1060 compiler is out of heap space`, só ~6 GB livres). Compilei
+  com `cmake --build out/build/UWP-x86-64-AVX2-MSVC --config RelWithDebInfo --target ymir-sdl3 -- -m:1
+  -p:CL_MPCount=6`. No Git Bash use `-m:` em vez de `/m:` (o MSYS converte `/m:1` em caminho).
+- Regressão desktop (`Full-x86-64-AVX2-MSVC-Release`, `-j 8`): build verde, `ctest` **26/26**.
+
+**Não verificado (precisa do console):** nada da Shell rodou no Xbox ainda. Os valores de layout são um primeiro
+chute, para ajustar na TV.
+
+**Próximo passo:** o usuário roda o run 17 (TESTING.md §10.2 + as correções do VDP1/stutter do `a91da883`). Depois,
+F1 (overlay de pausa com save states), conforme [shell/PLAN.md](shell/PLAN.md).
+
+### Entrada do agente Claude — 2026-10-23 (2ª): Shell, fase V — composição do mockup com a arte real
+
+**Pedido do usuário:** usar como assets reais as 3 imagens que ele colocou em `assets/` (fundo com estrelas, dashboard
+de cima, dashboard de baixo; o PSD está em `docs/images/main_background.psd`). No topo, um marquee com mensagens e o
+título "Ymir" com a versão; embaixo, uma legenda dos botões. Os cubos dos ovos (fase A) são **opacos, flutuando por
+cima dos ovos**. Direção visual: "retropixel mas high-tech, mantendo o espírito 32 bits do Saturn".
+
+**O que foi feito:**
+- Arte copiada para `apps/ymir-sdl3/uwp/shell/assets/` (`background_nebula.jpg`, `dashboard_top.png`,
+  `dashboard_bottom.png`). Os originais em `assets/` na raiz ficaram como estão (não rastreados; decidir com o usuário
+  se ficam ou saem).
+- `theme.toml` com os 3 assets e a seção `[layout]` (posições medidas nos PNGs: área ciano ≈ (396,40)–(1520,139) no
+  canvas, ovos em (183,814) e (1735,814), raio ≈ 112).
+- Barra do topo vira **LCD de matriz de pontos** (fonte 5x7 própria, `dot_matrix.*`): "YMIR" em tamanho duplo,
+  versão, divisor e **marquee** (`marquee.*`) que anda uma coluna de pontos por vez, alimentado pelas mensagens do app
+  (`SharedContext::messages`, as mesmas dos toasts da GUI desktop) e por textos de estado/dicas.
+- Esferas **low-poly facetadas** em quads (`quad_mesh.*`, a mesma malha que vai virar os cubos da fase A), halo com a
+  transparência "mesh" do Saturn, nome da opção com split ciano/magenta, descrição e legenda em matriz de pontos,
+  scanlines por cima.
+- Docs: `docs/uwp/shell/README.md` (§4.1.1 linguagem visual, decisões S10–S12), `ASSETS.md` (ids em uso, `[layout]`),
+  `PLAN.md` (fases V e A).
+
+**Verificado:** build UWP RelWithDebInfo verde (MSIX `0.4.2.0`); testes do frontend no desktop **28/28** (dot-matrix,
+marquee, malha, layout, starfield, stdio). Uma prévia offline em Python com as mesmas âncoras conferiu o
+alinhamento do LCD e das esferas com a arte (não é o renderer real).
+
+**Não verificado:** nada rodou no console. O visual real (esferas facetadas, halo, scanlines) só aparece no Xbox.
+
+**Próximo passo:** run no console com o checklist de TESTING.md §10.2; depois a fase A (BGM + cubos).
+
+### Entrada do agente Claude — 2026-10-23 (3ª): Shell — BGM, cubos, biblioteca, overlays de configuração e pausa
+
+**Pedidos do usuário:** (1) deixar a BGM pronta para só colocar as músicas; (2) os cubos dos ovos, opacos e
+flutuando, em tons pastel, reagindo ao som; (3) configurar tudo pela Shell, com janelas em overlay comandadas pelo
+controle, cobrindo o fluxo da GUI desktop; (4) legenda com os botões do controle Xbox (cores e desenhos); (5) nada de
+scan automático: folder picker para a pasta de ROMs e file picker para a BIOS; (6) grid de jogos na tela inicial,
+**flutuando como holograma por cima do céu** (o céu continua visível).
+
+**O que foi feito** (detalhes em `docs/uwp/shell/README.md` §4.1.2–4.1.4 e decisões S13–S16):
+- **BGM:** `music_player.*` + `audio_decoders.*`, segunda instância de `app::XAudio2Backend` (o `AudioSystem` do
+  emulador não muda), OGG/MP3/FLAC/WAV de `<profile>/music/` (pasta criada no boot), fade in/out, faixa no marquee.
+  O dr_flac vem da libchdr (mesma versão 0.13.4); compilar uma segunda cópia deu `LNK2005`.
+- **Cubos:** `audio_cube.*` (envelope ataque/release) + `DeformMesh`, desenhados opacos sobre os ovos; canal
+  esquerdo → cubo verde pastel, direito → vermelho pastel.
+- **Biblioteca:** `game_library.*` (scan em thread, até 4 níveis, cache em `state/shell_library.toml`, só sob
+  demanda), `cover_cache.*` (`<profile>/covers/<product>.png|jpg`), `file_system.*` (API `...FromApp`, necessária
+  para `E:\`). Pastas em `[Library] Folders` do `shell.toml`.
+- **Home:** grid holográfico 6 colunas com abas All/Recent (LB/RB), X = adicionar pasta, Y = rescan; esferas
+  movidas para o painel do cockpit.
+- **Overlays:** `overlay.*` (pilha de telas com páginas de linhas declarativas) e `settings_pages.cpp`
+  (configurações e menu de pausa). Cada linha usa os mesmos campos de `Settings` e os mesmos eventos dos widgets
+  desktop; o que não tem página abre a janela desktop em "Avançado".
+- **Glifos:** A/B/X/Y com as cores do controle, bumpers LB/RB, View e Menu com os ícones, D-pad.
+
+**Verificado:** build UWP RelWithDebInfo verde (MSIX `0.4.2.0`), sem warnings nos arquivos da Shell; testes do
+desktop **47/47** (core + frontend, incluindo envelope, cubo e deformação). Prévia offline do layout novo conferida.
+
+**Não verificado:** nada disso rodou no console. Riscos a observar no run: (a) uma segunda engine XAudio2 no Xbox
+(se falhar, o log diz `Background music disabled`); (b) listar pastas do USB com `FindFirstFileExFromAppW`; (c) a
+navegação do d-pad entre o grid (child window com `NavFlattened`) e as esferas.
+
+**Próximo passo:** run no console com o checklist TESTING.md §10.2 (itens 8–11 novos).
+
 ---
 
 ## 1. Estado atual (o que já está pronto e validado)
@@ -1844,6 +1944,8 @@ Escolha **uma** das opções:
 | 2026-10-21 | 12 (target machine) | **OK** (run 09) | Debug, F5: the CRT assertion is gone and **the Ymir GUI appears** on the console. The port is usable. Log not captured (user report). Open: the GUI is mouse-driven and the console has no mouse; the emulation itself is not tested yet (no IPL ROM, no disc) |
 | 2026-10-21 | 12 (target machine) | aguardando run 10 | Navegação da GUI por gamepad implementada (ImGui 1.93 + roteamento View/modal) e file picker revisado. Build local verde, MSIX gerado. Aguardando teste no console |
 | 2026-10-22 | 12 (target machine) | **OK** (runs 13–16) | `RelWithDebInfo` + upload de textura direto no `cmdListFrame` + `syncInWindowedMode = true` + guarda de `std::filesystem::proximate` com `std::error_code`: BIOS, *Sonic Jam* (`.cue`), *Road Rash* (`.chd`) e *Sega Rally* (`.cue`) rodando a 60 fps (`100.1%`) direto do USB (`E:\`) sem input lag. Corrigidos também os descritores `DXGI_FORMAT_R32_UINT` do VDP1 D3D12 e o `sleep_for` redundante sob `Present(1, 0)` |
+| 2026-10-23 | Shell fases V, A, L, O (máquina de origem) | OK (build) | Visual do mockup com a arte real, BGM + cubos reativos, biblioteca com folder picker e grid holográfico, overlays de configuração e menu de pausa. UWP RelWithDebInfo verde, desktop 47/47. Aguardando o run no console (TESTING.md §10.2, itens 1–11) |
+| 2026-10-23 | Shell F0 (máquina de origem) | OK (build) | Shell do Xbox (fase 0) compilada: UWP RelWithDebInfo verde, desktop 26/26. Ainda não rodou no console. Ver §0.1 (entrada de 2026-10-23) e `docs/uwp/shell/` |
 | | | | |
 
 ---
@@ -1852,11 +1954,13 @@ Escolha **uma** das opções:
 
 Cada item tem um critério de aceite. Faça um item por vez, com commit próprio.
 
-- **B-01: UX só com controle.** — **parcialmente implementado** (2026-10-21, entrada #9)
+- **B-01: UX só com controle.** — **parcialmente implementado** (2026-10-21, entrada #9); **substituído pela Shell
+  do Xbox** (2026-10-23, [shell/PLAN.md](shell/PLAN.md)). A navegação da GUI desktop continua valendo no modo avançado.
   - A navegação por gamepad do ImGui está ligada e o roteamento entre a GUI e o Saturn está feito (modal captura
     sempre; o botão View alterna). Falta validar no console e ajustar o que estiver ruim.
   - Documentação: [TESTING.md](TESTING.md) §5.
-- **B-02: Navegador de arquivos ImGui** como alternativa ao picker, navegável por controle. Lista drives `D:` a `Z:`
+- **B-02: Navegador de arquivos ImGui** como alternativa ao picker, navegável por controle. (A biblioteca em grid da
+  Shell, fase 2, cobre o caso de abrir jogos.) Lista drives `D:` a `Z:`
   e as pastas.
   - **Aceite:** abrir um `.cue` do USB só com o controle.
 - **B-03: Escala da UI na TV.** Em 4K, ajuste o `displayScale` ou o tamanho das fontes no UWP.
