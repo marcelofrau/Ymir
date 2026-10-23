@@ -430,6 +430,43 @@ if (Ymir_PLATFORM_UWP)
         src/platform/uwp/uwp_platform.hpp
         src/platform/uwp/stall_watchdog.cpp
         src/platform/uwp/stall_watchdog.hpp
+        src/platform/uwp/shell/audio_cube.cpp
+        src/platform/uwp/shell/audio_cube.hpp
+        src/platform/uwp/shell/audio_decoders.cpp
+        src/platform/uwp/shell/audio_decoders.hpp
+        src/platform/uwp/shell/cover_cache.cpp
+        src/platform/uwp/shell/cover_cache.hpp
+        src/platform/uwp/shell/dot_matrix.cpp
+        src/platform/uwp/shell/dot_matrix.hpp
+        src/platform/uwp/shell/file_system.cpp
+        src/platform/uwp/shell/file_system.hpp
+        src/platform/uwp/shell/game_library.cpp
+        src/platform/uwp/shell/game_library.hpp
+        src/platform/uwp/shell/layout.cpp
+        src/platform/uwp/shell/layout.hpp
+        src/platform/uwp/shell/marquee.cpp
+        src/platform/uwp/shell/marquee.hpp
+        src/platform/uwp/shell/music_player.cpp
+        src/platform/uwp/shell/music_player.hpp
+        src/platform/uwp/shell/overlay.cpp
+        src/platform/uwp/shell/overlay.hpp
+        src/platform/uwp/shell/quad_mesh.cpp
+        src/platform/uwp/shell/quad_mesh.hpp
+        src/platform/uwp/shell/screens/home_screen.cpp
+        src/platform/uwp/shell/screens/home_screen.hpp
+        src/platform/uwp/shell/settings_pages.cpp
+        src/platform/uwp/shell/shell.cpp
+        src/platform/uwp/shell/shell.hpp
+        src/platform/uwp/shell/shell_config.cpp
+        src/platform/uwp/shell/shell_config.hpp
+        src/platform/uwp/shell/shell_log.hpp
+        src/platform/uwp/shell/starfield.cpp
+        src/platform/uwp/shell/starfield.hpp
+        src/platform/uwp/shell/theme.cpp
+        src/platform/uwp/shell/theme.hpp
+        src/platform/uwp/shell/theme_layout.hpp
+        src/platform/uwp/shell/widgets.cpp
+        src/platform/uwp/shell/widgets.hpp
         src/app/xaudio2_backend.cpp
         src/app/xaudio2_backend.hpp
     )
@@ -602,6 +639,10 @@ if (Ymir_PLATFORM_UWP)
     target_link_libraries(ymir-sdl3 PRIVATE
         xaudio2
     )
+    # The art assets of the Xbox shell (src/platform/uwp/shell), embedded by uwp/ShellAssets.cmake
+    target_link_libraries(ymir-sdl3 PRIVATE
+        ymir-sdl3::shell-rc
+    )
 endif ()
 target_compile_features(ymir-sdl3 PUBLIC cxx_std_20)
 
@@ -671,6 +712,7 @@ endif ()
 ## Package as a UWP app (Xbox Dev Mode / Windows)
 if (Ymir_PLATFORM_UWP)
     include(uwp/UWPPackaging.cmake)
+    include(uwp/ShellAssets.cmake)
 endif ()
 
 if (IPO_SUPPORTED AND Ymir_ENABLE_IPO)
