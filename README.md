@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/ymir-uwp-social-preview.jpg" alt="DOSBox Pure - Xbox UWP Port" width="800"/>
+  <img src="docs/images/ymir-uwp-social-preview.jpg" alt=" width="800"/>
 </p>
 
 <p align="center">
