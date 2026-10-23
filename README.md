@@ -1,8 +1,16 @@
+<p align="center">
+  <img src="docs/images/ymir-uwp-social-preview.jpg" alt=" width="800"/>
+</p>
+
+<p align="center">
+  <strong>UWP Port of the Ymir work-in-progress Sega Saturn emulator</strong>
+</p>
+
 # Ymir
 
 [![Stable release](https://github.com/ymir-emu/Ymir/actions/workflows/stable-release.yaml/badge.svg)](https://github.com/ymir-emu/Ymir/actions/workflows/stable-release.yaml) [![Nightly release](https://github.com/ymir-emu/Ymir/actions/workflows/nightly-release.yaml/badge.svg)](https://github.com/ymir-emu/Ymir/actions/workflows/nightly-release.yaml) <a href="https://discord.gg/NN3A7n5dzn">![Discord Shield](https://discord.com/api/guilds/1368676375627694341/widget.png?style=shield)</a> <a href="https://patreon.com/StrikerX3">![Patreon Shield](https://img.shields.io/badge/Patreon-F96854?style=flat&logo=patreon&logoColor=white)</a>
 
-A work-in-progress Sega Saturn emulator.
+
 
 Join the [Discord community](https://discord.gg/NN3A7n5dzn).
 
