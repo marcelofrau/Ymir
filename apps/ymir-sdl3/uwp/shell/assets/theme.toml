@@ -1,0 +1,46 @@
+# Theme manifest of the Xbox shell.
+#
+# Each [assets.<id>] entry maps an asset id used by the shell to an image (PNG or JPEG) in this folder. Assets that
+# are not listed here (or whose file is missing) are drawn as procedural placeholders. See docs/uwp/shell/ASSETS.md
+# for the list of ids and the rules for the artwork.
+#
+# Files placed in <profile>/shell-theme/ take precedence over the ones embedded in the app, including this
+# manifest. Copy this file there with the Device Portal to try new artwork or positions without rebuilding.
+#
+# Asset fields:
+#   file    = "name.png"       required; RGBA with straight (non-premultiplied) alpha, drawn for 1920x1080
+#   frames  = 1                optional; number of frames in a sprite sheet
+#   columns = <frames>         optional; frames per row in the sprite sheet
+#   fps     = 0                optional; animation speed, 0 = static
+#   slice   = [0, 0, 0, 0]     optional; 9-slice margins in pixels (left, top, right, bottom)
+
+# Space backdrop: stars and the spiral galaxy. The procedural warp starfield is drawn over it
+[assets.bg_space]
+file = "background_nebula.jpg"
+
+# Top dashboard: the cyan bar is a dot-matrix LCD with the Ymir title, the version and the message marquee
+[assets.dash_top]
+file = "dashboard_top.png"
+
+# Bottom dashboard: the cockpit with the two pods the audio-reactive cubes float over
+[assets.dash_bottom]
+file = "dashboard_bottom.png"
+
+# Positions, in coordinates of the 1920x1080 reference canvas. Rectangles are [x, y, width, height], points are
+# [x, y], pods are [center x, center y, radius] and sphere rows are [first x, last x, y, radius]. lcd is the area of
+# the dot-matrix display inside the cyan bar and lcd_pitch the distance between its dots. Every value is optional;
+# the defaults match the artwork above.
+[layout]
+dash_top = [294, 12]
+dash_bottom = [0, 675]
+lcd = [412, 50, 1095, 75]
+lcd_pitch = 5
+pod_left = [183, 814, 112]
+pod_right = [1735, 814, 112]
+grid = [330, 272, 1260, 450]
+grid_columns = 6
+spheres = [660, 1260, 905, 34]
+focus_label = [960, 192]
+focus_description = [960, 228]
+message_panel = [330, 262, 1260, 400]
+legend = [960, 1000]

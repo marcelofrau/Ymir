@@ -252,7 +252,8 @@ void App::SetVirtualMouseButton(int button, bool down) {
 void App::UpdateVirtualMouse() {
     ImGuiIO &io = ImGui::GetIO();
 
-    if (!GamepadDrivesGui()) {
+    // The shell is driven by ImGui's gamepad navigation alone, so it never needs the virtual cursor
+    if (!GamepadDrivesGui() || m_shell.IsActive()) {
         // The gamepad drives the emulated Saturn: the virtual cursor is idle and hidden, and any
         // button still held is released so that it does not stick when the GUI takes the gamepad
         // back.
@@ -676,6 +677,10 @@ int App::Run(const CommandLineOptions &options) {
              });
          }});
 
+#if YMIR_PLATFORM_UWP
+    m_shell.LoadConfig();
+#endif
+
     // Load IPL ROM
     // Should be done after loading disc image so that the auto-detected region is used to select the appropriate ROM.
     // This will also reload persistent SMPC data.
@@ -684,7 +689,11 @@ int App::Run(const CommandLineOptions &options) {
     if (!iplLoadResult.succeeded) {
         if (m_context.romManager.GetIPLROMs().empty()) {
             // Could not load IPL ROM because there are none -- likely to be a fresh install, so show the Welcome screen
-            m_windowManagerService.OpenWelcomeModal(true);
+#if YMIR_PLATFORM_UWP
+            // The Xbox shell shows its own missing BIOS panel instead
+            if (!m_shell.IsActive())
+#endif
+                m_windowManagerService.OpenWelcomeModal(true);
         } else {
             m_windowManagerService.OpenSimpleErrorModal(
                 fmt::format("Could not load IPL ROM: {}", iplLoadResult.errorMessage));
@@ -1235,6 +1244,10 @@ void App::RunEmulator() {
         sgFreeImageData.Cancel();
     }
     ScopeGuard sgFreeImageData{[&] { stbi_image_free(ymirLogoImgData); }};
+
+#if YMIR_PLATFORM_UWP
+    m_shell.Init();
+#endif
 
     // ---------------------------------
     // Setup Dear ImGui Platform/Renderer backends
@@ -1969,23 +1982,29 @@ void App::RunEmulator() {
             {
                 const int playerIndex = gamepadPlayerIndices.GetPlayerIndex(evt.gbutton.which);
 #if YMIR_PLATFORM_UWP
+                // The Xbox shell sees every button first: View switches between the game and the shell, and in
+                // desktop mode a long press on View brings the shell back
+                m_shell.OnGamepadButton((SDL_GamepadButton)evt.gbutton.button, evt.gbutton.down, evt.gbutton.timestamp);
+
                 // The View button is not part of the Saturn control pad, so it is free to switch
                 // the gamepad over to the GUI. The emulated console inputs are reset on the switch
-                // so no stale button state leaks from one side to the other.
+                // so no stale button state leaks from one side to the other. The shell routes the gamepad on
+                // its own, so these toggles only apply to the desktop interface.
                 bool toggledGuiFocus = false;
-                if (evt.gbutton.button == SDL_GAMEPAD_BUTTON_BACK && evt.gbutton.down) {
+                const bool desktopRouting = !m_shell.IsActive();
+                if (desktopRouting && evt.gbutton.button == SDL_GAMEPAD_BUTTON_BACK && evt.gbutton.down) {
                     m_gamepadGuiFocus = !m_gamepadGuiFocus;
                     toggledGuiFocus = true;
                 }
                 // On Xbox, either thumbstick click (L3 or R3) toggles the gamepad focus between
                 // the GUI and the emulated Saturn.
-                if (evt.gbutton.button == SDL_GAMEPAD_BUTTON_LEFT_STICK) {
+                if (desktopRouting && evt.gbutton.button == SDL_GAMEPAD_BUTTON_LEFT_STICK) {
                     m_leftThumbPressed = evt.gbutton.down;
                     if (evt.gbutton.down) {
                         m_gamepadGuiFocus = !m_gamepadGuiFocus;
                         toggledGuiFocus = true;
                     }
-                } else if (evt.gbutton.button == SDL_GAMEPAD_BUTTON_RIGHT_STICK) {
+                } else if (desktopRouting && evt.gbutton.button == SDL_GAMEPAD_BUTTON_RIGHT_STICK) {
                     m_rightThumbPressed = evt.gbutton.down;
                     if (evt.gbutton.down) {
                         m_gamepadGuiFocus = !m_gamepadGuiFocus;
@@ -2005,7 +2024,7 @@ void App::RunEmulator() {
                                                       SDL_GetGamepadStringForButton((SDL_GamepadButton)evt.gbutton.button),
                                                       m_gamepadGuiFocus ? "GUI" : "Emulator"));
                 }
-                if (GamepadDrivesGui()) {
+                if (desktopRouting && GamepadDrivesGui()) {
                     // While the GUI has the gamepad, the shoulder buttons act as the virtual mouse
                     // buttons: the right shoulder is the left click and the left shoulder the right
                     // click. X opens Load Disc directly and Y opens Settings so the user does not
@@ -2531,7 +2550,7 @@ void App::RunEmulator() {
 #if YMIR_PLATFORM_UWP
         // The virtual cursor must stay visible while the gamepad drives the GUI, otherwise there
         // would be no pointer to aim with. Hiding it is only safe when there is a real mouse.
-        const bool virtualCursorActive = GamepadDrivesGui();
+        const bool virtualCursorActive = GamepadDrivesGui() && !m_shell.IsActive();
 #else
         constexpr bool virtualCursorActive = false;
 #endif
@@ -2627,6 +2646,13 @@ void App::RunEmulator() {
         auto *viewport = ImGui::GetMainViewport();
 
         const bool drawMainMenu = [&] {
+#if YMIR_PLATFORM_UWP
+            // The Xbox shell replaces the menu bar
+            if (m_shell.IsActive()) {
+                return false;
+            }
+#endif
+
             // Always draw main menu bar in windowed mode
             if (!fullScreen) {
                 return true;
@@ -3386,6 +3412,10 @@ void App::RunEmulator() {
                 m_inputService.DrawInputs(drawList);
             }
 
+#if YMIR_PLATFORM_UWP
+            m_shell.Draw();
+#endif
+
             // Draw windows and modals
             m_windowManagerService.DrawWindows();
             m_windowManagerService.DrawGenericModal();
@@ -3706,8 +3736,8 @@ void App::RunEmulator() {
 
 #if YMIR_PLATFORM_UWP
         // Show which side of the gamepad routing is active, so the user knows whether the
-        // controller is currently driving the GUI or the emulated Saturn.
-        {
+        // controller is currently driving the GUI or the emulated Saturn. The shell has its own hints.
+        if (!m_shell.IsActive()) {
             const ImGuiViewport *viewport = ImGui::GetMainViewport();
             const float scale = m_imguiData.displayScale;
             ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x - 320.0f * scale,
@@ -4048,6 +4078,7 @@ void App::EmulatorThread() {
                 if (m_discService.LoadDiscImage(path, true)) {
 #if YMIR_PLATFORM_UWP
                     m_gamepadGuiFocus = false;
+                    m_shell.OnDiscLoaded();
 #endif
                     m_saveStateService.LoadSaveStates();
                     m_saveStateService.LoadDebuggerState();

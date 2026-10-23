@@ -1,8 +1,23 @@
 ## Create the executable target
 add_executable(ymir-sdl3-tests
     src/util/stdio_suppress_tests.cpp
+    src/platform/uwp/shell/audio_cube_tests.cpp
+    src/platform/uwp/shell/dot_matrix_tests.cpp
+    src/platform/uwp/shell/layout_tests.cpp
+    src/platform/uwp/shell/marquee_tests.cpp
+    src/platform/uwp/shell/quad_mesh_tests.cpp
+    src/platform/uwp/shell/starfield_tests.cpp
 
     ${Ymir_SOURCE_DIR}/apps/ymir-sdl3/src/util/stdio_suppress.cpp
+
+    # The Xbox shell is only part of the UWP app, but its layout, starfield, marquee, mesh, dot-matrix and audio cube
+    # logic is plain C++ and is tested here
+    ${Ymir_SOURCE_DIR}/apps/ymir-sdl3/src/platform/uwp/shell/audio_cube.cpp
+    ${Ymir_SOURCE_DIR}/apps/ymir-sdl3/src/platform/uwp/shell/dot_matrix.cpp
+    ${Ymir_SOURCE_DIR}/apps/ymir-sdl3/src/platform/uwp/shell/layout.cpp
+    ${Ymir_SOURCE_DIR}/apps/ymir-sdl3/src/platform/uwp/shell/marquee.cpp
+    ${Ymir_SOURCE_DIR}/apps/ymir-sdl3/src/platform/uwp/shell/quad_mesh.cpp
+    ${Ymir_SOURCE_DIR}/apps/ymir-sdl3/src/platform/uwp/shell/starfield.cpp
 )
 add_executable(ymir::ymir-sdl3-tests ALIAS ymir-sdl3-tests)
 set_target_properties(ymir-sdl3-tests PROPERTIES

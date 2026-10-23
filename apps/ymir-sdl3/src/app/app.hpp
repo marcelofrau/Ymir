@@ -21,6 +21,10 @@
 #include "services/update_checker_service.hpp"
 #include "services/window_manager_service.hpp"
 
+#if YMIR_PLATFORM_UWP
+    #include <platform/uwp/shell/shell.hpp>
+#endif
+
 #include <chrono>
 #include <thread>
 #include <vector>
@@ -61,6 +65,10 @@ private:
     std::chrono::steady_clock::time_point m_mouseHideTime;
 
 #if YMIR_PLATFORM_UWP
+    /// @brief The gamepad-first Xbox interface. While it is active it replaces the desktop interface and decides
+    /// the gamepad routing; the desktop interface stays available as an advanced mode.
+    platform::uwp::shell::Shell m_shell{m_context};
+
     /// @brief True when the gamepad drives the ImGui layer instead of the emulated Saturn.
     ///
     /// The Xbox has a single gamepad that has to serve both the GUI and the emulated console, so
@@ -73,6 +81,9 @@ private:
 
     /// @brief True when the gamepad is routed to the ImGui layer rather than to the Saturn.
     bool GamepadDrivesGui() const {
+        if (m_shell.IsActive()) {
+            return m_shell.OwnsGamepad() || m_gamepadGuiModalOpen;
+        }
         return m_gamepadGuiFocus || m_gamepadGuiModalOpen;
     }
 
