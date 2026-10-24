@@ -25,6 +25,7 @@ Only compiled when YMIR_PLATFORM_UWP is set.
 
 #include <app/xaudio2_backend.hpp>
 
+#include <array>
 #include <atomic>
 #include <cstddef>
 #include <filesystem>
@@ -38,7 +39,15 @@ Only compiled when YMIR_PLATFORM_UWP is set.
 
 namespace platform::uwp::shell {
 
-/// @brief Plays the background music of the shell.
+/// @brief Sound effects of the Xbox shell, sampled from the Sega Saturn BIOS menu.
+enum class Sfx : std::size_t {
+    Boot = 0,   // played once when the application opens
+    Scroll = 1, // played on button presses and focus navigation
+    Select = 2, // played when launching a game
+    Count = 3,
+};
+
+/// @brief Plays the background music and UI sound effects of the shell.
 class MusicPlayer {
 public:
     /// @brief Output sample rate; tracks at other rates are resampled.
@@ -50,19 +59,22 @@ public:
     MusicPlayer(const MusicPlayer &) = delete;
     MusicPlayer &operator=(const MusicPlayer &) = delete;
 
-    /// @brief Finds the tracks and opens the audio output. Does nothing if already started.
-    /// @param[in] folder the folder with the music files (not searched recursively)
-    /// @param[in] shuffle whether to play the tracks in random order
-    /// @return `true` if there is at least one track and the output is open
+    /// @brief Loads the embedded SFX and BGM tracks (plus any custom tracks in `folder`) and opens the audio output.
+    /// @param[in] folder the folder with optional extra music files (not searched recursively)
+    /// @param[in] shuffle whether to play the tracks in random order instead of sequentially
+    /// @return `true` if the audio output is open
     bool Start(const std::filesystem::path &folder, bool shuffle);
 
-    /// @brief Starts or stops playback with a fade. Stopping keeps the position, so playback resumes where it was.
+    /// @brief Starts or stops BGM playback with a fade. Stopping keeps the position, so playback resumes where it was.
     void SetPlaying(bool playing);
+
+    /// @brief Triggers a UI sound effect immediately.
+    void PlaySfx(Sfx sfx);
 
     /// @brief Sets the music volume, in [0, 1].
     void SetVolume(float volume);
 
-    /// @brief Housekeeping on the GUI thread: pauses the output once a fade out is complete. Call every frame.
+    /// @brief Housekeeping on the GUI thread: pauses the output once fade out and active SFX are complete.
     void Update();
 
     /// @brief Retrieves the title of the track that started since the last call, if any.
@@ -78,19 +90,32 @@ public:
     }
 
 private:
+    struct Track {
+        std::string title;
+        std::string embeddedName;       // non-empty for tracks embedded in ymir-sdl3-shell-rc
+        std::filesystem::path filePath; // non-empty for custom tracks in <profile>/music/
+    };
+
     static int OnRequest(void *userdata, app::Sample *out, int frameCount);
     int Fill(app::Sample *out, int frameCount);
+    [[nodiscard]] bool HasActiveSfx() const;
 
     void DecodeLoop(std::stop_token stopToken);
     bool OpenNextTrack();
     std::size_t Produce(app::Sample *out, std::size_t frames);
 
     // Track list, written once by Start() before the decoder thread exists
-    std::vector<std::filesystem::path> m_tracks;
+    std::vector<Track> m_tracks;
     std::vector<std::size_t> m_order;
     std::size_t m_orderPos = 0;
-    bool m_shuffle = true;
+    bool m_shuffle = false;
     std::minstd_rand m_rng{std::random_device{}()};
+
+    // Pre-decoded UI sound effects at kOutputRate
+    static constexpr std::size_t kSfxCount = static_cast<std::size_t>(Sfx::Count);
+    static constexpr std::size_t kSfxInactive = ~std::size_t{0};
+    std::array<std::vector<app::Sample>, kSfxCount> m_sfxSamples{};
+    std::array<std::atomic<std::size_t>, kSfxCount> m_sfxPos{kSfxInactive, kSfxInactive, kSfxInactive};
 
     // Decoder thread state
     std::unique_ptr<AudioDecoder> m_decoder;
@@ -106,9 +131,10 @@ private:
     std::atomic<std::size_t> m_readPos{0};
     std::atomic<std::size_t> m_writePos{0};
 
-    // Fades. The target is set by the GUI thread; the gain ramps per sample on the voice thread
+    // Fades and BGM volume. The target is set by the GUI thread; the gain ramps per sample on the voice thread
     std::atomic<float> m_targetGain{0.0f};
     std::atomic<float> m_gain{0.0f};
+    std::atomic<float> m_musicVolume{0.6f};
     std::atomic_bool m_playing{false};
 
     // Levels measured on the voice thread

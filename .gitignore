@@ -54,3 +54,5 @@ scripts/uwp/xbox.env
 
 # Local tooling caches
 .cortexkit/
+# Source media and artwork kept locally; runtime copies live under apps/ymir-sdl3/uwp/shell/assets.
+/docs/assets/

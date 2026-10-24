@@ -31,16 +31,16 @@ TEST_CASE("Marquee shows nothing without texts", "[shell][marquee]") {
     CHECK(marquee.Current().empty());
 }
 
-TEST_CASE("Marquee enters from the right edge and scrolls left", "[shell][marquee]") {
+TEST_CASE("Marquee appears immediately at offset 0, holds briefly and scrolls left", "[shell][marquee]") {
     Marquee marquee;
     marquee.SetIdleTexts({"hello"});
 
     marquee.Update(0.0f, 500.0f, 100.0f, Measure);
     CHECK(marquee.Current() == "hello");
-    CHECK(marquee.Offset() == Approx(500.0f));
+    CHECK(marquee.Offset() == Approx(0.0f));
 
-    marquee.Update(0.5f, 500.0f, 100.0f, Measure);
-    CHECK(marquee.Offset() == Approx(450.0f));
+    marquee.Update(Marquee::kHoldSeconds + 0.5f, 500.0f, 100.0f, Measure);
+    CHECK(marquee.Offset() == Approx(-50.0f));
 }
 
 TEST_CASE("Marquee shows events before idle texts, in order", "[shell][marquee]") {
@@ -66,8 +66,8 @@ TEST_CASE("Marquee finishes a text only after its tail leaves the area", "[shell
     marquee.SetIdleTexts({"abcd"}); // 40 units wide
 
     marquee.Update(0.0f, 100.0f, 100.0f, Measure);
-    // 100 (area) + 40 (text) units must scroll by before the text is gone: 1.4 s at 100 units per second
-    marquee.Update(1.3f, 100.0f, 100.0f, Measure);
+    // Hold + 40 (text) units must scroll by before the text is gone: kHoldSeconds + 0.4 s at 100 units per second
+    marquee.Update(Marquee::kHoldSeconds + 0.3f, 100.0f, 100.0f, Measure);
     CHECK(marquee.Current() == "abcd");
     marquee.Update(0.2f, 100.0f, 100.0f, Measure);
     CHECK(marquee.Current().empty());

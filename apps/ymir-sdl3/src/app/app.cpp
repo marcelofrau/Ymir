@@ -2263,6 +2263,23 @@ void App::RunEmulator() {
             case EvtType::TryLoadIPLROM: //
             {
                 auto path = std::get<std::filesystem::path>(evt.value);
+#if YMIR_PLATFORM_UWP
+                auto &iplSettings = settings.system.ipl;
+                const bool previousOverride = iplSettings.overrideImage;
+                const std::filesystem::path previousPath = iplSettings.path;
+                iplSettings.overrideImage = true;
+                iplSettings.path = path;
+                const auto result = m_romService.LoadIPLROM();
+                if (result.succeeded) {
+                    settings.MakeDirty();
+                    m_shell.StartBiosSetup();
+                } else {
+                    iplSettings.overrideImage = previousOverride;
+                    iplSettings.path = previousPath;
+                    m_windowManagerService.OpenSimpleErrorModal(
+                        fmt::format("Failed to load IPL ROM from \"{}\": {}", path, result.errorMessage));
+                }
+#else
                 auto result = util::LoadIPLROM(path, *m_context.saturn.instance);
                 if (result.succeeded) {
                     if (settings.system.ipl.path != path) {
@@ -2274,13 +2291,18 @@ void App::RunEmulator() {
                     m_windowManagerService.OpenSimpleErrorModal(
                         fmt::format("Failed to load IPL ROM from \"{}\": {}", path, result.errorMessage));
                 }
+#endif
                 break;
             }
             case EvtType::ReloadIPLROM: //
             {
                 util::ROMLoadResult result = m_romService.LoadIPLROM();
                 if (result.succeeded) {
+#if YMIR_PLATFORM_UWP
+                    m_shell.StartBiosSetup();
+#else
                     m_context.EnqueueEvent(events::emu::HardReset());
+#endif
                 } else {
                     m_windowManagerService.OpenSimpleErrorModal(fmt::format("Failed to reload IPL ROM from \"{}\": {}",
                                                                             m_context.iplRomPath, result.errorMessage));

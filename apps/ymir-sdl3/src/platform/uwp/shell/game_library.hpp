@@ -27,7 +27,11 @@ struct GameEntry {
     std::filesystem::path path;  // the disc image to load (.cue, .chd, .iso, .ccd or .mds)
     std::string title;           // from the disc header, translated to UTF-8; the file name if the header has none
     std::string productCode;     // e.g. "MK-81009"; also the cover file name
+    std::string makerId;         // e.g. "SEGA ENTERPRISES" or "SEGA TP T-12"
+    std::string version;         // e.g. "V1.000"
+    std::string deviceInfo;      // e.g. "CD-1/1"
     std::string region;          // compatible area codes, e.g. "JTUE"
+    std::string peripherals;     // compatible peripheral codes, e.g. "JEW"
     std::string releaseDate;     // YYYYMMDD
     std::uint64_t size = 0;      // file size, to detect changes
     std::uint64_t lastWrite = 0; // modification time, to detect changes

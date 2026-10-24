@@ -18,7 +18,7 @@
 [assets.bg_space]
 file = "background_nebula.jpg"
 
-# Top dashboard: the cyan bar is a dot-matrix LCD with the Ymir title, the version and the message marquee
+# Top dashboard: the cyan bar is a dot-matrix LCD with the Ymir title and the message marquee
 [assets.dash_top]
 file = "dashboard_top.png"
 
@@ -26,21 +26,29 @@ file = "dashboard_top.png"
 [assets.dash_bottom]
 file = "dashboard_bottom.png"
 
+# Ymir 3D wordmark and icon used on the About and Welcome screens
+[assets.ymir_logo]
+file = "ymir_logo.png"
+
+[assets.ymir_icon]
+file = "ymir_icon.png"
+
 # Positions, in coordinates of the 1920x1080 reference canvas. Rectangles are [x, y, width, height], points are
 # [x, y], pods are [center x, center y, radius] and sphere rows are [first x, last x, y, radius]. lcd is the area of
 # the dot-matrix display inside the cyan bar and lcd_pitch the distance between its dots. Every value is optional;
 # the defaults match the artwork above.
 [layout]
-dash_top = [294, 12]
+dash_top = [294, -14]
 dash_bottom = [0, 675]
-lcd = [412, 50, 1095, 75]
+lcd = [422, 26, 1075, 75]
 lcd_pitch = 5
 pod_left = [183, 814, 112]
 pod_right = [1735, 814, 112]
-grid = [330, 272, 1260, 450]
+grid = [330, 165, 1260, 455]
 grid_columns = 6
 spheres = [660, 1260, 905, 34]
 focus_label = [960, 192]
 focus_description = [960, 228]
 message_panel = [330, 262, 1260, 400]
-legend = [960, 1000]
+legend = [960, 1044]
+version = [1896, 1064]

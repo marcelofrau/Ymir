@@ -12,7 +12,7 @@ namespace platform::uwp::shell {
 namespace {
 
     /// @brief Panel area on the reference canvas: the sky between the dashboards, leaving the legend visible.
-    constexpr Rect kPanel{{300.0f, 178.0f}, {1320.0f, 600.0f}};
+    constexpr Rect kPanel{{300.0f, 178.0f}, {1320.0f, 670.0f}};
 
     constexpr float kRowHeight = 56.0f;
     constexpr float kRowGap = 6.0f;
@@ -141,8 +141,9 @@ void Overlay::Pop() {
     ++m_closeRequests;
 }
 
-void Overlay::Replace(OverlayScreen screen) {
+void Overlay::Replace(OverlayScreen screen, bool resetFocus) {
     m_pendingReplace = std::move(screen);
+    m_pendingReplaceResetFocus = resetFocus;
 }
 
 void Overlay::CloseAll() {
@@ -251,56 +252,80 @@ void Overlay::Draw(const DrawContext &ctx, bool dimBackground) {
             DrawGlyph(octx, Glyph::RB, {x + ctx.layout.Scale(8.0f), y + ctx.layout.Scale(10.0f)}, 14.0f);
         }
 
-        // Rows, in a scrolling child window
+        // Rows, in a scrolling child window (or custom page renderer when provided)
         const float rowsTop = panel.pos.y + ctx.layout.Scale(state.screen.pages.size() > 1 ? 118.0f : 82.0f);
         const float helpHeight = ctx.layout.Scale(70.0f);
         const Rect rowsRect{{panel.pos.x + padX, rowsTop},
                             {panel.size.x - padX * 2.0f, panel.pos.y + panel.size.y - helpHeight - rowsTop}};
-        ImGui::SetCursorScreenPos(ToImVec2(rowsRect.pos));
-        if (ImGui::BeginChild("##rows", ToImVec2(rowsRect.size), ImGuiChildFlags_NavFlattened,
-                              ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar |
-                                  ImGuiWindowFlags_NoScrollWithMouse)) {
-            const DrawContext rctx{
-                ImGui::GetWindowDrawList(), ctx.layout, ctx.theme, ctx.graphics, ctx.shapes, ctx.time, ctx.deltaTime};
-            if (!state.screen.pages.empty()) {
-                // Copy the rows: a callback may replace the screen's pages while they are being drawn
-                const std::vector<OverlayRow> rows = state.screen.pages[state.page].rows;
-                if (state.rowFocus.size() != rows.size()) {
-                    state.rowFocus.assign(rows.size(), 0.0f);
-                }
-                const ImVec2 origin = ImGui::GetCursorScreenPos();
-                const float rowH = ctx.layout.Scale(kRowHeight);
-                const float gap = ctx.layout.Scale(kRowGap);
-                for (std::size_t i = 0; i < rows.size(); ++i) {
-                    const Rect rect{{origin.x, origin.y + static_cast<float>(i) * (rowH + gap)},
-                                    {rowsRect.size.x, rowH}};
-                    ImGui::SetCursorScreenPos(ToImVec2(rect.pos));
-                    if (state.focusRequested && i == std::min(state.focusedRow, rows.size() - 1)) {
-                        ImGui::SetKeyboardFocusHere();
-                        state.focusRequested = false;
+        if (!state.screen.pages.empty() && state.screen.pages[state.page].customDraw) {
+            const Rect fullContent{
+                {panel.pos.x + padX, rowsTop},
+                {panel.size.x - padX * 2.0f, panel.pos.y + panel.size.y - ctx.layout.Scale(28.0f) - rowsTop}};
+            state.screen.pages[state.page].customDraw(octx, fullContent);
+            // Dummy nav item so the window keeps focus for LB/RB/B navigation
+            ImGui::SetCursorScreenPos(ToImVec2(fullContent.pos));
+            if (state.focusRequested) {
+                ImGui::SetKeyboardFocusHere();
+                state.focusRequested = false;
+            }
+            ImGui::InvisibleButton("##custom_page", ImVec2(1.0f, 1.0f), ImGuiButtonFlags_EnableNav);
+        } else {
+            ImGui::SetCursorScreenPos(ToImVec2(rowsRect.pos));
+            if (ImGui::BeginChild("##rows", ToImVec2(rowsRect.size), ImGuiChildFlags_NavFlattened,
+                                  ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar |
+                                      ImGuiWindowFlags_NoScrollWithMouse)) {
+                const DrawContext rctx{ImGui::GetWindowDrawList(),
+                                       ctx.layout,
+                                       ctx.theme,
+                                       ctx.graphics,
+                                       ctx.shapes,
+                                       ctx.time,
+                                       ctx.deltaTime};
+                if (!state.screen.pages.empty()) {
+                    // Copy the rows: a callback may replace the screen's pages while they are being drawn
+                    const std::vector<OverlayRow> rows = state.screen.pages[state.page].rows;
+                    if (state.rowFocus.size() != rows.size()) {
+                        state.rowFocus.assign(rows.size(), 0.0f);
                     }
-                    ImGui::PushID(static_cast<int>(i));
-                    const bool pressed = ImGui::InvisibleButton("##row", ToImVec2(rect.size));
-                    const bool focused = ImGui::IsItemFocused();
-                    ImGui::PopID();
-                    if (focused) {
-                        state.focusedRow = i;
-                    }
+                    const ImVec2 origin = ImGui::GetCursorScreenPos();
+                    const float rowH = ctx.layout.Scale(kRowHeight);
+                    const float gap = ctx.layout.Scale(kRowGap);
+                    for (std::size_t i = 0; i < rows.size(); ++i) {
+                        const Rect rect{{origin.x, origin.y + static_cast<float>(i) * (rowH + gap)},
+                                        {rowsRect.size.x, rowH}};
+                        ImGui::SetCursorScreenPos(ToImVec2(rect.pos));
+                        if (state.focusRequested && i == std::min(state.focusedRow, rows.size() - 1)) {
+                            ImGui::SetKeyboardFocusHere();
+                            ImGui::SetScrollHereY(0.25f);
+                            state.focusRequested = false;
+                        }
+                        ImGui::PushID(static_cast<int>(i));
+                        const bool pressed =
+                            ImGui::InvisibleButton("##row", ToImVec2(rect.size), ImGuiButtonFlags_EnableNav);
+                        const bool focused = ImGui::IsItemFocused();
+                        ImGui::PopID();
+                        if (focused) {
+                            if (state.focusedRow != i) {
+                                state.focusedRow = i;
+                                ImGui::SetScrollHereY();
+                            }
+                        }
 
-                    DrawRow(rctx, state, i, rect, focused);
+                        DrawRow(rctx, state, i, rect, focused);
 
-                    const OverlayRow &row = rows[i];
-                    if (pressed && IsEnabled(row)) {
-                        if (row.kind == OverlayRow::Kind::Action && row.activate) {
-                            row.activate();
-                        } else {
-                            Adjust(row, +1);
+                        const OverlayRow &row = rows[i];
+                        if (pressed && IsEnabled(row)) {
+                            if (row.kind == OverlayRow::Kind::Action && row.activate) {
+                                row.activate();
+                            } else {
+                                Adjust(row, +1);
+                            }
                         }
                     }
                 }
             }
+            ImGui::EndChild();
         }
-        ImGui::EndChild();
 
         // Help text of the focused row
         if (!m_stack.empty() && top < m_stack.size()) {
@@ -308,7 +333,9 @@ void Overlay::Draw(const DrawContext &ctx, bool dimBackground) {
             if (!live.screen.pages.empty() && live.focusedRow < live.screen.pages[live.page].rows.size()) {
                 const std::string &help = live.screen.pages[live.page].rows[live.focusedRow].help;
                 if (!help.empty()) {
-                    DrawLabel(octx, imguiData->fonts.sansSerif.regular, 22.0f,
+                    ImFont *helpFont =
+                        ctx.theme.GetFont() != nullptr ? ctx.theme.GetFont() : imguiData->fonts.sansSerif.regular;
+                    DrawLabel(octx, helpFont, 24.0f,
                               {panel.pos.x + padX, panel.pos.y + panel.size.y - helpHeight + ctx.layout.Scale(8.0f)},
                               IM_COL32(170, 205, 235, 255), help, panel.size.x - padX * 2.0f);
                 }
@@ -331,10 +358,14 @@ void Overlay::Draw(const DrawContext &ctx, bool dimBackground) {
         State &state = m_stack.back();
         state.screen = std::move(*m_pendingReplace);
         state.page = std::min(state.page, state.screen.pages.empty() ? std::size_t{0} : state.screen.pages.size() - 1);
+        if (m_pendingReplaceResetFocus) {
+            state.focusedRow = 0;
+        }
         state.rowFocus.clear();
         state.focusRequested = true;
     }
     m_pendingReplace.reset();
+    m_pendingReplaceResetFocus = false;
 
     // Screens opened by row callbacks during the frame
     for (OverlayScreen &screen : m_pendingPushes) {
@@ -409,9 +440,21 @@ void Overlay::DrawRow(const DrawContext &ctx, State &state, std::size_t index, R
 
     const float alpha = enabled ? 1.0f : 0.4f;
     const float midY = rect.pos.y + rect.size.y * 0.5f;
-    const Vec2 labelSize = MeasureDotText(ctx, kLabelPitch, row.label);
-    DrawDotText(ctx, {rect.pos.x + ctx.layout.Scale(24.0f), midY - labelSize.y * 0.5f}, kLabelPitch, row.label,
-                Alpha(IM_COL32(225, 240, 255, 255), alpha));
+    float labelX = rect.pos.x + ctx.layout.Scale(24.0f);
+    if (!row.icon.empty() && ctx.theme.GetIconFont() != nullptr) {
+        DrawLabelCentered(ctx, ctx.theme.GetIconFont(), 22.0f, {rect.pos.x + ctx.layout.Scale(34.0f), midY},
+                          Alpha(row.iconColor, alpha), row.icon);
+        labelX = rect.pos.x + ctx.layout.Scale(64.0f);
+    }
+    if (row.useNerdFont && ctx.theme.GetFont() != nullptr) {
+        const Vec2 labelSize = MeasureLabel(ctx, ctx.theme.GetFont(), 24.0f, row.label);
+        DrawLabel(ctx, ctx.theme.GetFont(), 24.0f, {labelX, midY - labelSize.y * 0.5f},
+                  Alpha(IM_COL32(225, 240, 255, 255), alpha), row.label);
+    } else {
+        const Vec2 labelSize = MeasureDotText(ctx, kLabelPitch, row.label);
+        DrawDotText(ctx, {labelX, midY - labelSize.y * 0.5f}, kLabelPitch, row.label,
+                    Alpha(IM_COL32(225, 240, 255, 255), alpha));
+    }
 
     // Value on the right, by kind
     const float right = rect.pos.x + rect.size.x - ctx.layout.Scale(24.0f);
@@ -497,7 +540,7 @@ void Overlay::DrawRow(const DrawContext &ctx, State &state, std::size_t index, R
 }
 
 std::vector<ButtonHint> Overlay::Legend() const {
-    std::vector<ButtonHint> hints{{Glyph::DPad, "Navigate"}};
+    std::vector<ButtonHint> hints;
     if (!m_stack.empty()) {
         const State &state = m_stack.back();
         if (!state.screen.pages.empty() && state.focusedRow < state.screen.pages[state.page].rows.size()) {

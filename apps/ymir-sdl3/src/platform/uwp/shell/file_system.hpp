@@ -28,6 +28,10 @@ struct DirectoryEntry {
     std::uint64_t lastWrite = 0; // FILETIME ticks (100 ns since 1601), only meaningful for comparisons
 };
 
+/// @brief Lists accessible drive roots (e.g., `C:\`, `D:\`, `E:\`, `Q:\`).
+/// @return the list of accessible drive root paths
+std::vector<std::filesystem::path> ListDrives();
+
 /// @brief Lists a directory, without recursing into subdirectories. `.` and `..` are skipped.
 /// @param[in] directory the directory to list
 /// @param[out] out receives the entries; it is cleared first
@@ -39,6 +43,19 @@ bool ListDirectory(const std::filesystem::path &directory, std::vector<Directory
 /// @param[in] maxBytes the largest file accepted; bigger files are rejected
 /// @return the file contents, or nothing if the file could not be read or is too big
 std::optional<std::string> ReadWholeFile(const std::filesystem::path &path, std::uint64_t maxBytes);
+
+/// @brief Writes a whole buffer to a file, creating parent directories if needed.
+/// @param[in] path the destination file path
+/// @param[in] data the bytes to write
+/// @return `true` on success
+bool WriteWholeFile(const std::filesystem::path &path, std::string_view data);
+
+/// @brief Copies a file using brokered UWP file APIs.
+/// @param[in] src the source file path
+/// @param[in] dst the destination file path
+/// @param[in] maxBytes the maximum allowed file size
+/// @return `true` on success
+bool CopyFileTo(const std::filesystem::path &src, const std::filesystem::path &dst, std::uint64_t maxBytes);
 
 /// @brief Creates a directory and its parents if they do not exist.
 /// @return `true` if the directory exists afterwards

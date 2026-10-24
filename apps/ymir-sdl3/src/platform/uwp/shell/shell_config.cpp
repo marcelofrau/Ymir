@@ -42,11 +42,14 @@ bool ShellConfig::Load(const std::filesystem::path &path) {
     if (auto opt = data["Music"]["Volume"].value<double>()) {
         musicVolume = std::clamp(static_cast<float>(*opt), 0.0f, 1.0f);
     }
-    if (auto opt = data["Music"]["Shuffle"].value<bool>()) {
+    if (auto opt = data["Music"]["ShuffleTracks"].value<bool>()) {
         musicShuffle = *opt;
     }
     if (auto opt = data["Shell"]["Scanlines"].value<bool>()) {
         scanlines = *opt;
+    }
+    if (auto opt = data["Shell"]["WizardCompleted"].value<bool>()) {
+        wizardCompleted = *opt;
     }
     if (const toml::array *folders = data["Library"]["Folders"].as_array()) {
         for (const toml::node &node : *folders) {
@@ -54,6 +57,9 @@ bool ShellConfig::Load(const std::filesystem::path &path) {
                 libraryFolders.emplace_back(std::u8string{folder->begin(), folder->end()});
             }
         }
+    }
+    if (!data["Shell"]["WizardCompleted"].is_boolean() && !libraryFolders.empty()) {
+        wizardCompleted = true;
     }
     return true;
 }
@@ -63,11 +69,12 @@ bool ShellConfig::Save(const std::filesystem::path &path) const {
         {"Mode", std::string{mode == UIMode::Desktop ? kModeDesktop : kModeShell}},
         {"SafeArea", static_cast<double>(safeArea)},
         {"Scanlines", scanlines},
+        {"WizardCompleted", wizardCompleted},
     };
     toml::table musicTbl{
         {"Enabled", musicEnabled},
         {"Volume", static_cast<double>(musicVolume)},
-        {"Shuffle", musicShuffle},
+        {"ShuffleTracks", musicShuffle},
     };
     toml::array folders;
     for (const std::filesystem::path &folder : libraryFolders) {

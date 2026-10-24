@@ -116,6 +116,9 @@ A 90s console BIOS with a high-tech finish, keeping the Saturn's 32-bit identity
 | Covers | `<profile>/covers/<product number>.png/jpg` or `<disc file name>.png/jpg` | Loaded two per frame at most, scaled down to 256 px |
 | Music | `<profile>/music/*.ogg/mp3/flac/wav` | Never shipped; the user's own files. Fades in on the shell screens, out in game |
 
+The Shell file and folder browser lists drives and directories on a background worker. While removable storage is being
+checked, the picker stays visible with a loading row; closing it does not block the render thread.
+
 Files outside the package (a USB drive, a picked folder) are only reachable through the brokered `...FromApp` Win32
 functions, so the library, the covers and the music go through `fs::ListDirectory` / `fs::ReadWholeFile`.
 
@@ -180,7 +183,7 @@ The shell does not reimplement anything; it calls the same events and services t
 |---|---|
 | Start / resume | `events::emu::SetPaused(false)` |
 | Load disc | `DiscService::OpenLoadDiscDialog()`; the emulator thread's `LoadDisc` handler calls `Shell::OnDiscLoaded()`, which the GUI thread picks up on the next frame through an atomic flag |
-| Select BIOS | `FileDialogService::InvokeOpenFileDialog()`, then the same sequence as the desktop Welcome dialog: `util::LoadIPLROM`, `settings.system.ipl.{overrideImage,path}`, `ROMService::LoadIPLROM()`, `events::emu::HardReset()` |
+| Select BIOS | The Shell file browser selects and copies the IPL ROM into the profile, then uses `util::LoadIPLROM`, `settings.system.ipl.{overrideImage,path}`, `ROMService::LoadIPLROM()` and `events::emu::HardReset()` |
 | Scan again | `ROMService::ScanIPLROMs()` + `LoadIPLROM()` + hard reset |
 | Settings (until phase 3) | Opens the desktop `SettingsWindow` on top of the shell |
 | Desktop UI | Writes `Mode = "Desktop"` to `shell.toml` and lets the emulation run |
@@ -215,6 +218,7 @@ return `nullptr` and the widget draws a procedural placeholder. See [ASSETS.md](
 | S14 | Library scanned only on request, with the folder picker | The user decides what is scanned; enumerating a USB drive is slow and is not done behind the user's back. The cache makes the grid instant on later launches | Scanning drives automatically at startup |
 | S15 | One declarative overlay system for every shell window (settings, pause, future tools) | New pages are lists of rows, not new drawing code; input handling is the same everywhere | One hand-made screen per window |
 | S16 | Reuse libchdr's dr_flac implementation | libchdr already compiles dr_flac 0.13.4 (the same version as `vendor/dr_libs`, identical structs); compiling a second copy failed with duplicate symbols | A second `DR_FLAC_IMPLEMENTATION` |
+| S17 | Enumerate picker directories off the render thread | USB and other brokered storage can respond slowly; a dedicated worker keeps navigation and the loading screen responsive, and shared result state remains safe if the picker closes | Synchronous enumeration in the navigation callback |
 
 ## 6. Known limitations
 

@@ -32,16 +32,19 @@ struct ShellConfig {
     bool musicEnabled = true;
 
     /// @brief Background music volume, in [0, 1].
-    float musicVolume = 0.6f;
+    float musicVolume = 0.5f;
 
-    /// @brief Whether the background music tracks play in random order.
-    bool musicShuffle = true;
+    /// @brief Whether the background music tracks play in random order. Defaults to sequential playback.
+    bool musicShuffle = false;
 
     /// @brief The folders the game library is scanned from, added by the user with the folder picker.
     std::vector<std::filesystem::path> libraryFolders;
 
     /// @brief Whether the faint CRT scanlines are drawn over the shell.
     bool scanlines = true;
+
+    /// @brief Whether the initial Welcome / Setup Wizard has been completed.
+    bool wizardCompleted = false;
 
     /// @brief Loads the configuration. Missing or invalid files and fields fall back to the defaults.
     /// @param[in] path the path to `shell.toml`

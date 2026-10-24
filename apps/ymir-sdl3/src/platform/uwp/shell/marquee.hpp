@@ -50,10 +50,13 @@ public:
     }
 
     /// @brief Retrieves the horizontal position of the start of the current text, relative to the left edge of the
-    /// area. Starts at the area width and decreases.
+    /// area. Starts at 0 (full message immediately visible), holds briefly, and then decreases as it scrolls left.
     [[nodiscard]] float Offset() const {
         return m_offset;
     }
+
+    /// @brief Time a newly shown message stays still at offset 0 before starting to scroll left.
+    static constexpr float kHoldSeconds = 0.6f;
 
     /// @brief Retrieves the number of events still waiting.
     [[nodiscard]] std::size_t PendingEvents() const {
@@ -70,6 +73,8 @@ private:
     std::string m_current;
     float m_currentWidth = 0.0f;
     float m_offset = 0.0f;
+    float m_holdTimer = 0.0f;
+    bool m_currentIsEvent = false;
     bool m_active = false;
 };
 

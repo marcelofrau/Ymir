@@ -26,6 +26,7 @@ Only compiled when YMIR_PLATFORM_UWP is set.
 
 #include <platform/uwp/shell/audio_cube.hpp>
 #include <platform/uwp/shell/cover_cache.hpp>
+#include <platform/uwp/shell/file_system.hpp>
 #include <platform/uwp/shell/game_library.hpp>
 #include <platform/uwp/shell/layout.hpp>
 #include <platform/uwp/shell/marquee.hpp>
@@ -47,6 +48,7 @@ Only compiled when YMIR_PLATFORM_UWP is set.
 #include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace app {
@@ -98,6 +100,9 @@ public:
     /// Safe to call from the emulator thread.
     void OnDiscLoaded();
 
+    /// @brief Boots the loaded IPL ROM with the disc tray empty for initial BIOS setup.
+    void StartBiosSetup();
+
 private:
     enum class Screen {
         Home,   // the library and the action spheres; the emulation is paused
@@ -105,30 +110,44 @@ private:
         Paused, // the pause menu over the frozen game
     };
 
+    enum class FilePickerMode {
+        Disc,   // pick a disc image (.cue, .chd, .iso, .ccd, .mds) to boot
+        Bios,   // pick a Saturn IPL ROM (.bin, .rom, .ic17)
+        Folder, // pick a directory to add to the game library
+    };
+
     // Screens and transitions
     void ShowHome();
+    void ShowMainMenu();
+    void ShowGameLibrary();
     void EnterGame();
     void OpenPause();
     void PauseEmulation();
     void SetMode(UIMode mode);
     void SaveConfig() const;
+    void ResetAllSavedData();
 
     // Home actions
     void HandleHomeAction(const HomeResult &result);
     void LaunchGame(const std::filesystem::path &path);
+    void OpenFilePicker(FilePickerMode mode, std::filesystem::path initialDir = {});
     void OpenLoadDisc();
     void OpenBiosPicker();
     void ProcessPickedBios();
     void RescanBios();
     void OpenFolderPicker();
     void ProcessPickedFolder();
+    void StartPickerLoad(std::filesystem::path directory);
+    void ProcessPickerLoad();
     void StartLibraryScan();
     void SwitchToDesktop();
     void Quit();
 
     // Overlays (settings_pages.cpp)
     [[nodiscard]] OverlayScreen BuildSettingsScreen();
+    [[nodiscard]] OverlayScreen BuildResetConfirmScreen();
     [[nodiscard]] OverlayScreen BuildPauseScreen();
+    [[nodiscard]] OverlayScreen BuildFilePickerScreen();
 
     // Per-frame
     [[nodiscard]] HomeModel BuildHomeModel(bool inputEnabled);
@@ -175,16 +194,30 @@ private:
     bool m_overlayWasOpen = false;
     double m_time = 0.0; // animation clock, in seconds
     double m_gameEnteredTime = 0.0;
+    double m_lastScrollSfxTime = -1.0;
+    ImGuiID m_lastFocusId = 0;
     std::size_t m_pauseSlot = 0; // save state slot selected in the pause menu
 
     std::atomic_bool m_discLoaded{false};
 
     std::optional<std::uint64_t> m_viewDownTimestamp; // desktop mode: when View was pressed
 
-    // Written by the file and folder picker callbacks, which may run on another thread
+    // Written by the file and folder picker callbacks
     std::mutex m_pickMutex;
     std::optional<std::filesystem::path> m_pickedBios;
     std::optional<std::filesystem::path> m_pickedFolder;
+    FilePickerMode m_pickerMode = FilePickerMode::Disc;
+    std::filesystem::path m_pickerDir;
+    struct PickerLoadState {
+        std::mutex mutex;
+        std::vector<fs::DirectoryEntry> entries;
+        bool complete = false;
+        bool succeeded = true;
+    };
+    std::shared_ptr<PickerLoadState> m_pickerLoad;
+    std::vector<fs::DirectoryEntry> m_pickerEntries;
+    bool m_pickerLoading = false;
+    bool m_pickerReadFailed = false;
 };
 
 } // namespace platform::uwp::shell
