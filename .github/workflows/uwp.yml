@@ -1,8 +1,8 @@
 # Builds the Ymir UWP package for Xbox Dev Mode / Windows and publishes the distributable.
 #
 # - Pushes and pull requests on uwp/** branches: build + upload the distributable zip as a workflow artifact.
-# - Tags uwp-vX.Y.Z.R (e.g. uwp-v0.4.0.1): build + GitHub Release with the zip. The package version is taken from
-#   the tag. The uwp- prefix keeps these tags apart from upstream Ymir's v* release tags.
+# - Tags uwp-vX.Y.Z.R (e.g. uwp-v0.4.2.1): build + draft GitHub Release, published manually after Xbox validation.
+#   The package version is taken from the tag. The uwp- prefix keeps these tags apart from upstream Ymir's v* tags.
 # - Manual runs (workflow_dispatch): build, optionally publishing a prerelease.
 #
 # The distributable contains the signed .msix, its certificate, the Microsoft.VCLibs dependency, the Visual Studio
@@ -23,7 +23,7 @@ on:
         default: false
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: uwp-${{ github.ref }}
@@ -33,6 +33,9 @@ jobs:
   build:
     name: Build UWP package (x64)
     runs-on: windows-2025
+    outputs:
+      version: ${{ steps.package.outputs.version }}
+      has_symbols: ${{ steps.package.outputs.symbols != '' }}
     env:
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\.vcpkg-cache
     steps:
@@ -61,11 +64,17 @@ jobs:
           $base = "$($Matches[1]).$($Matches[2]).$($Matches[3])"
           if ($env:GITHUB_REF -match '^refs/tags/uwp-v(\d+\.\d+\.\d+\.\d+)$') {
             $version = $Matches[1]
+            if ($version -notmatch "^$([regex]::Escape($base))\.(\d+)$") {
+              throw "Release tag version must start with the Ymir version $base (got $version)"
+            }
+            if ([int]$Matches[1] -lt 1 -or [int]$Matches[1] -gt 65535) {
+              throw 'Release revision must be between 1 and 65535'
+            }
           } elseif ($env:GITHUB_REF -like 'refs/tags/*') {
             throw "Release tags must look like uwp-vX.Y.Z.R (got $env:GITHUB_REF)"
           } else {
-            # The last version field is limited to 16 bits
-            $version = "$base.$([int]$env:GITHUB_RUN_NUMBER % 65536)"
+            if ([int]$env:GITHUB_RUN_NUMBER -gt 65535) { throw 'GitHub run number exceeds the UWP package version limit (65535)' }
+            $version = "$base.$env:GITHUB_RUN_NUMBER"
           }
           Write-Host "Package version: $version"
           "version=$version" >> $env:GITHUB_OUTPUT
@@ -118,11 +127,38 @@ jobs:
           path: ${{ steps.package.outputs.symbols }}
           compression-level: 0
 
+  publish:
+    name: Prepare GitHub release
+    if: startsWith(github.ref, 'refs/tags/uwp-v') || (github.event_name == 'workflow_dispatch' && inputs.release)
+    needs: build
+    runs-on: windows-2025
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download distributable
+        uses: actions/download-artifact@v4
+        with:
+          name: ymir-uwp-${{ needs.build.outputs.version }}
+          path: release-assets
+
+      - name: Download debug symbols
+        if: needs.build.outputs.has_symbols == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: ymir-uwp-${{ needs.build.outputs.version }}-symbols
+          path: release-assets
+
       - name: Write release notes
-        if: startsWith(github.ref, 'refs/tags/uwp-v') || (github.event_name == 'workflow_dispatch' && inputs.release)
         shell: pwsh
+        env:
+          PACKAGE_VERSION: ${{ needs.build.outputs.version }}
         run: |
-          $version = '${{ steps.package.outputs.version }}'
+          $version = $env:PACKAGE_VERSION
           $previous = git tag --sort=-v:refname --list 'uwp-v*' | Where-Object { $_ -ne "uwp-v$version" } |
             Select-Object -First 1
           $commits = if ($previous) {
@@ -149,17 +185,14 @@ jobs:
           $lines -join "`n" | Set-Content -Path release_notes.md -Encoding utf8NoBOM
           Get-Content release_notes.md
 
-      - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/uwp-v') || (github.event_name == 'workflow_dispatch' && inputs.release)
+      - name: Create draft or prerelease
         uses: softprops/action-gh-release@v2
         with:
-          name: Ymir UWP ${{ steps.package.outputs.version }}
-          tag_name: uwp-v${{ steps.package.outputs.version }}
+          name: Ymir UWP ${{ needs.build.outputs.version }}
+          tag_name: uwp-v${{ needs.build.outputs.version }}
           target_commitish: ${{ github.sha }}
           body_path: release_notes.md
-          files: |
-            ${{ steps.package.outputs.zip }}
-            ${{ steps.package.outputs.symbols }}
-          draft: false
+          files: release-assets/*.zip
+          draft: ${{ startsWith(github.ref, 'refs/tags/uwp-v') }}
           prerelease: ${{ !startsWith(github.ref, 'refs/tags/uwp-v') }}
           make_latest: ${{ startsWith(github.ref, 'refs/tags/uwp-v') }}

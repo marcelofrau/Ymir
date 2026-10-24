@@ -434,7 +434,7 @@ OverlayScreen Shell::BuildSettingsScreen() {
             }
             DrawLabel(dctx, nerdFont, 24.0f, {textLeft, banner.pos.y + dctx.layout.Scale(88.0f)},
                       IM_COL32(165, 225, 255, 255),
-                      "Sega Saturn Emulator  •  v" Ymir_VERSION "  •  Xbox / UWP Edition");
+                      "Sega Saturn Emulator  •  v" Ymir_VERSION "  •  Xbox/UWP build " YMIR_UWP_BUILD_NUMBER);
 
             y += banner.size.y + dctx.layout.Scale(18.0f);
 
@@ -476,11 +476,11 @@ OverlayScreen Shell::BuildSettingsScreen() {
             drawCardFrame(rightCard, "SPECIAL THANKS", "\xEF\x80\x84", IM_COL32(255, 185, 75, 235));
             const float rx = rightCard.pos.x + dctx.layout.Scale(20.0f);
             DrawLabel(dctx, nerdFont, 25.0f, {rx, rightCard.pos.y + dctx.layout.Scale(56.0f)},
-                      IM_COL32(255, 230, 140, 255), "MewLew   •   aloisious   •   DanP142");
+                      IM_COL32(255, 230, 140, 255), "MewLew   •   alouisious   •   DanP142");
             DrawLabel(dctx, nerdFont, 21.0f, {rx, rightCard.pos.y + dctx.layout.Scale(94.0f)},
                       IM_COL32(220, 238, 255, 255),
-                      "Thank you for all the support, great ideas, testing feedback, and inspiration to join and "
-                      "contribute to the Sega Saturn & Xbox emulation community!",
+                      "Thank you to these contributors and the Emulation Revival community for the support, testing, "
+                      "ideas, and inspiration!",
                       colW - dctx.layout.Scale(40.0f));
 
             y += cardH + dctx.layout.Scale(18.0f);

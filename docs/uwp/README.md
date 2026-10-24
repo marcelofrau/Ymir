@@ -1,7 +1,7 @@
 # Ymir para UWP / Xbox Dev Mode — Arquitetura e decisões
 
 > Documento de referência do port. O passo a passo de execução fica em [HANDOFF.md](HANDOFF.md).
-> Última atualização: 2026-10-20 (baseado no upstream Ymir 0.4.2, `8cdf0a53`).
+> Última atualização: 2026-10-24 (baseado no upstream Ymir 0.4.2, `8cdf0a53`).
 
 ## 1. Objetivo
 
@@ -77,14 +77,15 @@ O workflow `.github/workflows/uwp.yml` roda no runner `windows-2025`:
 | Gatilho | O que faz |
 |---|---|
 | push ou PR em `uwp/**` | build Release; zip como *artifact* do workflow |
-| tag `uwp-vX.Y.Z.R` (ex.: `uwp-v0.4.2.1`) | build com a versão da tag; **GitHub Release** com o zip e os símbolos |
+| tag `uwp-vX.Y.Z.R` (ex.: `uwp-v0.4.2.1`) | valida a versão, build + zip e **draft GitHub Release**; publicar manualmente só depois do teste no Xbox |
 | manual (`workflow_dispatch`) | build; com `release: true`, publica uma *prerelease* `uwp-v<versão>` |
 
-- **Versão do pacote:** vem da tag, ou de `<versão do Ymir>.<run_number>` nos demais casos.
+- **Versão:** `X.Y.Z` continua sendo a versão do Ymir; o quarto componente (`X.Y.Z.R`) é a revisão do pacote UWP e aparece na Shell/About. Tags oficiais precisam começar com a versão do Ymir; builds sem tag usam o `run_number` do GitHub Actions. O build Release desliga o sufixo `-dev`.
 - **Prefixo `uwp-`:** separa estas tags das tags `v*` do upstream.
 - **Cache:** guarda os binários do vcpkg (`.vcpkg-cache`) e o `out/uwp-deps` (SDL3-uwp).
 - **Toolchain:** VS 2026 se o runner tiver (e o CMake suportar), senão VS 2022 com o preset `UWP-x86-64-AVX2-MSVC-VS2022`.
   Quem escolhe é `scripts/uwp/common.ps1`.
+- **Release:** versionamento, assinatura e publicação em draft estão detalhados em [RELEASE.md](RELEASE.md).
 - **Workflows do upstream** (desktop Windows/Linux/macOS/FreeBSD, nightly, releases, screenshotter): os arquivos
   **não foram alterados**, para não gerar conflito em rebases, mas estão **desligados no fork** desde 2026-10-20 com
   `gh workflow disable`. O foco deste fork é só UWP / Xbox Dev Mode; o build desktop fica a cargo do upstream. O único
@@ -152,6 +153,8 @@ ymir-uwp_<ver>_x64_symbols.zip                      → .appxsym (símbolos pra 
 | D22 | **Navegação da GUI pelo gamepad com o modelo nativo do ImGui**, em vez de um cursor virtual | O ImGui 1.93 já traz a navegação de console (d-pad, stick, A/B/X/Y, Start/Back, L1/R1) e o backend `imgui_impl_sdl3` já alimenta o ImGui com esses botões; o único bloqueio era a própria app, que ligava `NavEnableGamepad` só quando `io.NavActive` — um deadlock lógico, porque `io.NavActive` só vira true por gamepad se a flag já estiver ligada. Um cursor virtual exigiria injetar eventos de mouse sintéticos e ainda assim não resolve hover/drag em widget | Cursor virtual pelo analógico (design em `docs/uwp/TESTING.md` §5.3); manter o deadlock lógico |
 | D23 | **Roteamento do gamepad entre a GUI e o Saturn**: modal aberto → GUI; senão → Saturn; botão View alterna | O console tem **um** gamepad para os dois consumidores. Sem rotear, cada aperto de botão na GUI também aperta o botão do jogo. O sinal de "modal aberto" é o `io.WantCaptureKeyboard`, que só é confiável porque a build UWP **desliga** a navegação por teclado (não há teclado): assim ele é true exatamente enquanto há modal aberto ou um widget em interação. O `View` não faz parte do Control Pad do Saturn, então está livre | Deixar os dois consumirem o mesmo gamepad (ações espelhadas no jogo); obrigar o mouse (impossível no console) |
 | D24 | **Interface própria para o Xbox, a "Shell"** (`src/platform/uwp/shell/`), temática da BIOS do Saturn, com a GUI desktop mantida como modo avançado | A GUI desktop é menu bar + janelas pensadas para mouse; adaptá-la exigiria mexer no código mais ativo do upstream (`app.cpp`, `ui/`). A Shell fica inteira em diretórios do port, presa por ganchos de 1 a 3 linhas sob `YMIR_PLATFORM_UWP`, usa a navegação nativa do ImGui (D22) sobre widgets desenhados à mão e reaproveita os eventos/serviços do Ymir. Config em `shell.toml` próprio, para não tocar em `settings.cpp`. Arquitetura e decisões S1–S9 em [shell/README.md](shell/README.md) | Readaptar a GUI desktop no lugar; portar o `ImGuiFullscreen` do XBSX2 (tema próprio brigaria com ele) |
+| D25 | **Versão do Ymir separada da revisão do port:** o upstream continua `X.Y.Z`; o quarto campo do pacote (`X.Y.Z.R`) é a revisão UWP, mostrada na Shell e no About | Mantém a versão do emulador fiel ao upstream, mas permite identificar atualizações internas do port e preservar a ordenação que o Windows exige para atualizar o pacote | Alterar `Ymir_VERSION` para incluir o número do fork ou mostrar apenas a versão do upstream |
+| D26 | **Release por tag cria GitHub draft**, não publicação pública automática | O ZIP exato do tag precisa ser validado pelo usuário no Xbox antes de ficar público; build e publicação também usam permissões separadas | Publicar imediatamente ao criar a tag, antes do teste manual do pacote |
 
 ## 5. Macros e opções de CMake
 
@@ -165,7 +168,7 @@ ymir-uwp_<ver>_x64_symbols.zip                      → .appxsym (símbolos pra 
 | `Ymir_UWP_PACKAGE_NAME` | cache, `UWPPackaging.cmake` | `Ymir.SaturnEmulator.UWP` | Identity Name do pacote |
 | `Ymir_UWP_PUBLISHER` | cache, `UWPPackaging.cmake` | `CN=CMake Test Cert` | Precisa ser igual ao subject do certificado |
 | `Ymir_UWP_CERTIFICATE` | cache, `UWPPackaging.cmake` | vazio | `.pfx` próprio (opcional, sem senha) |
-| `Ymir_UWP_PACKAGE_VERSION` | cache, `UWPPackaging.cmake` | vazio = `<versão do Ymir>.0` | Versão do pacote, com 4 números (CI: tag ou run) |
+| `Ymir_UWP_PACKAGE_VERSION` | cache, `UWPPackaging.cmake` | vazio = `<versão do Ymir>.0` | Versão do pacote, com 4 números; o 4º identifica o build UWP exibido na Shell/About (CI: tag ou run; cada campo 0–65535) |
 | `MIO_WINAPI_APP` | `vendor/mio/include/mio/detail/mmap.ipp` | 1 (automático) | APIs `*FromApp` no mio |
 
 ## 6. Mapa das mudanças (o delta do fork)

@@ -304,6 +304,9 @@ void AboutWindow::DrawAboutTab() {
     ImGui::PushFont(imguiData->fonts.sansSerif.bold, imguiData->fontSizes.xlarge);
     ImGui::TextUnformatted("Version " Ymir_VERSION);
     ImGui::PopFont();
+#if YMIR_PLATFORM_UWP
+    ImGui::Text("Xbox/UWP build %s", YMIR_UWP_BUILD_NUMBER);
+#endif
 #if Ymir_DEV_BUILD
     ImGui::PushFont(imguiData->fonts.sansSerif.regular, imguiData->fontSizes.large);
     ImGui::TextUnformatted("(development build)");

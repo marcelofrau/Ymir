@@ -52,7 +52,12 @@ try {
     }
 
     Write-Host "=== Configuring $($toolchain.Preset) ===" -ForegroundColor Cyan
-    $configureArgs = @('--preset', $toolchain.Preset, "-DYmir_UWP_PACKAGE_VERSION=$PackageVersion")
+    $devBuild = if ($Configuration -eq 'Debug') { 'ON' } else { 'OFF' }
+    $configureArgs = @(
+        '--preset', $toolchain.Preset,
+        "-DYmir_UWP_PACKAGE_VERSION=$PackageVersion",
+        "-DYmir_DEV_BUILD=$devBuild"
+    )
     if ($Reconfigure) { $configureArgs += '--fresh' }
     cmake @configureArgs
     if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed' }
