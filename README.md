@@ -21,8 +21,9 @@
 StrikerX3 and contributors. This fork tracks upstream Ymir while adding the platform integration and controller-first
 interface needed to run it as a native UWP app.
 
-The primary target is **Xbox Series X|S in Developer Mode**. The UWP package also runs on Windows 10/11. It is not an
-Xbox Retail app, and Xbox One is not supported.
+The validated target is **Xbox Series X|S in Developer Mode**. The UWP package also runs on Windows 10/11; it is not an
+Xbox Retail app. Xbox One Dev Mode is not validated yet, but is not ruled out: it needs an SSE2 build (the current AVX2
+package is incompatible with its Jaguar CPU), the app must run as **Game**, and performance still needs testing.
 
 ## Highlights
 
@@ -60,7 +61,7 @@ before publication. See [docs/uwp/RELEASE.md](docs/uwp/RELEASE.md).
 
 ## Credits
 
-- **Xbox / UWP port:** Marcelo ([marcelofrau](https://github.com/marcelofrau))
+- **Xbox / UWP port:** Marcelo Frau ([marcelofrau](https://github.com/marcelofrau))
 - **Ymir emulator and Saturn emulation core:** StrikerX3 and contributors
 - **Special thanks:** MewLew, alouisious, and DanP142
 - **Community:** [Emulation Revival](https://emulationrevival.github.io/xbox-dev-mode/emulators.html) and the wider Sega Saturn and Xbox emulation communities for their support, ideas,
