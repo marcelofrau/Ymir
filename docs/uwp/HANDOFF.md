@@ -12,15 +12,15 @@
 > | **GUI (ImGui)** | ✅ Aparece, 1920x1080, `io.DisplaySize` correto |
 > | **Áudio** | ✅ XAudio2. O WASAPI do SDL **trava** no Xbox (deadlock no `SDL_OpenAudioDeviceStream`) |
 > | **Entrada no emulador** | ✅ O gamepad já dirige o Saturn pelas bindings padrão da porta 1 |
-> | **Shell (GUI nova do Xbox)** | ✅ **Já executada pelo usuário no Xbox.** Interface própria com wizard inicial, grid da biblioteca, menu de pausa e About personalizado. Ajustes visuais de About, wizard, esferas e Browse Games compilados em 2026-10-24; aguardam nova conferência visual no console. | Interface padrão no Xbox; GUI desktop fica como modo avançado. Código e documentação em `src/platform/uwp/shell/` e [shell/README.md](shell/README.md) |
+> | **Shell (GUI nova do Xbox)** | ✅ **Já executada pelo usuário no Xbox.** Interface própria com wizard inicial, grid da biblioteca, menu de pausa e About personalizado. Ajustes de versão/créditos, altura do grid e fluxo de boot da BIOS compilados em 2026-10-24; aguardam conferência visual no console. | Interface padrão no Xbox; GUI desktop fica como modo avançado. Código e documentação em `src/platform/uwp/shell/` e [shell/README.md](shell/README.md) |
 > | **GUI navegável pelo gamepad** | ✅ **Funcionando no console** (GUI desktop, agora modo avançado). Cursor virtual no analógico direito (`RB` = clique esquerdo, `LB` = clique direito), d-pad/stick esquerdo = nav do ImGui (`A` ativa, `B` volta). **L3, R3 ou View** alternam o foco entre `Emulator` e `GUI` (com salto automático para o menu `File` e atalhos `X` = Load disc, `Y` = Settings quando em modo GUI). Ver [TESTING.md](TESTING.md) §5 |
 > | **File picker** | Shell tem navegador próprio com drives, pastas e filtros de imagem/BIOS. Enumeração de drives e pastas agora roda em background com estado de carregamento; compilado em 2026-10-24, falta validar responsividade no Xbox. Os diálogos da GUI desktop continuam separados |
 > | **Emulação de verdade** | ✅ **Validada em hardware real a 60 fps (`RelWithDebInfo`).** Testados: BIOS US v1.00, *Sonic Jam* (`.cue`), *Road Rash* (`.chd`) e *Sega Rally Championship Plus* (`.cue`) |
 > | **Última validação da emulação** | **Run 16** (2026-10-22) — 60 fps (`100.1%`, `vdp2=60fps`), sem input lag (`syncInWindowedMode = true`). As capturas confirmam a Shell no Xbox; esta rodada de ajustes ainda não foi validada |
-> | **Próximo teste do usuário** | Instalar o Release de `out/dist/ymir-uwp_0.4.2.0_x64.zip` e validar About, wizard, posição das esferas, grid/tabs/card e navegação do picker em mídia lenta. Não considerar validado até receber o resultado |
+> | **Próximo teste do usuário** | Instalar `out/dist/ymir-uwp_0.4.2.0_x64.zip`; testar seleção/troca da BIOS (notificação, boot sem disco, setup e depois carga do jogo), versão/About, corte do grid/footer, wizard e picker. Não considerar validado até receber o resultado |
 > | **HEAD** | ver `git log --oneline -3` em `uwp/main` |
 >
-> **Última atualização deste bloco:** 2026-10-24, agente OpenCode (ajustes visuais, picker assíncrono e pacote Release).
+> **Última atualização deste bloco:** 2026-10-24, agente OpenCode (BIOS setup, versionamento, README, layout do grid e release draft).
 >
 > ---
 >
@@ -1503,6 +1503,60 @@ navegação do d-pad entre o grid (child window com `NavFlattened`) e as esferas
 
 ---
 
+### Entrada do agente OpenCode — 2026-10-24 (versão do port, README e preparação de release)
+
+**Pedido:** separar a versão upstream do identificador de build UWP, destacar no README o foco em Xbox Dev Mode e
+preparar o fluxo de release para validar o pacote exato antes de publicar. Um relato visual adicional apontou a borda
+inferior do card selecionado na segunda linha do grid cortada e o footer muito próximo.
+
+**Mudanças:**
+- `Ymir_VERSION` segue como versão upstream; o quarto componente do pacote (`X.Y.Z.R`) identifica a revisão UWP e
+  agora aparece na Shell e no About.
+- `build.ps1` define `Ymir_DEV_BUILD=OFF` em Release e `ON` em Debug, removendo o `-dev` da versão de release.
+- CI valida que tags `uwp-vX.Y.Z.R` correspondem à versão upstream, rejeita revisão fora de `1..65535`, usa run number
+  sem wrap-around em builds sem tag, e separa o job de build (read-only) do job de publicação (write).
+- Tags produzem um GitHub Release draft, permitindo testar o ZIP anexado antes de publicar. Processo documentado em
+  [RELEASE.md](RELEASE.md).
+- README raiz refeito para o port Xbox/UWP, incluindo o social preview existente e os créditos solicitados; o nome
+  `alouisious` foi corrigido também no About.
+- Grid ganhou 25 unidades de altura no layout padrão e no tema embutido: a segunda linha cabe e o footer desce junto.
+
+**Verificado na máquina de origem:** build UWP Release completo; `Ymir_DEV_BUILD=OFF`, versão CMake `0.4.2`, macro
+`YMIR_UWP_BUILD_NUMBER="0"` e pacote `0.4.2.0` confirmados. `package.ps1` gerou o ZIP e o ZIP de símbolos. O YAML passou
+no parser local e `git diff --check` passou. O build reportou warnings de conversão, MSB8028, APPX0006, LNK4075 e
+shaders sem depfiles; não houve erro de compilação.
+
+**Não verificado ainda:** inspeção visual no Xbox e execução real do workflow/release draft. O Publisher continua sendo
+`CN=CMake Test Cert`; decidir se essa identidade será mantida antes de usuários adotarem o pacote.
+
+**Próximo passo:** o usuário testa o pacote local no Xbox e confirma visualmente o grid/footer e a versão no About.
+No primeiro tag estável, publicar o draft somente após validar o mesmo ZIP.
+
+---
+
+### Entrada do agente OpenCode — 2026-10-24 (boot de BIOS após seleção/troca)
+
+**Sintoma relatado:** carregar um jogo logo depois de escolher/trocar a BIOS pode resultar em tela preta; iniciar a
+BIOS primeiro, concluir seu setup e só então carregar o jogo evita o problema.
+
+**Causa no fluxo da Shell:** seleção da BIOS carregava o IPL e enfileirava `HardReset`, mas a Shell mantinha o Saturn
+pausado na home. O disco podia ser inserido antes de a BIOS executar seu setup; o modo `InGame` só era ativado quando
+o jogo já tinha sido carregado.
+
+**Mudanças:** seleção e rescan de BIOS agora fecham Settings, ejetam qualquer disco, fazem hard reset, mostram uma
+mensagem com o próximo passo e entram no BIOS sem manter a emulação pausada. A seleção pelo IPL Settings da GUI
+avançada no UWP segue o mesmo fluxo; builds desktop preservam o comportamento anterior. Ver [TESTING.md](TESTING.md)
+§10.2 para o teste manual.
+
+**Verificado na máquina de origem:** build UWP Release e `package.ps1` concluídos; pacote atualizado em
+`out/dist/ymir-uwp_0.4.2.0_x64.zip`. O build manteve warnings de conversão/MSB8028/APPX0006/LNK4075 e shaders sem
+depfiles, sem erros de compilação.
+
+**Não verificado ainda:** seleção/troca da BIOS no Xbox e execução da GUI avançada após essas mudanças. O agente não faz
+deploy nem inicia o app.
+
+---
+
 ## 1. Estado atual (o que já está pronto e validado)
 
 Validado na máquina de origem em 2026-10-20 (VS Build Tools 2026 18.x, MSVC 14.51, Windows SDK 10.0.26100, CMake 4.3.2):
@@ -1519,11 +1573,11 @@ Validado na máquina de origem em 2026-10-20 (VS Build Tools 2026 18.x, MSVC 14.
 | Conteúdo do `.msix`: `ymir-sdl3.exe`, `SDL3.dll`, `Assets\*.png`, `resources.pri`, `AppxSignature.p7x` | ✅ conferido |
 | Shaders DXIL assinados (hash do container DXBC diferente de zero) | ✅ conferido |
 | Build desktop (preset `Full-x86-64-AVX2-MSVC-Release`) e testes continuam passando | ✅ 14/14 na 0.4.2 (seção 1.1) |
-| `scripts/uwp/package.ps1` → `out/dist/ymir-uwp_<ver>_x64.zip` (msix, cer, VCLibs, Install.ps1, INSTALL.md) + zip de símbolos | ✅ build Release 0.4.2.0 em 2026-10-24: `ymir-uwp_0.4.2.0_x64.zip` (16.9 MiB) e symbols zip (17.9 MiB) |
-| CI/CD `.github/workflows/uwp.yml` (build, artifact, release por tag `uwp-v*`) | ✅ primeiro run verde em 2026-10-20 (runner `windows-2025` com **Visual Studio Enterprise 2026**, versão 0.4.0.2, artifacts `ymir-uwp-0.4.0.2` e `-symbols`; esse run foi antes do rebase pra 0.4.2). A publicação de release por tag ainda não foi exercitada (passo 15) |
+| `scripts/uwp/package.ps1` → `out/dist/ymir-uwp_<ver>_x64.zip` (msix, cer, VCLibs, Install.ps1, INSTALL.md) + zip de símbolos | ✅ build Release 0.4.2.0 em 2026-10-24 após About/grid/BIOS flow: `ymir-uwp_0.4.2.0_x64.zip` (16.9 MiB) e symbols zip (17.8 MiB) |
+| CI/CD `.github/workflows/uwp.yml` (build, artifact, draft por tag `uwp-v*`) | ✅ primeiro run verde em 2026-10-20 (runner `windows-2025`, VS 2026, versão 0.4.0.2). Nova versão do workflow validada pelo parser YAML local; execução no GitHub e draft ainda não testados |
 | Sincronizado com o upstream **0.4.2** (`8cdf0a53`) por rebase em 2026-10-20; build UWP Release limpo (`--fresh`, baseline nova do vcpkg) | ✅ |
 | Fallback VS 2022 (preset `UWP-x86-64-AVX2-MSVC-VS2022`) | ⚠️ configurado, mas **não compilado**: a máquina de origem e o runner do GitHub têm VS 2026 |
-| **Rodar o app** (PC ou Xbox) | ✅ Xbox: boot, GUI e emulação validados em runs anteriores (run 16, 2026-10-22). A Shell também foi aberta pelo usuário. O build Release atual ainda aguarda validação manual dos últimos ajustes; PC não testado |
+| **Rodar o app** (PC ou Xbox) | ✅ Xbox: boot, GUI e emulação validados em runs anteriores (run 16, 2026-10-22). A Shell também foi aberta pelo usuário. O build Release atual ainda aguarda validação manual do BIOS flow/grid/About; PC não testado |
 
 ### 1.1 Testar no Xbox sem mexer na GUI
 
@@ -1554,7 +1608,7 @@ Antes do rebase eram 75 testes. A diferença vem do upstream, que removeu `ymir-
 | Publisher | `CN=CMake Test Cert` |
 | **Package Family Name (PFN)** | `Ymir.SaturnEmulator.UWP_d7c8pgvss6ysm` |
 | App Id | `App` (PRAID = `Ymir.SaturnEmulator.UWP_d7c8pgvss6ysm!App`) |
-| Versão | `0.4.2.0` local (vem do `project(Ymir VERSION ...)` no CMake); no CI, `0.4.2.<run>` ou a da tag `uwp-v*` |
+| Versão | `0.4.2.0` local (Ymir `0.4.2` + revisão UWP `0`); no CI, `0.4.2.<run>` ou a da tag `uwp-v*` |
 | Pasta de dados (PC) | `%LOCALAPPDATA%\Packages\Ymir.SaturnEmulator.UWP_d7c8pgvss6ysm\LocalState\StrikerX3\Ymir\` |
 | Pasta de dados (Xbox, Device Portal → File explorer) | `LocalAppData\Ymir.SaturnEmulator.UWP_d7c8pgvss6ysm\LocalState\StrikerX3\Ymir\` |
 | **Log** | `<pasta de dados>\ymir-uwp.log` (stdout e stderr, com flush por linha) |
@@ -1947,6 +2001,8 @@ Escolha **uma** das opções:
 | 2026-10-23 | Shell fases V, A, L, O (máquina de origem) | OK (build) | Visual do mockup com a arte real, BGM + cubos reativos, biblioteca com folder picker e grid holográfico, overlays de configuração e menu de pausa. UWP RelWithDebInfo verde, desktop 47/47. Aguardando o run no console (TESTING.md §10.2, itens 1–11) |
 | 2026-10-23 | Shell F0 (máquina de origem) | OK (build) | Shell do Xbox (fase 0) compilada: UWP RelWithDebInfo verde, desktop 26/26. Ainda não rodou no console. Ver §0.1 (entrada de 2026-10-23) e `docs/uwp/shell/` |
 | 2026-10-24 | Shell UI + picker (máquina de origem) | OK (build); teste manual pendente | Ajustados About, textos do wizard, altura/posição do card, grid/tabs centralizadas e esferas mais baixas. Listagem de drives/pastas movida para worker para manter UI responsiva. Build UWP Release gerou o MSIX e `out/dist/ymir-uwp_0.4.2.0_x64.zip`; validar no Xbox ainda pendente |
+| 2026-10-24 | Versão do port, README, grid e release (máquina de origem) | OK (build); Xbox/GitHub pendentes | About exibe versão Ymir + revisão UWP; Release desliga `-dev`; grid cresceu 25 px e footer desceu. README recebeu social preview e créditos. CI separa permissões e cria draft em tags. ZIP `0.4.2.0` recompilado; teste visual manual pendente |
+| 2026-10-24 | Boot inicial da BIOS após seleção/troca (máquina de origem) | OK (build); Xbox pendente | Shell agora ejeta disco, reseta e retoma o Saturn na BIOS, com orientação para concluir setup e depois carregar jogo. Abrange Wizard, Settings da Shell, scan de BIOS e IPL Settings da GUI avançada no UWP. ZIP Release `0.4.2.0` recompilado; teste no Xbox ainda pendente |
 | | | | |
 
 ---

@@ -100,6 +100,9 @@ public:
     /// Safe to call from the emulator thread.
     void OnDiscLoaded();
 
+    /// @brief Boots the loaded IPL ROM with the disc tray empty for initial BIOS setup.
+    void StartBiosSetup();
+
 private:
     enum class Screen {
         Home,   // the library and the action spheres; the emulation is paused

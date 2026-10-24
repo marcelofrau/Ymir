@@ -389,22 +389,26 @@ still there as an advanced mode.
 2. The d-pad moves the focus between the spheres: the focused one grows, spins faster, gets a dotted halo with
    orbiting pixel blocks and shows its name and description. The LCD text sits inside the cyan area, and the marquee
    is clipped at the right end of the bar.
-3. *Load Disc* opens the system file picker; choosing a disc starts the game straight away.
-4. In game, *View* returns to the home screen (the game pauses, the first sphere reads *Resume*); *B* or *Resume*
+3. **BIOS handoff:** From the first-run wizard, select a BIOS. Ymir should notify the user, eject any loaded disc, and
+   boot the Saturn BIOS so its initial setup can finish. Press *View* to open the Ymir menu and load a game. Repeat
+   after changing the BIOS from Shell settings and from the advanced desktop UI; confirm the old disc does not boot
+   before the BIOS setup screen.
+4. After completing BIOS setup, *Load Disc* opens the system file picker; choosing a disc starts the game.
+5. In game, *View* returns to the home screen (the game pauses, the first sphere reads *Resume*); *B* or *Resume*
    go back to the game. After loading a disc or resetting, the marquee shows the app message (for example
    *Hard reset triggered*) before going back to the disc title and the tips.
-5. *Settings* opens the desktop settings window on top of the shell; closing it gives the focus back to the spheres.
-6. *Desktop UI* switches to the desktop interface; holding *View* for one second comes back.
-7. The log has `UWP-Shell | Interface mode: shell` and `Loaded 3 theme assets`.
-8. **Library**: X opens the folder picker; after choosing a folder (for example on `E:\`) the tab shows
+6. *Settings* opens the desktop settings window on top of the shell; closing it gives the focus back to the spheres.
+7. *Desktop UI* switches to the desktop interface; holding *View* for one second comes back.
+8. The log has `UWP-Shell | Interface mode: shell` and `Loaded 3 theme assets`.
+9. **Library**: X opens the folder picker; after choosing a folder (for example on `E:\`) the tab shows
    `SCANNING n` and then the hologram tiles; A on a tile starts the game. Covers appear for files in
    `<profile>/covers/`.
-9. **Music and cubes**: with tracks in `<profile>/music/`, the music fades in on the home screen and the marquee shows
+10. **Music and cubes**: with tracks in `<profile>/music/`, the music fades in on the home screen and the marquee shows
    `♪ <track>`; the cubes swell, spin and round off with the music, each with its own channel; they settle back into
    still cubes in silence and when the game starts.
-10. **Settings**: the Settings sphere opens the settings overlay; LB/RB switch pages; changing *Hardware rendering* or
-    the volume takes effect right away and survives a restart.
-11. **Pause menu**: View in game opens it over the frozen game; save to a slot, load it back, B resumes.
+11. **Settings**: the Settings sphere opens the settings overlay; LB/RB switch pages; changing *Hardware rendering* or
+     the volume takes effect right away and survives a restart.
+12. **Pause menu**: View in game opens it over the frozen game; save to a slot, load it back, B resumes.
 
 ### 10.3 Switching the interface without the controller
 

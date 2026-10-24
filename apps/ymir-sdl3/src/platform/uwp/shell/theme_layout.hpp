@@ -43,7 +43,7 @@ struct ThemeLayout {
     PodAnchor podRight{{1735.0f, 814.0f}, 112.0f};
 
     // The library grid floats in the sky between the dashboards; the action spheres sit on the cockpit console
-    Rect grid{{330.0f, 165.0f}, {1260.0f, 430.0f}};
+    Rect grid{{330.0f, 165.0f}, {1260.0f, 455.0f}};
     int gridColumns = 6;
     SphereRow spheres{660.0f, 1260.0f, 905.0f, 34.0f};
 

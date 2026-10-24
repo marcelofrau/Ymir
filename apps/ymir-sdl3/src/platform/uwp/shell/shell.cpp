@@ -45,7 +45,7 @@ namespace {
     constexpr double kInGameHintSeconds = 5.0;
 
     /// @brief The version shown on the LCD of the top dashboard, next to the title.
-    constexpr std::string_view kVersionText = "v" Ymir_VERSION;
+    constexpr std::string_view kVersionText = "v" Ymir_VERSION " UWP " YMIR_UWP_BUILD_NUMBER;
 
     std::string ToUtf8(const std::filesystem::path &path) {
         const std::u8string text = path.u8string();
@@ -219,6 +219,19 @@ void Shell::EnterGame() {
         m_context.EnqueueEvent(app::events::emu::SetPaused(false));
         m_pausedByShell = false;
     }
+}
+
+void Shell::StartBiosSetup() {
+    m_context.serviceLocator.GetRequired<app::services::WindowManagerService>().SettingsWindow().Open = false;
+    m_context.EnqueueEvent(app::events::emu::EjectDisc());
+    m_context.EnqueueEvent(app::events::emu::HardReset());
+    m_marquee.Post("Booting Saturn BIOS. Finish setup, then press View to load a game.");
+    m_context.DisplayMessage("Saturn BIOS booting. Finish setup, then press View to load a game.");
+
+    // The user explicitly asked to boot BIOS, even if startup or the previous screen left the emulator paused.
+    m_context.EnqueueEvent(app::events::emu::SetPaused(false));
+    m_pausedByShell = false;
+    EnterGame();
 }
 
 void Shell::SetMode(UIMode mode) {
@@ -447,20 +460,22 @@ void Shell::ProcessPickedBios() {
     settings.system.ipl.overrideImage = true;
     settings.system.ipl.path = targetPath;
     settings.MakeDirty();
-    m_context.serviceLocator.GetRequired<app::services::ROMService>().ScanIPLROMs();
-    m_context.serviceLocator.GetRequired<app::services::ROMService>().LoadIPLROM();
-    m_context.EnqueueEvent(app::events::emu::HardReset());
-    m_marquee.Post("BIOS configured: " + ToUtf8(targetPath.filename()));
-    m_home.RequestFocus();
+    auto &romService = m_context.serviceLocator.GetRequired<app::services::ROMService>();
+    romService.ScanIPLROMs();
+    const ::util::ROMLoadResult configured = romService.LoadIPLROM();
+    if (!configured.succeeded) {
+        m_context.serviceLocator.GetRequired<app::services::WindowManagerService>().OpenSimpleErrorModal(
+            fmt::format("Could not load the selected BIOS: {}", configured.errorMessage));
+        return;
+    }
+    StartBiosSetup();
 }
 
 void Shell::RescanBios() {
     auto &romService = m_context.serviceLocator.GetRequired<app::services::ROMService>();
     romService.ScanIPLROMs();
     if (romService.LoadIPLROM().succeeded) {
-        m_context.EnqueueEvent(app::events::emu::HardReset());
-        m_marquee.Post("BIOS found: " + ToUtf8(m_context.iplRomPath.filename()));
-        m_home.RequestFocus();
+        StartBiosSetup();
     } else {
         m_marquee.Post("No IPL ROM found in ROMs folder");
         m_context.DisplayMessage("No IPL ROM found");
