@@ -998,6 +998,9 @@ void App::RunEmulator() {
         SDL_SetNumberProperty(windowProps, SDL_PROP_WINDOW_CREATE_Y_NUMBER, windowY);
         SDL_SetBooleanProperty(windowProps, SDL_PROP_WINDOW_CREATE_HIDDEN_BOOLEAN, true);
         SDL_SetBooleanProperty(windowProps, SDL_PROP_WINDOW_CREATE_FULLSCREEN_BOOLEAN, settings.video.fullScreen.Get());
+#if YMIR_PLATFORM_HAS_VULKAN
+        SDL_SetBooleanProperty(windowProps, SDL_PROP_WINDOW_CREATE_VULKAN_BOOLEAN, true);
+#endif
     }
 
     screen.window = SDL_CreateWindowWithProperties(windowProps);
@@ -1021,6 +1024,8 @@ void App::RunEmulator() {
 
     // ---------------------------------
     // Create graphics backend
+
+    ScopeGuard sgDeinitVideo{[&] { m_graphicsService.DestroyGraphicsContext(); }};
 
     gfx::PresentMode presentMode = gfx::PresentMode::VSync;
     {
@@ -2102,6 +2107,14 @@ void App::RunEmulator() {
                     m_displayService.PersistWindowGeometry();
                 }
                 break;
+            case SDL_EVENT_WINDOW_MAXIMIZED:
+            case SDL_EVENT_WINDOW_RESTORED:
+                // Get window size
+                int width, height;
+                SDL_GetWindowSize(screen.window, &width, &height);
+                m_graphicsService.ResizeFramebuffer(width, height);
+                break;
+            case SDL_EVENT_WINDOW_MINIMIZED:
             case SDL_EVENT_WINDOW_RESIZED:
                 m_graphicsService.ResizeFramebuffer(evt.window.data1, evt.window.data2);
                 [[fallthrough]];

@@ -40,16 +40,16 @@ jobs:
     steps:
       # Set up MASM for lzma
       - name: Set up MASM
-        uses: glslang/setup-masm@bd171b9b0a619ff6237c164fab5fb920cc579889
+        uses: glslang/setup-masm@bd171b9b0a619ff6237c164fab5fb920cc579889 # v1.4
         if: ${{ matrix.arch.name == 'x64' }}
 
       - name: Set up Vulkan SDK
-        uses: jakoch/install-vulkan-sdk-action@37effcfa045411f8bfbbda26df2fd1b3bf3436fa
+        uses: jakoch/install-vulkan-sdk-action@d17de7e2f5e50efb5d2123efed18497d3c58c533 # v1.7.0
         with:
           vulkan_version: ${{ env.VULKAN_SDK_VERSION }}
           cache: true
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
 
@@ -67,7 +67,7 @@ jobs:
       - name: Cache vcpkg
         if: ${{ matrix.build-set.library-only == 'no' }}
         id: cache-vcpkg
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ github.workspace }}/vcpkg_cache
           key: windows-${{ matrix.arch.name }}-vcpkg-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'vcpkg-triplets/**') }}
@@ -140,7 +140,7 @@ jobs:
       - name: Cache Vulkan SDK with DXC build (AArch64)
         if: matrix.arch.name == 'a64'
         id: cache-dxc
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/vulkan-sdk/${{ env.VULKAN_SDK_VERSION }}
           key: dxc-aarch64-${{ runner.os }}-${{ env.VULKAN_SDK_VERSION }}
@@ -148,7 +148,7 @@ jobs:
       - name: Set up Vulkan SDK
         id: vulkan-sdk
         if: steps.cache-dxc.outputs.cache-hit != 'true'
-        uses: jakoch/install-vulkan-sdk-action@37effcfa045411f8bfbbda26df2fd1b3bf3436fa
+        uses: jakoch/install-vulkan-sdk-action@d17de7e2f5e50efb5d2123efed18497d3c58c533 # v1.7.0
         with:
           vulkan_version: ${{ env.VULKAN_SDK_VERSION }}
           cache: true
@@ -160,7 +160,7 @@ jobs:
           cd $VULKAN_SDK/..
           ./vulkansdk --skip-deps --maxjobs dxc
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
 
@@ -193,7 +193,7 @@ jobs:
       - name: Cache vcpkg
         if: ${{ matrix.build-set.library-only == 'no' }}
         id: cache-vcpkg
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ github.workspace }}/vcpkg_cache
           key: linux-${{ matrix.arch.name }}-vcpkg-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'vcpkg-triplets/**') }}
@@ -258,7 +258,7 @@ jobs:
             library-only: "yes"
 
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
 
@@ -269,7 +269,7 @@ jobs:
           echo "build-output-dir=${{ github.workspace }}/build" >> "$GITHUB_OUTPUT"
 
       - name: Start FreeBSD VM
-        uses: cross-platform-actions/action@e0b9770014ba65d5e0815f15b74031c3a635f641
+        uses: cross-platform-actions/action@82668f1fbd89d9c99487604f822cbf6716f124d3 # v1.7.0
         with:
           operating_system: freebsd
           architecture: ${{ matrix.arch.name }}
@@ -278,14 +278,14 @@ jobs:
       - name: Install dependencies
         run: |
           sudo pkg upgrade -y
-          sudo pkg install -y cmake evdev-proto git gmake libX11 libXcursor libXext \
-            libXfixes libXi libXrandr libXrender libXScrnSaver libXtst libglvnd \
+          sudo pkg install -y cmake-core evdev-proto git gmake libX11 libXcursor \
+            libXext libXfixes libXi libXrandr libXrender libXScrnSaver libXtst libglvnd \
             libinotify ninja patchelf pkgconf python3 unzip vulkan-loader zip
 
       - name: Cache vcpkg
         if: ${{ matrix.build-set.library-only == 'no' }}
         id: cache-vcpkg
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ${{ github.workspace }}/vcpkg/vcpkg
@@ -359,13 +359,13 @@ jobs:
 
     steps:
       - name: Set up Vulkan SDK
-        uses: jakoch/install-vulkan-sdk-action@37effcfa045411f8bfbbda26df2fd1b3bf3436fa
+        uses: jakoch/install-vulkan-sdk-action@d17de7e2f5e50efb5d2123efed18497d3c58c533 # v1.7.0
         with:
           vulkan_version: ${{ env.VULKAN_SDK_VERSION }}
           cache: true
           stripdown: true
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
 
@@ -383,7 +383,7 @@ jobs:
       - name: Cache vcpkg
         if: ${{ matrix.build-set.library-only == 'no' }}
         id: cache-vcpkg
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ github.workspace }}/vcpkg_cache
           key: macos-${{ matrix.arch.name }}-vcpkg-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'vcpkg-triplets/**') }}

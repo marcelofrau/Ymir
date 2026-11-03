@@ -8,6 +8,8 @@ Uses save state file version 17.
 
 ### New features and improvements
 
+- Graphics: Added Vulkan backend. (#937; @Wunkolo)
+
 ### Fixes
 
 

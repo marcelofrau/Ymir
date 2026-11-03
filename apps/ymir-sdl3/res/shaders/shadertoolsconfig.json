@@ -1,0 +1,10 @@
+{
+  "root": true,
+  "hlsl.preprocessorDefinitions": {
+    "VK_BINDING(b,s)": "vk::binding(b,s)",
+    "VK_LOCATION(l)": "vk::location(l)",
+    "VK_PUSH_CONSTANT": "vk::push_constant"
+  },
+  "hlsl.additionalIncludeDirectories": [
+  ]
+}

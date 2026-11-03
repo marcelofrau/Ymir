@@ -164,9 +164,18 @@ namespace settings::video {
     void UseHardwareAcceleration(SharedContext &ctx) {
         auto &settings = ctx.serviceLocator.GetRequired<Settings>();
         auto &videoSettings = settings.video;
-        const bool isSDLRenderer = videoSettings.graphicsBackend == gfx::Backend::SDLRenderer;
+        bool isSoftwareRendered = false;
+        // SDL uses the software VDP renderer backend
+        isSoftwareRendered |= videoSettings.graphicsBackend == gfx::Backend::SDLRenderer;
+#if YMIR_PLATFORM_HAS_VULKAN
+        {
+            // Vulkan uses the software VDP renderer backend
+            const bool isVulkanRenderer = videoSettings.graphicsBackend == gfx::Backend::Vulkan;
+            isSoftwareRendered |= isVulkanRenderer;
+        }
+#endif
         bool hwAccel = videoSettings.useHardwareAcceleration;
-        if (isSDLRenderer) {
+        if (isSoftwareRendered) {
             ImGui::BeginDisabled();
         }
         if (settings.MakeDirty(ImGui::Checkbox("Use hardware-accelerated VDP1/VDP2 rendering", &hwAccel))) {
@@ -178,8 +187,8 @@ namespace settings::video {
                                     "\n"
                                     "NOTE: Support for hardware acceleration is currently EXPERIMENTAL. You may "
                                     "encounter bugs, stability and performance issues.");
-        if (isSDLRenderer) {
-            widgets::ExplanationTooltip("Not supported with SDL Renderer");
+        if (isSoftwareRendered) {
+            widgets::ExplanationTooltip("Not supported with current graphics backend");
             ImGui::EndDisabled();
         }
     }

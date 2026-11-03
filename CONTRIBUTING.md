@@ -51,19 +51,21 @@ Code contributions must follow the code standards and formatting guidelines desc
 
 ### AI usage guidelines
 
-Ymir's code is (to the author's knowledge) entirely human-written; AI has only been used to acquire knowledge by asking questions, summarizing documentation, and double-checking against original sources.
+Ymir's code is, to the author's knowledge, entirely human-written. AI has only been used to acquire knowledge by researching topics relevant but external to the codebase (such as Direct3D 12) and summarizing/clarifying Sega Saturn documentation, infamous for its awkward wording. All knowledge has been double-checked against original sources to ensure accuracy.
 
-Before proceeding, please [read this carefully](https://codeberg.org/ethical-foss/open-slopware/src/branch/main/why_not_llms.md) and ponder whether or not it is worth continuing your work with AI assistance. There should be no situation where these tools are *needed* -- we've made wonderful discoveries and built all the amazing technology that led to this day without their help, and we can continue to do so without "missing out" on whatever gains are promised. With that said, LLMs are clearly here to stay, but it needs to be used responsibly. These usage guidelines promote self-improvement, prevent AIs from running the show, and should result in more productive discussions and contributions.
+We used to have a strict usage guideline that allowed light AI usage without letting it run the show, but that was clearly too permissive. So, from now on, the following rules apply.
 
-If you plan to use AI-enabled tools such as agent-enabled IDEs, CLIs, or integrated LLM-based code generation/assistance, please follow these guidelines:
-- Clearly state that you've used such tools in the PR description, and in what way they have assisted you. Don't claim that the work is entirely your own if that is not the case.
-- Prove that you understand what you're doing by taking the time to manually write PR and commit descriptions, even if it's broken English. LLM-generated descriptions are often too verbose, too broad, too generic, or lack contextual clues to explain the "why" no matter how detailed your prompt is. If you have the time to spend writing an elaborate prompt, you certainly have the time to write the PR description itself.
-- If you're a first-time contributor, resist the urge to ask AI to do the work for you. You're sabotaging yourself by not getting hands-on experience with the project on your own.
-- When using automatic code completions, make sure the suggested code matches your thinking. Don't use it to autogenerate code you couldn't have imagined yourself.
-- Keep the scope of the work constrained to something manageable by one person. If you can't explain what the PR does without the help of AI because it's too big or complex, chances are it's also too big and complex for maintainers to review and reason about.
-- Conversely, if the work is small enough that you could do it by hand, *do it by hand*. It's the perfect learning opportunity and shows you are actively interested in contributing to the project.
+We do not accept any work that had AI assistance from [Large Language Models](https://en.wikipedia.org/wiki/Large_language_model), [image diffusion models](https://en.wikipedia.org/wiki/Diffusion_model) or other similar technologies in any way, shape or form at any point of the development process. This rule applies to *any* form of AI assistance using any tools or methods, including, but not limited to:
+- Conversational code generation, such as asking ChatGPT, Claude, Gemini and others to produce code snippets.
+- Any usage of coding assistants integrated in IDEs such as in Cursor.dev, Jetbrains's IDEs, Visual Studio, VS Code, Zed and similar.
+- Any amount of agentic coding with Claude Code, OpenAI Codex, OpenCode or others.
+- Feeding Ymir's source code to an LLM for any reason.
 
-Failing to follow these guidelines will get your PR closed.
+Pull requests found or suspected to be made with such tools or methods will be closed. Dishonesty will result in a ban from the repository.
+
+Using AI tools for acquiring **external** knowledge (i.e. **not Ymir**) as stated in the first paragraph is fine, as long as **you**, the **human**, actually learn about whatever topic you're asking and do your due diligence to verify the accuracy against original sources and documentation. If you want to learn about Ymir, you, the human, will have to deep dive into its source code like any software developer would before LLMs were unleashed upon this world. We trust that you will follow through with this promise.
+
+Please [read this carefully](https://codeberg.org/ethical-foss/open-slopware/src/branch/main/why_not_llms.md). There should be no situation where AI tools are *needed* -- we've made wonderful discoveries and built all the amazing technology that led to this day without their help, and we can continue to do so without "missing out" on whatever gains are promised.
 
 ### Library usage guidelines
 

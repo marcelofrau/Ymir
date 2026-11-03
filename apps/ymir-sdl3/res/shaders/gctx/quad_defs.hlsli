@@ -1,3 +1,6 @@
+#ifndef YMIR_GCTX_QUAD_DEFS_HLSLI
+#define YMIR_GCTX_QUAD_DEFS_HLSLI
+
 struct PSInput {
     float4 position : SV_POSITION;
     float2 uv : TEXCOORD;
@@ -26,3 +29,5 @@ float2 Rotate2DPivot(float2 p, float angle, float2 pivot = float2(0.5, 0.5)) {
     const float2 rotated = Rotate2D(shifted, angle);
     return rotated + pivot;
 }
+
+#endif
